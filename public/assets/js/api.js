@@ -242,6 +242,14 @@ const API = {
         });
     },
 
+    createMembershipPaymentOrder(paymentConfigId, level, payType) {
+        return this.request('payment.php?action=create_membership_order', 'POST', {
+            payment_config_id: paymentConfigId,
+            level,
+            pay_type: payType
+        });
+    },
+
     getPaymentOrders() {
         return this.request('payment.php?action=get_orders');
     },

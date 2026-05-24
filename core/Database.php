@@ -592,6 +592,7 @@ class Database {
             'fee' => $orderData['fee'],
             'status' => 'pending',
             'type' => $orderData['type'] ?? 'recharge',
+            'target_level' => $orderData['target_level'] ?? '',
             'created_at' => time(),
             'paid_at' => null
         ];

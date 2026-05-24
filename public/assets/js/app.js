@@ -714,7 +714,7 @@ async function loadMembershipTab(area) {
                         ? '<span class="membership-status-text text-muted">当前会员比此会员等级高，禁止升级</span>'
                         : level.can_upgrade === false
                             ? '<span class="membership-status-text text-muted">暂不支持开通</span>'
-                            : `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>${cost === 0 ? '免费开通' : '立即开通'}</button>`;
+                            : `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')">${cost === 0 ? '免费开通' : '立即开通'}</button>`;
 
                 return `
                     <div class="membership-card ${isCurrentLevel ? 'current' : ''}" style="--card-gradient: ${Security.escapeAttr(levelGradient)};">
@@ -1411,38 +1411,162 @@ async function deletePaymentConfig(id) {
     }
 }
 
+let selectedMembershipPaymentConfig = null;
+let membershipPaymentConfigs = [];
+
+function renderMembershipPayTypeOptions() {
+    const select = document.getElementById('membershipPayType');
+    const help = document.getElementById('membershipPayTypeHelp');
+    if (!select || !selectedMembershipPaymentConfig) return;
+    const methods = selectedMembershipPaymentConfig.pay_methods || ['alipay', 'wxpay'];
+    select.innerHTML = methods.map(method => `<option value="${method}">${payMethodLabel(method)}</option>`).join('');
+    if (help) {
+        help.textContent = `当前接口支持：${methods.map(payMethodLabel).join('、')}`;
+    }
+}
+
+function selectMembershipPaymentConfig(configId) {
+    selectedMembershipPaymentConfig = membershipPaymentConfigs.find(c => c.id === configId) || null;
+    document.querySelectorAll('.membership-payment-select-card').forEach(card => {
+        card.classList.remove('border-primary');
+        const checkIcon = card.querySelector('.bi-check-circle');
+        if (checkIcon) checkIcon.remove();
+    });
+    const selectedCard = Array.from(document.querySelectorAll('.membership-payment-select-card')).find(card => card.dataset.configId === configId);
+    if (selectedCard) {
+        selectedCard.classList.add('border-primary');
+        const icon = document.createElement('i');
+        icon.className = 'bi bi-check-circle text-primary';
+        icon.style.fontSize = '1.5rem';
+        selectedCard.querySelector('.card-body .d-flex').appendChild(icon);
+    }
+    renderMembershipPayTypeOptions();
+}
+
 async function upgradeMembership(levelName) {
+    const [levelsResult, myLevelResult, configsResult] = await Promise.all([
+        API.getMembershipLevels(),
+        API.getMyMembership(),
+        API.getPaymentConfigs()
+    ]);
+
+    if (!levelsResult.success) {
+        Toast.error('加载会员信息失败');
+        return;
+    }
+
+    const level = (levelsResult.levels || {})[levelName];
+    if (!level) {
+        Toast.error('会员等级不存在');
+        return;
+    }
+
+    const cost = Number(level.cost || 0);
+    const balance = Number(App.currentUser?.balance || 0);
+    const canUseBalance = balance >= cost;
+    membershipPaymentConfigs = configsResult.success ? (configsResult.configs || []) : [];
+    selectedMembershipPaymentConfig = membershipPaymentConfigs[0] || null;
+    const paymentOptionsHtml = membershipPaymentConfigs.length === 0
+        ? '<div class="alert alert-warning mb-0"><i class="bi bi-exclamation-triangle me-1"></i>后台暂未配置可用在线支付接口</div>'
+        : `<div class="row g-2 mb-3">
+            ${membershipPaymentConfigs.map(c => {
+                const methods = (c.pay_methods || ['alipay', 'wxpay']).map(payMethodLabel).join(' / ');
+                return `<div class="col-12">
+                    <div class="card membership-payment-select-card ${selectedMembershipPaymentConfig?.id === c.id ? 'border-primary' : ''}" data-config-id="${Security.escapeAttr(c.id)}" onclick="selectMembershipPaymentConfig('${Security.escapeAttr(c.id)}')" style="cursor: pointer;">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="fw-bold mb-1">${Security.escapeHtml(c.name)}</h6>
+                                    <small class="text-muted">${methods}${Number(c.fee_rate || 0) > 0 ? ` · 手续费: ${(Number(c.fee_rate || 0) * 100).toFixed(1)}%` : ''}</small>
+                                </div>
+                                ${selectedMembershipPaymentConfig?.id === c.id ? '<i class="bi bi-check-circle text-primary" style="font-size: 1.5rem;"></i>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>
+        <div class="mb-0">
+            <label class="form-label">支付类型</label>
+            <select class="form-select" id="membershipPayType"></select>
+            <div class="form-text" id="membershipPayTypeHelp">请选择支付接口</div>
+        </div>`;
+
     const confirmed = await new Promise(resolve => {
         const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
-        document.getElementById('confirmModalTitle').textContent = '确认升级到 ' + levelName;
+        document.getElementById('confirmModalTitle').textContent = '开通 ' + levelName + ' 会员';
         document.getElementById('confirmModalBody').innerHTML = `
             <div class="alert alert-warning">
                 <i class="bi bi-exclamation-triangle me-2"></i>
                 <strong>重要提醒：</strong>
                 <ul class="mb-0 mt-2">
-                    <li>升级到 ${levelName} 后无法降级</li>
-                    <li>升级到 ${levelName} 后无法更换为其他等级</li>
+                    <li>升级到 ${Security.escapeHtml(levelName)} 后无法降级</li>
+                    <li>升级到 ${Security.escapeHtml(levelName)} 后无法更换为更低等级</li>
                     <li>此操作不可撤销</li>
                 </ul>
             </div>
-            <p class="text-center text-muted mt-3 mb-0">确定要继续吗？</p>
+            <div class="card bg-light mb-3">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between"><span>应付金额</span><strong>¥${cost.toFixed(2)}</strong></div>
+                    <div class="d-flex justify-content-between text-muted small mt-1"><span>当前余额</span><span>¥${balance.toFixed(2)}</span></div>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">选择支付方式</label>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="radio" name="membershipPayMethod" id="membershipPayBalance" value="balance" ${canUseBalance ? 'checked' : 'disabled'}>
+                    <label class="form-check-label" for="membershipPayBalance">余额支付${canUseBalance ? '' : '（余额不足）'}</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="membershipPayMethod" id="membershipPayOnline" value="online" ${canUseBalance ? '' : 'checked'} ${membershipPaymentConfigs.length === 0 ? 'disabled' : ''}>
+                    <label class="form-check-label" for="membershipPayOnline">在线支付（后台配置的支付接口）</label>
+                </div>
+            </div>
+            <div id="membershipOnlinePaymentBox">${paymentOptionsHtml}</div>
         `;
+        const updateOnlineBox = () => {
+            const selected = document.querySelector('input[name="membershipPayMethod"]:checked')?.value;
+            const box = document.getElementById('membershipOnlinePaymentBox');
+            if (box) box.style.display = selected === 'online' ? 'block' : 'none';
+            renderMembershipPayTypeOptions();
+        };
+        document.querySelectorAll('input[name="membershipPayMethod"]').forEach(input => input.addEventListener('change', updateOnlineBox));
+        document.getElementById('confirmModalBtn').textContent = cost === 0 ? '确认开通' : '确认支付';
         document.getElementById('confirmModalBtn').onclick = () => {
+            const payMethod = document.querySelector('input[name="membershipPayMethod"]:checked')?.value || 'balance';
             modal.hide();
-            resolve(true);
+            resolve(payMethod);
         };
         document.getElementById('confirmModalCancelBtn').onclick = () => {
             modal.hide();
             resolve(false);
         };
         modal.show();
+        updateOnlineBox();
     });
 
     if (!confirmed) return;
-    
+
+    if (confirmed === 'online') {
+        if (!selectedMembershipPaymentConfig) {
+            Toast.warning('请选择支付接口');
+            return;
+        }
+        const payType = document.getElementById('membershipPayType')?.value;
+        const result = await API.createMembershipPaymentOrder(selectedMembershipPaymentConfig.id, levelName, payType);
+        if (result.success) {
+            window.open(result.payment_url, '_blank');
+            Toast.success('请在新窗口完成支付，支付成功后会员将自动升级');
+        } else {
+            Toast.error(result.message);
+        }
+        return;
+    }
+
     const result = await API.request('membership.php?action=upgrade', 'POST', { 
         level: levelName,
-        confirmed: 1 
+        confirmed: 1,
+        pay_method: 'balance'
     });
     
     if (result.success) {

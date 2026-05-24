@@ -129,13 +129,13 @@ class YiPay {
         return md5(implode('&', $signParts) . $this->config['key']);
     }
 
-    public function createOrder($orderNo, $amount, $type, $notifyUrl, $returnUrl) {
+    public function createOrder($orderNo, $amount, $type, $notifyUrl, $returnUrl, $name = '账户充值') {
         $params = [
             'pid' => $this->config['partner_id'],
             'out_trade_no' => $orderNo,
             'notify_url' => $notifyUrl,
             'return_url' => $returnUrl,
-            'name' => '账户充值',
+            'name' => $name,
             'money' => number_format((float)$amount, 2, '.', '')
         ];
 
@@ -263,6 +263,70 @@ switch ($action) {
             'submit_mode' => $paymentData['submit_mode']
         ]);
 
+    case 'create_membership_order':
+        $userId = requireAuth();
+        $configId = $_POST['payment_config_id'] ?? '';
+        $targetLevel = trim((string)($_POST['level'] ?? ''));
+        $payType = sanitizeString($_POST['pay_type'] ?? 'alipay');
+        $user = $db->getUserById($userId);
+        $levels = $db->getMembershipLevels();
+
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        if (!isset($levels[$targetLevel]) || empty($levels[$targetLevel]['enabled']) || empty($levels[$targetLevel]['can_upgrade'])) {
+            jsonResponse(['success' => false, 'message' => '无效的会员等级'], 400);
+        }
+
+        $currentLevel = $user['membership_level'] ?? 'Free';
+        $currentPriority = intval($levels[$currentLevel]['priority'] ?? 0);
+        $targetPriority = intval($levels[$targetLevel]['priority'] ?? 0);
+        if ($targetPriority <= $currentPriority) {
+            jsonResponse(['success' => false, 'message' => '只能升级到更高级别'], 400);
+        }
+
+        $amount = floatval($levels[$targetLevel]['cost'] ?? 0);
+        if ($amount <= 0) {
+            $db->updateUser($userId, ['membership_level' => $targetLevel]);
+            jsonResponse(['success' => true, 'message' => '会员已开通', 'paid_directly' => true]);
+        }
+
+        $config = $db->getPaymentConfig($configId);
+        if (!$config || empty($config['enabled'])) {
+            jsonResponse(['success' => false, 'message' => '支付方式不可用'], 400);
+        }
+
+        $allowedMethods = $config['pay_methods'] ?? ['alipay', 'wxpay'];
+        if (!in_array($payType, $allowedMethods, true)) {
+            jsonResponse(['success' => false, 'message' => '该接口不支持当前支付类型'], 400);
+        }
+
+        $fee = $amount * floatval($config['fee_rate'] ?? 0);
+        $actualAmount = $amount + $fee;
+        $order = $db->createPaymentOrder([
+            'user_id' => $userId,
+            'payment_config_id' => $configId,
+            'pay_type' => $payType,
+            'amount' => $amount,
+            'actual_amount' => $actualAmount,
+            'fee' => $fee,
+            'type' => 'membership_upgrade',
+            'target_level' => $targetLevel
+        ]);
+
+        $yipay = new YiPay($config);
+        $notifyUrl = baseUrl() . '/api/payment.php?action=notify';
+        $returnUrl = baseUrl() . '/#page=dashboard&tab=membership';
+        $paymentData = $yipay->createOrder($order['trade_no'], $actualAmount, $payType, $notifyUrl, $returnUrl, '开通' . $targetLevel . '会员');
+
+        jsonResponse([
+            'success' => true,
+            'order' => $order,
+            'payment_url' => $paymentData['url'],
+            'payment_params' => $paymentData['params'],
+            'submit_mode' => $paymentData['submit_mode']
+        ]);
+
     case 'notify':
         $data = $_GET;
         if (empty($data['out_trade_no']) && !empty($_POST['out_trade_no'])) {
@@ -301,9 +365,22 @@ switch ($action) {
 
         $user = $db->getUserById($order['user_id']);
         if ($user) {
-            $db->updateUser($order['user_id'], [
-                'balance' => $user['balance'] + $order['amount']
-            ]);
+            if (($order['type'] ?? 'recharge') === 'membership_upgrade') {
+                $targetLevel = $order['target_level'] ?? '';
+                $levels = $db->getMembershipLevels();
+                if ($targetLevel !== '' && isset($levels[$targetLevel])) {
+                    $currentLevel = $user['membership_level'] ?? 'Free';
+                    $currentPriority = intval($levels[$currentLevel]['priority'] ?? 0);
+                    $targetPriority = intval($levels[$targetLevel]['priority'] ?? 0);
+                    if ($targetPriority > $currentPriority) {
+                        $db->updateUser($order['user_id'], ['membership_level' => $targetLevel]);
+                    }
+                }
+            } else {
+                $db->updateUser($order['user_id'], [
+                    'balance' => $user['balance'] + $order['amount']
+                ]);
+            }
         }
 
         echo 'success';

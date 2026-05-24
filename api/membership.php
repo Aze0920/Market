@@ -78,26 +78,24 @@ switch ($action) {
         }
 
         $levelInfo = $levels[$targetLevel];
-        $cost = $levelInfo['cost'] ?? 0;
+        $cost = floatval($levelInfo['cost'] ?? 0);
+        $payMethod = $_POST['pay_method'] ?? 'balance';
 
-        // 检查余额（如果有费用）
-        if ($cost > 0 && $user['balance'] < $cost) {
-            jsonResponse(['success' => false, 'message' => '余额不足，请先充值']);
+        if ($payMethod !== 'balance') {
+            jsonResponse(['success' => false, 'message' => '请使用支付接口创建在线支付订单'], 400);
         }
 
-        // 扣除费用（如果有）
+        if ($cost > 0 && $user['balance'] < $cost) {
+            jsonResponse(['success' => false, 'message' => '余额不足，请选择在线支付或先充值']);
+        }
+
+        $updates = ['membership_level' => $targetLevel];
+        $newBalance = $user['balance'];
         if ($cost > 0) {
             $newBalance = $user['balance'] - $cost;
-            $db->updateUser($userId, [
-                'balance' => $newBalance,
-                'membership_level' => $targetLevel
-            ]);
-        } else {
-            $newBalance = $user['balance'];
-            $db->updateUser($userId, [
-                'membership_level' => $targetLevel
-            ]);
+            $updates['balance'] = $newBalance;
         }
+        $db->updateUser($userId, $updates);
 
         jsonResponse([
             'success' => true,
