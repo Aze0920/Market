@@ -730,16 +730,6 @@ async function loadMembershipTab(area) {
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
 
-        <h6 class="fw-bold mb-3"><i class="bi bi-award me-2"></i>当前会员权益</h6>
-        <div class="privileges-grid mb-4">
-            ${privileges.map(p => `
-                <div class="privilege-item">
-                    <i class="bi ${p.icon}"></i>
-                    <span>${Security.escapeHtml(p.text)}</span>
-                </div>
-            `).join('')}
-        </div>
-
         <h6 class="fw-bold mb-3"><i class="bi bi-arrow-up-circle me-2"></i>会员等级</h6>
         <p class="text-muted small mb-3">会员等级由后台动态配置；启用几个就显示几个，一排最多显示 3 个。</p>
         <div class="membership-cards">
@@ -775,8 +765,9 @@ async function loadMembershipTab(area) {
                             </ul>
                         </div>
                         <div class="card-footer">
-                            ${isCurrentLevel ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-check-circle"></i> 当前等级</span>' :
-                                (isUpgraded || level.can_upgrade === false) ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 已升级</span>' :
+                            ${isCurrentLevel ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-check-circle"></i> 当前会员</span>' :
+                                isUpgraded ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 当前会员比此会员等级高，禁止升级</span>' :
+                                level.can_upgrade === false ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 暂不支持开通</span>' :
                                     `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>
                                         <i class="bi bi-rocket-takeoff"></i> ${cost === 0 ? '免费开通' : '立即开通'}
                                     </button>`}
