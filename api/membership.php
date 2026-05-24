@@ -65,17 +65,10 @@ switch ($action) {
         $currentOrder = $levelOrder[$currentLevel] ?? 0;
         $targetOrder = $levelOrder[$targetLevel] ?? 0;
 
-        // 检查是否为升级
         if ($targetOrder <= $currentOrder) {
             jsonResponse(['success' => false, 'message' => '只能升级到更高级别']);
         }
 
-        // 检查是否已升级过
-        if ($currentLevel !== 'Free') {
-            jsonResponse(['success' => false, 'message' => '您已经升级过会员，无法再次升级']);
-        }
-
-        // 第一次确认，显示警告
         if (!$confirmed) {
             jsonResponse([
                 'success' => false,
