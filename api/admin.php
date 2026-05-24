@@ -315,6 +315,84 @@ function adminCopyDirectory($source, $target, $rootSource = null) {
     }
 }
 
+function adminCopyFileFromRepo($config, $relative) {
+    $relative = str_replace('\\', '/', trim($relative, '/'));
+    $preserve = ['.git', 'config/database.php', 'data', 'logs', 'data/install.lock', 'data/update_version.json'];
+    if ($relative === '' || str_contains($relative, '..') || adminPathIsPreserved($relative, $preserve)) {
+        return false;
+    }
+    $src = $config['work_dir'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+    $dst = $config['site_dir'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+    if (!is_file($src)) {
+        return false;
+    }
+    $dir = dirname($dst);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    return copy($src, $dst);
+}
+
+function adminDeleteSiteFile($config, $relative) {
+    $relative = str_replace('\\', '/', trim($relative, '/'));
+    $preserve = ['.git', 'config/database.php', 'data', 'logs', 'data/install.lock', 'data/update_version.json'];
+    if ($relative === '' || str_contains($relative, '..') || adminPathIsPreserved($relative, $preserve)) {
+        return false;
+    }
+    $path = $config['site_dir'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+    if (is_file($path)) {
+        return unlink($path);
+    }
+    return false;
+}
+
+function adminChangedFiles($config, $fromCommit, $toCommit) {
+    if ($fromCommit === '') {
+        $cmd = adminGitCommand('diff-tree --no-commit-id --name-status -r ' . escapeshellarg($toCommit), $config);
+    } else {
+        $cmd = adminGitCommand('diff --name-status ' . escapeshellarg($fromCommit) . ' ' . escapeshellarg($toCommit), $config);
+    }
+    $res = adminRunCommand($cmd, $config['work_dir']);
+    if ($res['code'] !== 0) {
+        return ['success' => false, 'output' => $res['output'], 'files' => []];
+    }
+    $files = [];
+    foreach (preg_split('/\r?\n/', trim($res['output'])) as $line) {
+        if ($line === '') continue;
+        $parts = preg_split('/\s+/', $line);
+        $status = $parts[0] ?? '';
+        $path = end($parts) ?: '';
+        if ($path !== '') {
+            $files[] = ['status' => $status, 'path' => str_replace('\\', '/', $path)];
+        }
+    }
+    return ['success' => true, 'output' => $res['output'], 'files' => $files];
+}
+
+function adminApplyChangedFiles($config, $files) {
+    $changed = [];
+    $skipped = [];
+    foreach ($files as $file) {
+        $status = strtoupper($file['status'] ?? '');
+        $path = $file['path'] ?? '';
+        if ($path === '') continue;
+        if (str_starts_with($status, 'D')) {
+            if (adminDeleteSiteFile($config, $path)) {
+                $changed[] = '删除 ' . $path;
+            } else {
+                $skipped[] = '跳过删除 ' . $path;
+            }
+        } else {
+            if (adminCopyFileFromRepo($config, $path)) {
+                $changed[] = '更新 ' . $path;
+            } else {
+                $skipped[] = '跳过 ' . $path;
+            }
+        }
+    }
+    return ['changed' => $changed, 'skipped' => $skipped];
+}
+
 function adminRequireDatabaseConfig($config) {
     $databaseConfig = $config['site_dir'] . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'database.php';
     if (!is_file($databaseConfig)) {
@@ -353,13 +431,28 @@ function adminApplyUpdate() {
     if ($reset['code'] !== 0) {
         adminJsonResponse(['success' => false, 'message' => '更新工作目录失败', 'output' => $reset['output']], 500);
     }
-    adminCopyDirectory($config['work_dir'], $config['site_dir']);
-    adminEnsureInstallLock($config);
-    $updatedCommit = adminRunCommand(adminGitCommand('rev-parse HEAD', $config), $config['work_dir']);
-    if ($updatedCommit['code'] === 0 && trim($updatedCommit['output']) !== '') {
-        adminSaveUpdaterVersion($config, trim($updatedCommit['output']));
+    $targetCommit = adminRunCommand(adminGitCommand('rev-parse origin/' . escapeshellarg($config['branch']), $config), $config['work_dir']);
+    if ($targetCommit['code'] !== 0 || trim($targetCommit['output']) === '') {
+        adminJsonResponse(['success' => false, 'message' => '读取远程版本失败', 'output' => $targetCommit['output']], 500);
     }
-    return ['success' => true, 'message' => '更新完成', 'status' => adminUpdateStatus(), 'output' => $fetch['output'] . "\n" . $reset['output']];
+    $targetCommitHash = trim($targetCommit['output']);
+    $version = adminUpdaterVersion($config);
+    $currentCommit = trim($version['commit'] ?? '');
+    $diff = adminChangedFiles($config, $currentCommit, $targetCommitHash);
+    if (!$diff['success']) {
+        adminJsonResponse(['success' => false, 'message' => '计算变更文件失败', 'output' => $diff['output']], 500);
+    }
+    $applied = adminApplyChangedFiles($config, $diff['files']);
+    adminEnsureInstallLock($config);
+    adminSaveUpdaterVersion($config, $targetCommitHash);
+    $output = implode("\n", array_filter([
+        $fetch['output'],
+        $reset['output'],
+        '变更文件：' . count($diff['files']) . ' 个',
+        implode("\n", $applied['changed']),
+        implode("\n", $applied['skipped']),
+    ]));
+    return ['success' => true, 'message' => '更新完成', 'status' => adminUpdateStatus(), 'output' => $output];
 }
 
 adminRequireAdmin();
