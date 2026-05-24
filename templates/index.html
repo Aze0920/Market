@@ -8,7 +8,7 @@
     <title>KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=202605241616" rel="stylesheet">
+    <link href="assets/css/style.css?v=202605241620" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -578,118 +578,13 @@
 
     <!-- ==================== 脚本 ==================== -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=202605241616"></script>
-    <script src="assets/js/app.js?v=202605241616"></script>
-    <script src="assets/js/product.js?v=202605241616"></script>
-    <script src="assets/js/message.js?v=202605241616"></script>
-    <script src="assets/js/auth.js?v=202605241616"></script>
+    <script src="assets/js/api.js?v=202605241620"></script>
+    <script src="assets/js/app.js?v=202605241620"></script>
+    <script src="assets/js/product.js?v=202605241620"></script>
+    <script src="assets/js/message.js?v=202605241620"></script>
+    <script src="assets/js/auth.js?v=202605241620"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = '202605241616';
-
-        function forceCleanMembershipLegacyBlocks(area) {
-            if (!area) return;
-            area.querySelectorAll('.membership-current-card, .privileges-grid, .privilege-item').forEach(el => {
-                const section = el.closest('.membership-current-card, .privileges-grid') || el;
-                section.remove();
-            });
-            Array.from(area.querySelectorAll('h6, p, div')).forEach(el => {
-                const text = (el.textContent || '').trim();
-                if (text === '会员权益' || text === '升级会员' || text.includes('会员等级由后台动态配置')) {
-                    el.remove();
-                }
-            });
-        }
-
-        async function renderMembershipTabClean(area) {
-            if (!area) return;
-            const [levelsResult, myLevelResult] = await Promise.all([
-                API.getMembershipLevels(),
-                API.getMyMembership()
-            ]);
-
-            if (!levelsResult.success) {
-                area.innerHTML = '<div class="empty-state"><p>加载失败</p></div>';
-                return;
-            }
-
-            const levels = levelsResult.levels || {};
-            const levelList = Object.values(levels)
-                .filter(level => level.enabled !== false)
-                .sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
-            const myLevelName = myLevelResult.level || 'Free';
-            const myLevel = myLevelResult.level_info || levels[myLevelName] || {};
-            const currentPriority = Number(myLevel.priority || 0);
-
-            area.innerHTML = `
-                <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
-                <div class="membership-cards">
-                    ${levelList.map(level => {
-                        const levelName = level.name || '';
-                        const levelPriority = Number(level.priority || 0);
-                        const isCurrentLevel = myLevelName === levelName;
-                        const isLowerLevel = !isCurrentLevel && myLevelName !== 'Free' && levelPriority < currentPriority;
-                        const cost = Number(level.cost || 0);
-                        const canAfford = !App.currentUser || Number(App.currentUser.balance || 0) >= cost;
-                        const levelGradient = level.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6)';
-                        const levelIcon = level.icon || 'bi-gem';
-                        const levelPrivileges = [
-                            `单商品最大 ${level.max_accounts_per_product || 0} 账号`,
-                            Number(level.max_products || 0) >= 9999 ? '无限商品' : `${level.max_products || 0} 个商品`,
-                            `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
-                            Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
-                        ];
-                        const footerHtml = isCurrentLevel
-                            ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-check-circle"></i> 当前会员</span>'
-                            : isLowerLevel
-                                ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 当前会员比此会员等级高，禁止升级</span>'
-                                : level.can_upgrade === false
-                                    ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 暂不支持开通</span>'
-                                    : `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>
-                                        <i class="bi bi-rocket-takeoff"></i> ${cost === 0 ? '免费开通' : '立即开通'}
-                                    </button>`;
-
-                        return `
-                            <div class="membership-card ${isCurrentLevel ? 'current' : ''}" style="--card-gradient: ${Security.escapeAttr(levelGradient)};">
-                                <div class="card-header">
-                                    <i class="bi ${Security.escapeAttr(levelIcon)}"></i>
-                                    <h5>${Security.escapeHtml(levelName)}</h5>
-                                    ${isCurrentLevel ? '<span class="current-badge">当前会员</span>' : ''}
-                                </div>
-                                <div class="card-body">
-                                    <div class="text-center mb-3">
-                                        ${cost === 0 ? '<span class="badge bg-success-light text-success fs-5"><i class="bi bi-gift"></i> 免费</span>' : `<span class="badge bg-primary-light text-primary fs-5"><i class="bi bi-cash"></i> ¥${cost.toFixed(2)}</span>`}
-                                    </div>
-                                    <ul class="privilege-list">
-                                        ${levelPrivileges.map(p => `<li><i class="bi bi-check"></i> ${Security.escapeHtml(p)}</li>`).join('')}
-                                    </ul>
-                                </div>
-                                <div class="card-footer">${footerHtml}</div>
-                            </div>
-                        `;
-                    }).join('') || '<div class="text-muted py-4">暂无会员等级</div>'}
-                </div>
-            `;
-        }
-
-        function installMembershipRendererOverride() {
-            const originalRenderDashboardTab = window.renderDashboardTab;
-            if (typeof originalRenderDashboardTab !== 'function') return;
-            window.renderDashboardTab = function(tabName) {
-                if (tabName === 'membership') {
-                    App.currentTab = 'membership';
-                    persistFrontendState('dashboard', 'membership');
-                    document.querySelectorAll('.sidebar-nav-item').forEach(i => i.classList.remove('active'));
-                    document.querySelector('.sidebar-nav-item[data-tab="membership"]')?.classList.add('active');
-                    const contentArea = document.getElementById('dashboardContent');
-                    renderMembershipTabClean(contentArea);
-                    return;
-                }
-                originalRenderDashboardTab(tabName);
-                if (tabName === 'messages') {
-                    App.updateUnreadBadge();
-                }
-            };
-        }
+        window.KEYNEST_ASSET_VERSION = '202605241620';
 
         // 仪表板侧边栏点击事件
         document.addEventListener('DOMContentLoaded', function() {
@@ -704,7 +599,14 @@
             });
 
             // 仪表板页面元素更新
-            installMembershipRendererOverride();
+            const originalRenderDashboardTab = renderDashboardTab;
+            renderDashboardTab = function(tabName) {
+                originalRenderDashboardTab(tabName);
+                if (tabName === 'messages') {
+                    // 刷新消息计数
+                    App.updateUnreadBadge();
+                }
+            };
 
             // 初始化
             initApp();
