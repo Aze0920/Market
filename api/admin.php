@@ -282,7 +282,7 @@ function adminDeleteDirectory($dir) {
 
 function adminCopyDirectory($source, $target, $rootSource = null) {
     $rootSource = $rootSource ?: $source;
-    $preserve = ['.git', 'config/database.php', 'data', 'logs'];
+    $preserve = ['.git', 'config/database.php', 'data', 'logs', 'data/install.lock', 'data/update_version.json'];
     if (!is_dir($target)) {
         mkdir($target, 0755, true);
     }
@@ -305,6 +305,19 @@ function adminCopyDirectory($source, $target, $rootSource = null) {
     }
 }
 
+function adminEnsureInstallLock($config) {
+    $databaseConfig = $config['site_dir'] . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'database.php';
+    $lockFile = $config['site_dir'] . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'install.lock';
+    if (!is_file($databaseConfig) || is_file($lockFile)) {
+        return;
+    }
+    $lockDir = dirname($lockFile);
+    if (!is_dir($lockDir)) {
+        mkdir($lockDir, 0755, true);
+    }
+    file_put_contents($lockFile, 'installed_at=' . date('c') . PHP_EOL . 'created_by=updater' . PHP_EOL, LOCK_EX);
+}
+
 function adminApplyUpdate() {
     $config = adminUpdaterConfig();
     if (empty($config['git_bin'])) {
@@ -320,6 +333,7 @@ function adminApplyUpdate() {
         adminJsonResponse(['success' => false, 'message' => '更新工作目录失败', 'output' => $reset['output']], 500);
     }
     adminCopyDirectory($config['work_dir'], $config['site_dir']);
+    adminEnsureInstallLock($config);
     $updatedCommit = adminRunCommand(adminGitCommand('rev-parse HEAD', $config), $config['work_dir']);
     if ($updatedCommit['code'] === 0 && trim($updatedCommit['output']) !== '') {
         adminSaveUpdaterVersion($config, trim($updatedCommit['output']));

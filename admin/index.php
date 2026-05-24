@@ -416,11 +416,6 @@ function renderUpdates() {
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title"><h5>GitHub 自动更新</h5><button class="btn btn-sm btn-primary" onclick="checkUpdateStatus()"><i class="bi bi-arrow-clockwise me-1"></i>检测更新</button></div>
-            <div class="config-help mb-3">
-                更新源：<code>https://github.com/Aze0920/Market</code><br>
-                GitHub 工作目录：<code>C:\\Users\\Administrator\\Desktop\\github\\Market</code><br>
-                网站目录保持为当前目录，更新时会保留 <code>config/database.php</code>、<code>data/</code>、<code>logs/</code>。
-            </div>
             <div id="updateStatusBox" class="mb-3">正在检测...</div>
             <div class="d-flex gap-2">
                 <button id="runUpdateBtn" class="btn btn-success" onclick="runSystemUpdate()"><i class="bi bi-cloud-arrow-down me-1"></i>立即更新</button>
@@ -434,33 +429,13 @@ function updateStatusHtml(status) {
     const hasUpdate = !!status.has_update;
     const siteVersionText = status.local_commit ? escapeHtml((status.local_commit || '').slice(0, 12)) : '未记录';
     const siteUpdatedText = status.site_updated_at ? `<div class="small text-muted mt-1">更新时间：${escapeHtml(status.site_updated_at)}</div>` : '<div class="small text-muted mt-1">首次使用后台更新后会自动记录</div>';
-    const gitDiag = status.git_diagnostics || {};
-    const gitCandidates = Array.isArray(gitDiag.candidates) ? gitDiag.candidates : [];
-    const diagHtml = `
-        <div class="mt-3 border rounded-4 p-3 bg-light">
-            <div class="fw-bold mb-2">Git 诊断</div>
-            <div class="small text-muted mb-2">实际使用：<code>${escapeHtml(status.git_bin || '未找到')}</code></div>
-            <div class="small text-muted mb-2">proc_open：<code>${gitDiag.proc_open_available ? '可用' : '不可用'}</code></div>
-            <div class="small text-muted mb-2">disable_functions：<code>${escapeHtml(gitDiag.disabled_functions || '-')}</code></div>
-            <div class="small text-muted mb-2">PATH：<code>${escapeHtml(gitDiag.path || '-')}</code></div>
-            <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-                <thead><tr><th>检测路径</th><th>文件存在</th><th>返回码</th><th>输出</th></tr></thead>
-                <tbody>${gitCandidates.map(item => `
-                    <tr>
-                        <td><code>${escapeHtml(item.path || '')}</code></td>
-                        <td>${item.exists === null ? 'PATH' : (item.exists ? '是' : '否')}</td>
-                        <td>${item.code === null || item.code === undefined ? '-' : escapeHtml(String(item.code))}</td>
-                        <td><code>${escapeHtml(item.output || '-')}</code></td>
-                    </tr>`).join('') || '<tr><td colspan="4" class="text-muted">暂无诊断</td></tr>'}</tbody>
-            </table></div>
-        </div>`;
     return `
         <div class="row g-3">
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">远程提交</div><code>${escapeHtml((status.remote_commit || '').slice(0, 12) || '-')}</code></div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">当前网站版本</div><code>${siteVersionText}</code>${siteUpdatedText}</div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">Git 状态</div>${status.git_available ? '<span class="badge-soft success">可用</span>' : '<span class="badge-soft danger">不可用</span>'}</div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">更新状态</div>${hasUpdate ? '<span class="badge-soft warning">发现更新</span>' : '<span class="badge-soft success">已是最新</span>'}</div></div>
-        </div>${diagHtml}`;
+        </div>`;
 }
 async function checkUpdateStatus() {
     const box = document.getElementById('updateStatusBox');
@@ -472,8 +447,42 @@ async function checkUpdateStatus() {
     }
     if (box) box.innerHTML = updateStatusHtml(res.status || {});
 }
+async function confirmSystemUpdate() {
+    return new Promise(resolve => {
+        const existing = document.getElementById('updateConfirmOverlay');
+        if (existing) existing.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'updateConfirmOverlay';
+        overlay.className = 'modal fade show';
+        overlay.style.display = 'block';
+        overlay.style.background = 'rgba(15, 23, 42, .45)';
+        overlay.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg rounded-4">
+                    <div class="modal-body p-4">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width:42px;height:42px;flex:0 0 42px;"><i class="bi bi-cloud-arrow-down-fill"></i></div>
+                            <div class="flex-grow-1">
+                                <h5 class="fw-bold mb-2">确认立即更新？</h5>
+                                <p class="text-muted mb-0">将从 GitHub 拉取最新代码并覆盖当前网站代码，系统会保留数据库配置、数据目录和日志。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 pt-0 px-4 pb-4">
+                        <button type="button" class="btn btn-outline-secondary" data-action="cancel">取消</button>
+                        <button type="button" class="btn btn-primary" data-action="ok">确认更新</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const close = value => { overlay.remove(); resolve(value); };
+        overlay.querySelector('[data-action="cancel"]')?.addEventListener('click', () => close(false));
+        overlay.querySelector('[data-action="ok"]')?.addEventListener('click', () => close(true));
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+    });
+}
 async function runSystemUpdate() {
-    if (!confirm('确定从 GitHub 拉取最新代码并更新当前网站吗？更新会覆盖代码文件，但会保留 config/database.php、data/、logs/。')) return;
+    if (!(await confirmSystemUpdate())) return;
     const btn = document.getElementById('runUpdateBtn');
     const out = document.getElementById('updateOutput');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>更新中...'; }
