@@ -717,14 +717,6 @@ async function loadMembershipTab(area) {
     const myLevel = myLevelResult.level_info || levels[myLevelName] || levelList[0] || {};
     const currentPriority = Number(myLevel.priority || 0);
 
-    const privileges = [
-        { icon: 'bi-person-plus', text: `单商品最大 ${myLevel.max_accounts_per_product || 0} 个账号` },
-        { icon: 'bi-box-seam', text: `可发布 ${(myLevel.max_products || 0) >= 9999 ? '无限' : (myLevel.max_products || 0)} 个商品` },
-        { icon: 'bi-graph-up', text: `优先展示权重 ${myLevel.priority || 0}` },
-        { icon: 'bi-percent', text: `每单手续费 ${(Number(myLevel.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%` },
-        ...(Number(myLevel.publish_fee_per_account || 0) > 0 ? [{ icon: 'bi-cash-stack', text: `发布费 ¥${myLevel.publish_fee_per_account}/账号` }] : [{ icon: 'bi-check-circle', text: '发布商品免费' }])
-    ];
-
     const upgradeLevels = levelList;
 
     area.innerHTML = `
