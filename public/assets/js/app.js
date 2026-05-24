@@ -1509,11 +1509,11 @@ async function upgradeMembership(levelName) {
                 <label class="form-label fw-bold">选择支付方式</label>
                 <div class="form-check mb-2">
                     <input class="form-check-input" type="radio" name="membershipPayMethod" id="membershipPayBalance" value="balance" ${canUseBalance ? 'checked' : 'disabled'}>
-                    <label class="form-check-label" for="membershipPayBalance">余额支付${canUseBalance ? '' : '（余额不足）'}</label>
+                    <label class="form-check-label" for="membershipPayBalance">余额支付</label>
                 </div>
                 <div class="form-check">
                     <input class="form-check-input" type="radio" name="membershipPayMethod" id="membershipPayOnline" value="online" ${canUseBalance ? '' : 'checked'} ${membershipPaymentConfigs.length === 0 ? 'disabled' : ''}>
-                    <label class="form-check-label" for="membershipPayOnline">在线支付（后台配置的支付接口）</label>
+                    <label class="form-check-label" for="membershipPayOnline">在线支付</label>
                 </div>
             </div>
             <div id="membershipOnlinePaymentBox">${paymentOptionsHtml}</div>

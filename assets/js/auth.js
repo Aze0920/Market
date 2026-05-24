@@ -162,8 +162,57 @@ function openRegisterModal() {
     document.getElementById('regEmail').value = '';
     document.getElementById('regPassword').value = '';
     document.getElementById('regPasswordConfirm').value = '';
+    const codeInput = document.getElementById('regEmailCode');
+    if (codeInput) codeInput.value = '';
+    refreshRegisterEmailVerifyState();
     const modal = new bootstrap.Modal(document.getElementById('registerModal'));
     modal.show();
+}
+
+async function refreshRegisterEmailVerifyState() {
+    const group = document.getElementById('regEmailCodeGroup');
+    if (!group) return;
+    const result = await API.getSystemConfig();
+    group.style.display = result.success && result.config && result.config.register_email_verify_enabled ? '' : 'none';
+}
+
+let registerEmailCodeCountdown = 0;
+let registerEmailCodeTimer = null;
+async function sendRegisterEmailCode() {
+    const email = document.getElementById('regEmail').value.trim();
+    if (!Security.validateEmail(email)) {
+        Toast.warning('请输入有效的邮箱地址');
+        return;
+    }
+    const btn = document.getElementById('sendRegEmailCodeBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '发送中...';
+    }
+    const result = await API.sendEmailCode(email);
+    if (!result.success) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '发送验证码';
+        }
+        Toast.error(result.message || '验证码发送失败');
+        return;
+    }
+    Toast.success(result.message || '验证码已发送');
+    registerEmailCodeCountdown = 60;
+    clearInterval(registerEmailCodeTimer);
+    registerEmailCodeTimer = setInterval(() => {
+        registerEmailCodeCountdown -= 1;
+        if (!btn) return;
+        if (registerEmailCodeCountdown <= 0) {
+            clearInterval(registerEmailCodeTimer);
+            btn.disabled = false;
+            btn.textContent = '发送验证码';
+        } else {
+            btn.disabled = true;
+            btn.textContent = registerEmailCodeCountdown + '秒后重发';
+        }
+    }, 1000);
 }
 
 function switchToRegister() {
@@ -222,6 +271,7 @@ async function handleRegister() {
     const email = document.getElementById('regEmail').value.trim();
     const password = document.getElementById('regPassword').value.trim();
     const passwordConfirm = document.getElementById('regPasswordConfirm').value.trim();
+    const emailCode = document.getElementById('regEmailCode')?.value.trim() || '';
 
     // 客户端验证
     if (!username || !email || !password) {
@@ -262,7 +312,7 @@ async function handleRegister() {
     submitBtn.textContent = '注册中...';
 
     try {
-        const result = await API.register(username, email, password, passwordConfirm);
+        const result = await API.register(username, email, password, passwordConfirm, emailCode);
 
         if (!result.success) {
             Toast.error(result.message);

@@ -72,10 +72,14 @@ const API = {
         return this.request('auth.php?action=login', 'POST', { username, password });
     },
 
-    register(username, email, password, password_confirm) {
+    register(username, email, password, password_confirm, email_code = '') {
         return this.request('auth.php?action=register', 'POST', {
-            username, email, password, password_confirm
+            username, email, password, password_confirm, email_code
         });
+    },
+
+    sendEmailCode(email) {
+        return this.request('auth.php?action=send_email_code', 'POST', { email });
     },
 
     logout() {

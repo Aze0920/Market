@@ -390,6 +390,51 @@ switch ($action) {
         usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         jsonResponse(['success' => true, 'orders' => $orders]);
 
+    case 'update_order_status':
+        requireAdmin();
+        $id = trim((string)($_POST['id'] ?? ''));
+        $status = trim((string)($_POST['status'] ?? ''));
+        $allowed = ['pending', 'paid', 'failed', 'cancelled'];
+        if ($id === '' || !in_array($status, $allowed, true)) {
+            jsonResponse(['success' => false, 'message' => '订单ID或状态无效'], 400);
+        }
+        $order = $db->getPaymentOrder($id);
+        if (!$order) {
+            jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
+        }
+        $update = ['status' => $status];
+        if ($status === 'paid' && empty($order['paid_at'])) {
+            $update['paid_at'] = time();
+        }
+        if ($status !== 'paid') {
+            $update['paid_at'] = null;
+        }
+        if (!$db->updatePaymentOrder($id, $update)) {
+            jsonResponse(['success' => false, 'message' => '状态更新失败'], 400);
+        }
+        jsonResponse(['success' => true, 'message' => '订单状态已更新']);
+
+    case 'delete_order':
+        requireAdmin();
+        $id = trim((string)($_POST['id'] ?? ''));
+        if ($id === '') {
+            jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
+        }
+        if (!$db->deletePaymentOrder($id)) {
+            jsonResponse(['success' => false, 'message' => '订单不存在或删除失败'], 404);
+        }
+        jsonResponse(['success' => true, 'message' => '订单已删除']);
+
+    case 'delete_unpaid_orders':
+        requireAdmin();
+        $count = $db->deletePaymentOrdersByStatus(['pending', 'failed', 'cancelled']);
+        jsonResponse(['success' => true, 'message' => '已删除 ' . $count . ' 条未支付订单', 'count' => $count]);
+
+    case 'delete_all_orders':
+        requireAdmin();
+        $count = $db->deleteAllPaymentOrders();
+        jsonResponse(['success' => true, 'message' => '已删除全部订单，共 ' . $count . ' 条', 'count' => $count]);
+
     case 'get_my_orders':
         $userId = requireAuth();
         $orders = $db->getPaymentOrders($userId);

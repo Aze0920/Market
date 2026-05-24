@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/Mailer.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -89,6 +90,21 @@ function adminListLogDates($type) {
     }
     rsort($dates);
     return array_values(array_unique($dates));
+}
+
+function adminClearAllLogs() {
+    $dir = dirname(__DIR__) . '/logs';
+    if (!is_dir($dir)) {
+        return 0;
+    }
+    $count = 0;
+    foreach (glob($dir . '/*.log') ?: [] as $file) {
+        if (is_file($file) && is_writable($file)) {
+            file_put_contents($file, '');
+            $count++;
+        }
+    }
+    return $count;
 }
 
 function adminMembershipPayload() {
@@ -473,6 +489,14 @@ function adminApplyUpdate() {
 
 adminRequireAdmin();
 
+function adminTestEmailPayload() {
+    $email = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
+    if (!$email) {
+        adminJsonResponse(['success' => false, 'message' => '请输入有效的测试收件邮箱'], 400);
+    }
+    return $email;
+}
+
 switch ($action) {
     case 'users':
         $users = array_map('adminSafeUser', $db->getTable('users'));
@@ -548,6 +572,10 @@ switch ($action) {
             'content' => adminReadLastLines($file, $lines)
         ]);
 
+    case 'clear_logs':
+        $count = adminClearAllLogs();
+        adminJsonResponse(['success' => true, 'message' => '已清空全部日志文件，共 ' . $count . ' 个', 'count' => $count]);
+
     case 'membership_levels':
         adminJsonResponse(['success' => true, 'levels' => $db->getMembershipLevels()]);
 
@@ -570,6 +598,18 @@ switch ($action) {
 
     case 'run_update':
         adminJsonResponse(adminApplyUpdate());
+
+    case 'test_email':
+        adminRequireAdmin();
+        $to = adminTestEmailPayload();
+        $config = $db->getSystemConfig();
+        $subject = 'KeyNest 邮箱发送测试';
+        $html = '<div style="font-family:Arial,sans-serif;line-height:1.8"><h2>KeyNest 邮箱测试</h2><p>如果你收到这封邮件，说明邮箱发送配置已经成功。</p><p>发送时间：' . date('Y-m-d H:i:s') . '</p></div>';
+        $result = KeyNestMailer::send($to, $subject, $html, $config);
+        if (!empty($result['success'])) {
+            $result['message'] = '测试邮件已发送';
+        }
+        adminJsonResponse($result);
 
     default:
         adminJsonResponse(['success' => false, 'message' => '未知操作'], 400);

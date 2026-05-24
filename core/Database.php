@@ -611,6 +611,41 @@ class Database {
         return false;
     }
 
+    public function deletePaymentOrder($id) {
+        $exists = false;
+        $this->data['payment_orders'] = array_values(array_filter($this->data['payment_orders'], function($order) use ($id, &$exists) {
+            if (($order['id'] ?? '') === $id) {
+                $exists = true;
+                return false;
+            }
+            return true;
+        }));
+        return $exists ? $this->deleteRecord('payment_orders', $id) : false;
+    }
+
+    public function deletePaymentOrdersByStatus($statuses) {
+        $statuses = (array)$statuses;
+        $deleted = [];
+        $this->data['payment_orders'] = array_values(array_filter($this->data['payment_orders'], function($order) use ($statuses, &$deleted) {
+            if (in_array($order['status'] ?? 'pending', $statuses, true)) {
+                $deleted[] = $order['id'];
+                return false;
+            }
+            return true;
+        }));
+        foreach ($deleted as $id) {
+            $this->deleteRecord('payment_orders', $id);
+        }
+        return count($deleted);
+    }
+
+    public function deleteAllPaymentOrders() {
+        $count = count($this->data['payment_orders']);
+        $this->data['payment_orders'] = [];
+        $this->saveTable('payment_orders');
+        return $count;
+    }
+
     public function getWithdrawRequests($userId = null, $status = null) {
         $requests = $this->data['withdraw_requests'];
         if ($userId !== null) {

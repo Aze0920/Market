@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/Mailer.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -43,6 +44,65 @@ function sanitizeUsername($username) {
 
 function sanitizeEmail($email) {
     return filter_var(trim($email), FILTER_SANITIZE_EMAIL);
+}
+
+function isEmailVerifyEnabled() {
+    global $db;
+    $config = $db->getSystemConfig();
+    return !empty($config['register_email_verify_enabled']);
+}
+
+function verifyRegisterEmailCode($email, $code) {
+    if (!isEmailVerifyEnabled()) return true;
+    $email = strtolower(trim($email));
+    $code = trim($code);
+    $record = $_SESSION['register_email_code'][$email] ?? null;
+    if (!$record || empty($record['code']) || empty($record['expires_at'])) {
+        jsonResponse(['success' => false, 'message' => '请先获取邮箱验证码'], 400);
+    }
+    if (time() > $record['expires_at']) {
+        unset($_SESSION['register_email_code'][$email]);
+        jsonResponse(['success' => false, 'message' => '邮箱验证码已过期，请重新获取'], 400);
+    }
+    if (!hash_equals((string)$record['code'], $code)) {
+        jsonResponse(['success' => false, 'message' => '邮箱验证码错误'], 400);
+    }
+    unset($_SESSION['register_email_code'][$email]);
+    return true;
+}
+
+function sendRegisterEmailCode($email) {
+    global $db;
+    $config = $db->getSystemConfig();
+    if (empty($config['register_email_verify_enabled'])) {
+        jsonResponse(['success' => true, 'message' => '邮箱验证未启用']);
+    }
+    $email = strtolower(trim($email));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        jsonResponse(['success' => false, 'message' => '请输入有效的邮箱地址'], 400);
+    }
+    $lastSentKey = 'register_email_last_sent_' . md5($email);
+    if (!empty($_SESSION[$lastSentKey]) && time() - $_SESSION[$lastSentKey] < 60) {
+        jsonResponse(['success' => false, 'message' => '发送过于频繁，请稍后再试'], 429);
+    }
+    foreach ($db->getTable('users') as $u) {
+        if (isset($u['email']) && strtolower($u['email']) === $email) {
+            jsonResponse(['success' => false, 'message' => '该邮箱已被注册'], 400);
+        }
+    }
+    $code = (string)random_int(100000, 999999);
+    $ttl = max(1, min(60, intval($config['email_code_ttl'] ?? 10)));
+    $_SESSION['register_email_code'][$email] = ['code' => $code, 'expires_at' => time() + $ttl * 60];
+    $_SESSION[$lastSentKey] = time();
+    $siteName = $config['site_name'] ?? 'KeyNest';
+    $subject = $siteName . ' 注册邮箱验证码';
+    $html = '<div style="font-family:Arial,sans-serif;line-height:1.8"><h2>' . htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') . ' 注册验证码</h2><p>你的验证码是：</p><div style="font-size:28px;font-weight:bold;letter-spacing:4px">' . $code . '</div><p>验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请忽略本邮件。</p></div>';
+    $result = KeyNestMailer::send($email, $subject, $html, $config);
+    if (empty($result['success'])) {
+        unset($_SESSION['register_email_code'][$email]);
+        jsonResponse(['success' => false, 'message' => $result['message'] ?? '邮件发送失败'], 500);
+    }
+    jsonResponse(['success' => true, 'message' => '验证码已发送，请查收邮箱']);
 }
 
 function requireAuth() {
@@ -101,11 +161,16 @@ switch ($action) {
         unset($user['password']);
         jsonResponse(['success' => true, 'message' => '登录成功', 'user' => $user]);
 
+    case 'send_email_code':
+        $email = sanitizeEmail($_POST['email'] ?? '');
+        sendRegisterEmailCode($email);
+
     case 'register':
         $username = sanitizeUsername($_POST['username'] ?? '');
         $email = sanitizeEmail($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
         $passwordConfirm = $_POST['password_confirm'] ?? '';
+        $emailCode = trim($_POST['email_code'] ?? '');
 
         if (empty($username) || empty($email) || empty($password)) {
             jsonResponse(['success' => false, 'message' => '请填写所有字段'], 400);
@@ -128,6 +193,7 @@ switch ($action) {
         if ($password !== $passwordConfirm) {
             jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
         }
+        verifyRegisterEmailCode($email, $emailCode);
         if ($db->getUserByUsername($username)) {
             jsonResponse(['success' => false, 'message' => '用户名已存在'], 400);
         }
