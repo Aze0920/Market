@@ -76,7 +76,6 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
     $payMethods = getPayMethodsFromRequest();
     $submitMode = sanitizeString($_POST['submit_mode'] ?? 'url_redirect');
     $sortOrder = intval($_POST['sort_order'] ?? 0);
-    $remark = sanitizeString($_POST['remark'] ?? '');
 
     if ($type !== 'yipay') {
         jsonResponse(['success' => false, 'message' => '当前仅支持易支付接口'], 400);
@@ -100,8 +99,7 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
         'enabled' => $enabled,
         'pay_methods' => $payMethods,
         'submit_mode' => $submitMode,
-        'sort_order' => $sortOrder,
-        'remark' => $remark
+        'sort_order' => $sortOrder
     ];
 
     if ($key !== '') {

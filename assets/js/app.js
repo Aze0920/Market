@@ -1175,10 +1175,9 @@ async function openOnlineRechargeModal() {
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h6 class="fw-bold mb-1">${Security.escapeHtml(c.name)}</h6>
+                                <h6 class="fw-bold mb-1">${methods}</h6>
                                 <small class="text-muted">
-                                    ${methods}
-                                    ${c.fee_rate > 0 ? ` · 手续费: ${(c.fee_rate * 100).toFixed(1)}%` : ''}
+                                    ${c.fee_rate > 0 ? `手续费: ${(c.fee_rate * 100).toFixed(1)}%` : '在线支付'}
                                 </small>
                             </div>
                             ${selectedPaymentConfig?.id === c.id ? '<i class="bi bi-check-circle text-primary" style="font-size: 1.5rem;"></i>' : ''}
@@ -1421,27 +1420,18 @@ async function deletePaymentConfig(id) {
 }
 
 let selectedMembershipPaymentConfig = null;
+let selectedMembershipPayType = '';
 let membershipPaymentConfigs = [];
 
-function renderMembershipPayTypeOptions() {
-    const select = document.getElementById('membershipPayType');
-    const help = document.getElementById('membershipPayTypeHelp');
-    if (!select || !selectedMembershipPaymentConfig) return;
-    const methods = selectedMembershipPaymentConfig.pay_methods || ['alipay', 'wxpay'];
-    select.innerHTML = methods.map(method => `<option value="${method}">${payMethodLabel(method)}</option>`).join('');
-    if (help) {
-        help.textContent = `当前接口支持：${methods.map(payMethodLabel).join('、')}`;
-    }
-}
-
-function selectMembershipPaymentConfig(configId) {
+function selectMembershipPayButton(configId, payType) {
     selectedMembershipPaymentConfig = membershipPaymentConfigs.find(c => c.id === configId) || null;
+    selectedMembershipPayType = payType;
     document.querySelectorAll('.membership-payment-select-card').forEach(card => {
         card.classList.remove('border-primary');
         const checkIcon = card.querySelector('.bi-check-circle');
         if (checkIcon) checkIcon.remove();
     });
-    const selectedCard = Array.from(document.querySelectorAll('.membership-payment-select-card')).find(card => card.dataset.configId === configId);
+    const selectedCard = Array.from(document.querySelectorAll('.membership-payment-select-card')).find(card => card.dataset.configId === configId && card.dataset.payType === payType);
     if (selectedCard) {
         selectedCard.classList.add('border-primary');
         const icon = document.createElement('i');
@@ -1449,7 +1439,6 @@ function selectMembershipPaymentConfig(configId) {
         icon.style.fontSize = '1.5rem';
         selectedCard.querySelector('.card-body .d-flex').appendChild(icon);
     }
-    renderMembershipPayTypeOptions();
 }
 
 async function upgradeMembership(levelName) {
@@ -1474,31 +1463,36 @@ async function upgradeMembership(levelName) {
     const balance = Number(App.currentUser?.balance || 0);
     const canUseBalance = balance >= cost;
     membershipPaymentConfigs = configsResult.success ? (configsResult.configs || []) : [];
-    selectedMembershipPaymentConfig = membershipPaymentConfigs[0] || null;
-    const paymentOptionsHtml = membershipPaymentConfigs.length === 0
+    const firstPaymentConfig = membershipPaymentConfigs[0] || null;
+    selectedMembershipPaymentConfig = firstPaymentConfig;
+    selectedMembershipPayType = firstPaymentConfig ? (firstPaymentConfig.pay_methods || ['alipay', 'wxpay'])[0] : '';
+    const paymentButtonItems = [];
+    membershipPaymentConfigs.forEach(c => {
+        (c.pay_methods || ['alipay', 'wxpay']).forEach(method => {
+            paymentButtonItems.push({ config: c, method });
+        });
+    });
+    const paymentOptionsHtml = paymentButtonItems.length === 0
         ? '<div class="alert alert-warning mb-0"><i class="bi bi-exclamation-triangle me-1"></i>后台暂未配置可用在线支付接口</div>'
-        : `<div class="row g-2 mb-3">
-            ${membershipPaymentConfigs.map(c => {
-                const methods = (c.pay_methods || ['alipay', 'wxpay']).map(payMethodLabel).join(' / ');
-                return `<div class="col-12">
-                    <div class="card membership-payment-select-card ${selectedMembershipPaymentConfig?.id === c.id ? 'border-primary' : ''}" data-config-id="${Security.escapeAttr(c.id)}" onclick="selectMembershipPaymentConfig('${Security.escapeAttr(c.id)}')" style="cursor: pointer;">
-                        <div class="card-body">
+        : `<div class="row g-2 mb-0">
+            ${paymentButtonItems.map(item => {
+                const c = item.config;
+                const method = item.method;
+                const selected = selectedMembershipPaymentConfig?.id === c.id && selectedMembershipPayType === method;
+                return `<div class="col-6">
+                    <div class="card membership-payment-select-card ${selected ? 'border-primary' : ''}" data-config-id="${Security.escapeAttr(c.id)}" data-pay-type="${Security.escapeAttr(method)}" onclick="selectMembershipPayButton('${Security.escapeAttr(c.id)}', '${Security.escapeAttr(method)}')" style="cursor: pointer;">
+                        <div class="card-body py-3">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
-                                    <h6 class="fw-bold mb-1">${Security.escapeHtml(c.name)}</h6>
-                                    <small class="text-muted">${methods}${Number(c.fee_rate || 0) > 0 ? ` · 手续费: ${(Number(c.fee_rate || 0) * 100).toFixed(1)}%` : ''}</small>
+                                    <h6 class="fw-bold mb-1">${payMethodLabel(method)}</h6>
+                                    <small class="text-muted">${Number(c.fee_rate || 0) > 0 ? `手续费 ${(Number(c.fee_rate || 0) * 100).toFixed(1)}%` : '在线支付'}</small>
                                 </div>
-                                ${selectedMembershipPaymentConfig?.id === c.id ? '<i class="bi bi-check-circle text-primary" style="font-size: 1.5rem;"></i>' : ''}
+                                ${selected ? '<i class="bi bi-check-circle text-primary" style="font-size: 1.5rem;"></i>' : ''}
                             </div>
                         </div>
                     </div>
                 </div>`;
             }).join('')}
-        </div>
-        <div class="mb-0">
-            <label class="form-label">支付类型</label>
-            <select class="form-select" id="membershipPayType"></select>
-            <div class="form-text" id="membershipPayTypeHelp">请选择支付接口</div>
         </div>`;
 
     const confirmed = await new Promise(resolve => {
@@ -1537,7 +1531,6 @@ async function upgradeMembership(levelName) {
             const selected = document.querySelector('input[name="membershipPayMethod"]:checked')?.value;
             const box = document.getElementById('membershipOnlinePaymentBox');
             if (box) box.style.display = selected === 'online' ? 'block' : 'none';
-            renderMembershipPayTypeOptions();
         };
         document.querySelectorAll('input[name="membershipPayMethod"]').forEach(input => input.addEventListener('change', updateOnlineBox));
         document.getElementById('confirmModalBtn').textContent = cost === 0 ? '确认开通' : '确认支付';
@@ -1561,7 +1554,7 @@ async function upgradeMembership(levelName) {
             Toast.warning('请选择支付接口');
             return;
         }
-        const payType = document.getElementById('membershipPayType')?.value;
+        const payType = selectedMembershipPayType || (selectedMembershipPaymentConfig.pay_methods || ['alipay'])[0];
         const result = await API.createMembershipPaymentOrder(selectedMembershipPaymentConfig.id, levelName, payType);
         if (result.success) {
             window.open(result.payment_url, '_blank');
