@@ -8,7 +8,7 @@
     <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=202605241842" rel="stylesheet">
+    <link href="assets/css/style.css?v=202605241856" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -597,13 +597,13 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=202605241842"></script>
-    <script src="assets/js/app.js?v=202605241842"></script>
-    <script src="assets/js/product.js?v=202605241842"></script>
-    <script src="assets/js/message.js?v=202605241842"></script>
-    <script src="assets/js/auth.js?v=202605241842"></script>
+    <script src="assets/js/api.js?v=202605241856"></script>
+    <script src="assets/js/app.js?v=202605241856"></script>
+    <script src="assets/js/product.js?v=202605241856"></script>
+    <script src="assets/js/message.js?v=202605241856"></script>
+    <script src="assets/js/auth.js?v=202605241856"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = '202605241842';
+        window.KEYNEST_ASSET_VERSION = '202605241856';
 
         async function renderFrontMembershipCards(area) {
             if (!area) return;
@@ -997,6 +997,77 @@
             localStorage.setItem(announcementTodayKey(), '1');
             bootstrap.Modal.getInstance(document.getElementById('announcementsModal'))?.hide();
         }
+
+        function keynestFinalReviewDialog(productId, orderId) {
+            if (!productId || !orderId) return;
+            const modalEl = document.getElementById('purchaseConfirmModal');
+            const body = document.getElementById('purchaseBody');
+            const footer = document.getElementById('purchaseFooter');
+            if (!modalEl || !body || !footer) return;
+            body.innerHTML = `
+                <div class="review-modal-head text-center mb-4">
+                    <div class="review-modal-icon"><i class="bi bi-star-fill"></i></div>
+                    <h5 class="fw-bold mb-1">评价商品</h5>
+                    <p class="text-muted small mb-0">选择 1-5 星，评价内容可以不填写</p>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label fw-semibold">商品评分</label>
+                    <div class="rating-radio-group rating-radio-beauty">
+                        ${[1,2,3,4,5].map(n => `
+                            <label class="rating-radio">
+                                <input type="radio" name="finalReviewRating" value="${n}" ${n === 5 ? 'checked' : ''}>
+                                <span><b>${n}星</b><small>${'★'.repeat(n)}</small></span>
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-semibold">评价内容</label>
+                    <textarea class="form-control review-textarea" id="finalReviewContent" rows="5" maxlength="500" placeholder="可写可不写，例如：发货很快、账号正常、描述一致"></textarea>
+                    <div class="d-flex justify-content-between mt-2">
+                        <small class="text-muted">内容可写可不写</small>
+                        <small class="text-muted">最多 500 字</small>
+                    </div>
+                </div>
+            `;
+            footer.innerHTML = `
+                <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-primary" onclick="keynestSubmitFinalReview('${Security.escapeAttr(productId)}', '${Security.escapeAttr(orderId)}')">
+                    <i class="bi bi-send me-1"></i>提交评价
+                </button>
+            `;
+            new bootstrap.Modal(modalEl).show();
+        }
+
+        async function keynestSubmitFinalReview(productId, orderId) {
+            const rating = parseInt(document.querySelector('input[name="finalReviewRating"]:checked')?.value || '5', 10);
+            const content = document.getElementById('finalReviewContent')?.value?.trim() || '';
+            const result = await API.addComment(productId, orderId, rating, content);
+            if (result.success) {
+                Toast.success('评价成功');
+                bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+                if (App.currentPage === 'dashboard') renderDashboardTab('orders');
+            } else {
+                Toast.error(result.message || '评价失败');
+            }
+        }
+
+        window.openReviewDialog = keynestFinalReviewDialog;
+        window.openCommentModal = keynestFinalReviewDialog;
+        document.addEventListener('click', function(event) {
+            const btn = event.target.closest('button');
+            if (!btn || btn.textContent.trim() !== '评价') return;
+            const onclickText = btn.getAttribute('onclick') || '';
+            if (!onclickText.includes('Comment') && !onclickText.includes('Review') && !btn.classList.contains('keynest-review-btn')) return;
+            const args = onclickText.match(/['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]/);
+            const productId = btn.dataset.productId || (args && args[1]);
+            const orderId = btn.dataset.orderId || (args && args[2]);
+            if (!productId || !orderId) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            keynestFinalReviewDialog(productId, orderId);
+        }, true);
 
         function renderDashboard(tabName = null) {
             if (!App.currentUser) return;

@@ -445,7 +445,7 @@ async function loadOrdersTab(area) {
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="viewDeliveryInfo('${o.id}')">查看发货</button>
-                                ${o.has_comment ? '<span class="badge badge-success ms-1">已评价</span>' : `<button class="btn btn-sm btn-primary" onclick="openReviewDialog('${o.product_id}', '${o.id}')">评价</button>`}
+                                ${o.has_comment ? '<span class="badge badge-success ms-1">已评价</span>' : `<button class="btn btn-sm btn-primary keynest-review-btn" data-product-id="${Security.escapeAttr(o.product_id)}" data-order-id="${Security.escapeAttr(o.id)}" onclick="openReviewDialog('${o.product_id}', '${o.id}')">评价</button>`}
                                 ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${o.id}')">撤诉</button>` : `<button class="btn btn-sm btn-danger" onclick="openComplaintModal('${o.id}')">投诉</button>`}
                             </td>
                         </tr>
