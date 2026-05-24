@@ -445,7 +445,7 @@ async function loadOrdersTab(area) {
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="viewDeliveryInfo('${o.id}')">查看发货</button>
-                                ${o.has_comment ? '<span class="badge badge-success ms-1">已评价</span>' : `<button class="btn btn-sm btn-primary" onclick="openCommentModal('${o.product_id}', '${o.id}')">评价</button>`}
+                                ${o.has_comment ? '<span class="badge badge-success ms-1">已评价</span>' : `<button class="btn btn-sm btn-primary" onclick="openReviewDialog('${o.product_id}', '${o.id}')">评价</button>`}
                                 ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${o.id}')">撤诉</button>` : `<button class="btn btn-sm btn-danger" onclick="openComplaintModal('${o.id}')">投诉</button>`}
                             </td>
                         </tr>
@@ -1984,6 +1984,64 @@ async function deleteCard(id) {
     } else {
         Toast.error(result.message);
     }
+}
+
+function openReviewDialog(productId, orderId) {
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <div class="review-modal-head text-center mb-4">
+            <div class="review-modal-icon"><i class="bi bi-star-fill"></i></div>
+            <h5 class="fw-bold mb-1">评价商品</h5>
+            <p class="text-muted small mb-0">请选择评分，评价内容可以不填写</p>
+        </div>
+        <div class="mb-4">
+            <label class="form-label fw-semibold">商品评分</label>
+            <div class="rating-radio-group rating-radio-beauty">
+                ${[1,2,3,4,5].map(n => `
+                    <label class="rating-radio">
+                        <input type="radio" name="reviewRating" value="${n}" ${n === 5 ? 'checked' : ''}>
+                        <span><b>${n}星</b><small>${'★'.repeat(n)}</small></span>
+                    </label>
+                `).join('')}
+            </div>
+        </div>
+        <div class="mb-2">
+            <label class="form-label fw-semibold">评价内容</label>
+            <textarea class="form-control review-textarea" id="reviewContent" rows="5" maxlength="500" placeholder="可以写，也可以留空，例如：发货很快、账号正常、描述一致"></textarea>
+            <div class="d-flex justify-content-between mt-2">
+                <small class="text-muted">内容可写可不写</small>
+                <small class="text-muted">最多 500 字</small>
+            </div>
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="submitReviewDialog('${Security.escapeAttr(productId)}', '${Security.escapeAttr(orderId)}')">
+            <i class="bi bi-send me-1"></i>提交评价
+        </button>
+    `;
+    modal.show();
+}
+
+async function submitReviewDialog(productId, orderId) {
+    const rating = parseInt(document.querySelector('input[name="reviewRating"]:checked')?.value || '5', 10);
+    const content = document.getElementById('reviewContent')?.value?.trim() || '';
+    const result = await API.addComment(productId, orderId, rating, content);
+    if (result.success) {
+        Toast.success('评价成功');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        if (App.currentPage === 'dashboard') renderDashboardTab('orders');
+    } else {
+        Toast.error(result.message || '评价失败');
+    }
+}
+
+function openCommentModal(productId, orderId) {
+    openReviewDialog(productId, orderId);
+}
+
+async function submitComment(productId, orderId) {
+    return submitReviewDialog(productId, orderId);
 }
 
 async function loadComplaintsTab(area) {

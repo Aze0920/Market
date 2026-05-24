@@ -164,6 +164,8 @@ function openRegisterModal() {
     document.getElementById('regPasswordConfirm').value = '';
     const codeInput = document.getElementById('regEmailCode');
     if (codeInput) codeInput.value = '';
+    const group = document.getElementById('regEmailCodeGroup');
+    if (group) group.classList.add('hidden');
     refreshRegisterEmailVerifyState();
     const modal = new bootstrap.Modal(document.getElementById('registerModal'));
     modal.show();
@@ -172,8 +174,10 @@ function openRegisterModal() {
 async function refreshRegisterEmailVerifyState() {
     const group = document.getElementById('regEmailCodeGroup');
     if (!group) return;
+    group.classList.add('hidden');
     const result = await API.getSystemConfig();
-    group.style.display = result.success && result.config && result.config.register_email_verify_enabled ? '' : 'none';
+    const enabled = !!(result.success && result.config && result.config.register_email_verify_enabled);
+    group.classList.toggle('hidden', !enabled);
 }
 
 let registerEmailCodeCountdown = 0;

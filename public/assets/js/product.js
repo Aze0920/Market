@@ -297,6 +297,10 @@ async function viewDeliveryInfo(orderId, pickupPassword = '') {
 }
 
 async function openCommentModal(productId, orderId) {
+    if (typeof openReviewDialog === 'function') {
+        openReviewDialog(productId, orderId);
+        return;
+    }
     const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
     document.getElementById('purchaseBody').innerHTML = `
         <div class="review-modal-head text-center mb-4">
