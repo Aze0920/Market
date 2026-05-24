@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net https://*.jsdelivr.net; img-src 'self' data: https:;">
+    <title>KeyNest - 虚拟商品交易平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+</head>
+<body>
+    <div class="page-wrapper">
+        <!-- ==================== 导航栏 ==================== -->
+        <nav class="navbar">
+            <div class="container">
+                <a class="navbar-brand" href="#" onclick="showHome()">
+                    <i class="bi bi-key-fill"></i>KeyNest
+                </a>
+
+                <div class="nav-center">
+                    <a class="nav-link active" href="#market" onclick="showHome()">
+                        <i class="bi bi-shop"></i>市场
+                    </a>
+                    <a class="nav-link hidden" id="navDashboardLink" href="#" onclick="showDashboard()">
+                        <i class="bi bi-speedometer2"></i>控制台
+                    </a>
+                    <a class="nav-link hidden" id="navSellLink" href="#" onclick="openPublishModal()">
+                        <i class="bi bi-plus-circle"></i>发布商品
+                    </a>
+                </div>
+
+                <div class="nav-actions" id="navRightArea">
+                    <!-- 未登录 -->
+                    <div id="navGuestArea">
+                        <button class="btn btn-outline btn-sm" onclick="openLoginModal()">登录</button>
+                        <button class="btn btn-primary btn-sm" onclick="openRegisterModal()">注册</button>
+                    </div>
+                    <!-- 已登录 -->
+                    <div class="d-flex align-items-center gap-2 hidden" id="navUserArea">
+                        <span class="badge bg-primary-light text-primary px-3 py-2" id="navBalance">¥ 0.00</span>
+                        <div class="avatar" id="navAvatar">U</div>
+                        <span class="fw-semibold" id="navUsername" style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                        <button class="btn btn-outline btn-sm" onclick="window.location.href='/admin/'" id="navAdminBtn" title="管理后台">
+                            <i class="bi bi-shield-lock"></i>
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick="openMessagesModal()" title="私信">
+                            <i class="bi bi-envelope"></i>
+                            <span id="unreadBadge" class="badge badge-danger rounded-pill hidden" style="font-size:0.6rem;">0</span>
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick="logout()" title="退出">
+                            <i class="bi bi-box-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- ==================== 主内容区 ==================== -->
+        <main class="main-content">
+            <div class="container">
+                <!-- 首页：商品市场 -->
+                <div id="homePage">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+                        <div>
+                            <h3 class="fw-bold mb-1"><i class="bi bi-grid-fill text-primary me-2"></i>虚拟商品市场</h3>
+                            <p class="text-muted mb-0 small">像闲鱼一样发布、浏览和交易虚拟商品</p>
+                        </div>
+                        <div class="search-bar">
+                            <div class="search-input">
+                                <i class="bi bi-search" style="position:absolute;left:1rem;top:50%;transform:translateY(-50%);color:var(--text-muted);"></i>
+                                <input type="text" id="searchInput" class="form-control" placeholder="搜索商品..." oninput="filterProducts()">
+                            </div>
+                            <select id="categoryFilter" class="form-select" style="width:140px;" onchange="filterProducts()">
+                                <option value="all">全部分类</option>
+                                <option value="游戏账号">游戏账号</option>
+                                <option value="流媒体">流媒体账号</option>
+                                <option value="软件许可">软件许可</option>
+                                <option value="其他">其他</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-3" id="productGrid">
+                        <!-- 动态渲染商品卡片 -->
+                    </div>
+
+                    <div id="emptyProductState" class="empty-state hidden">
+                        <i class="bi bi-inbox"></i>
+                        <h5>暂无商品</h5>
+                        <p>还没有人发布商品，快来发布第一个吧！</p>
+                    </div>
+                </div>
+
+                <!-- 用户中心页面 -->
+                <div id="dashboardPage" class="hidden">
+                    <div class="dashboard-wrapper">
+                        <!-- 顶部用户信息栏 -->
+                        <div class="dashboard-header-bar">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="avatar" id="dashAvatar">U</div>
+                                <div>
+                                    <strong id="dashUsername">用户</strong>
+                                    <div class="small text-muted">余额: <span id="dashBalance">¥ 0.00</span></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 横向标签栏 -->
+                        <div class="sidebar-nav" id="dashSidebar">
+                            <div class="sidebar-nav-item active" data-tab="overview">
+                                <i class="bi bi-house"></i><span>概览</span>
+                            </div>
+                            <div class="sidebar-nav-item" data-tab="orders">
+                                <i class="bi bi-receipt"></i><span>购买记录</span>
+                            </div>
+                            <div class="sidebar-nav-item" data-tab="sales">
+                                <i class="bi bi-graph-up"></i><span>售出记录</span>
+                            </div>
+                            <div class="sidebar-nav-item" data-tab="myproducts">
+                                <i class="bi bi-box-seam"></i><span>我的商品</span>
+                            </div>
+                            <div class="sidebar-nav-item" data-tab="balance">
+                                <i class="bi bi-wallet2"></i><span>余额管理</span>
+                            </div>
+                            <div class="sidebar-nav-item" data-tab="membership">
+                                <i class="bi bi-gem"></i><span>会员中心</span>
+                            </div>
+                            <div class="sidebar-nav-item" data-tab="messages">
+                                <i class="bi bi-chat-dots"></i><span>私信</span>
+                            </div>
+                        </div>
+                        <!-- 内容区 -->
+                        <div class="card" style="min-height:500px;">
+                            <div class="card-body" id="dashContentArea">
+                                <!-- 动态切换内容 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ==================== 页脚 ==================== -->
+        <footer class="text-center py-3 text-muted small border-top bg-white">
+            <span>© 2026 KeyNest 虚拟商品交易平台 · 安全交易 · 自动发货</span>
+        </footer>
+    </div>
+
+    <!-- ==================== 模态框：确认 ==================== -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirmModalTitle">确认</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="confirmModalBody">
+                    <p>确定要执行此操作吗？</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal" id="confirmModalCancelBtn">取消</button>
+                    <button class="btn btn-primary" id="confirmModalBtn">确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：登录 ==================== -->
+    <div class="modal fade" id="loginModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-check me-2"></i>登录</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">用户名</label>
+                        <input type="text" class="form-control" id="loginUsername" placeholder="输入用户名">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="form-label">密码</label>
+                        <input type="password" class="form-control" id="loginPassword" placeholder="输入密码">
+                    </div>
+                    <div id="loginErrorBox" class="alert alert-danger py-2 small hidden"></div>
+                    <button class="btn btn-primary w-100" id="loginSubmitBtn" onclick="handleLogin()">登录</button>
+                    <p class="text-center mt-2 mb-0 text-muted">
+                        没有账号？<a href="#" onclick="switchToRegister()">立即注册</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：注册 ==================== -->
+    <div class="modal fade" id="registerModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>注册</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">用户名</label>
+                        <input type="text" class="form-control" id="regUsername" placeholder="3-20个字符">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">邮箱</label>
+                        <input type="email" class="form-control" id="regEmail" placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">密码</label>
+                        <input type="password" class="form-control" id="regPassword" placeholder="至少6位">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="form-label">确认密码</label>
+                        <input type="password" class="form-control" id="regPasswordConfirm" placeholder="再次输入密码">
+                    </div>
+                    <button class="btn btn-primary w-100" onclick="handleRegister()">注册</button>
+                    <p class="text-center mt-2 mb-0 text-muted">
+                        已有账号？<a href="#" onclick="switchToLogin()">立即登录</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：商品详情 ==================== -->
+    <div class="modal fade" id="productDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailTitle">商品详情</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detailBody">
+                    <!-- 动态填充 -->
+                </div>
+                <div class="modal-footer" id="detailFooter">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+                    <button class="btn btn-primary" id="btnBuyNow" onclick="handleBuyNow()">
+                        <i class="bi bi-cart-plus me-1"></i>立即购买
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：购买确认 ==================== -->
+    <div class="modal fade" id="purchaseConfirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cart-check text-success me-2"></i>购买确认</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="purchaseBody">
+                    <!-- 动态填充 -->
+                </div>
+                <div class="modal-footer" id="purchaseFooter">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" id="btnConfirmPurchase" onclick="confirmPurchase()">确认支付</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：发布商品 ==================== -->
+    <div class="modal fade" id="publishModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>发布商品</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">商品标题</label>
+                            <input type="text" class="form-control" id="pubTitle" placeholder="例如：会员账号、素材资源、软件许可等">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">分类</label>
+                            <select class="form-select" id="pubCategory">
+                                <option>游戏账号</option>
+                                <option>流媒体</option>
+                                <option>软件许可</option>
+                                <option>其他</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">价格 (¥)</label>
+                            <input type="number" class="form-control" id="pubPrice" placeholder="0.00" step="0.01" min="0.01">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">商品描述（支持 Markdown）</label>
+                            <textarea class="form-control" id="pubDesc" rows="4" placeholder="# 商品亮点&#10;&#10;- 支持 **加粗**&#10;- 支持列表、链接、代码块"></textarea>
+                            <small class="text-muted">商品详情页会按 Markdown 渲染，列表页会自动显示纯文本摘要</small>
+                        </div>
+                        <div class="col-12">
+                            <hr>
+                            <p class="text-muted mb-2"><i class="bi bi-box-seam me-1"></i>账号列表（支持一行一个；也兼容 邮箱|密码|ClientID|FreshToken）</p>
+                            <textarea class="form-control" id="pubAccounts" rows="6" placeholder="示例 1：一行一个完整账号信息&#10;账号1----密码1----备注信息&#10;账号2----密码2----备注信息&#10;&#10;示例 2：兼容原格式&#10;user1@email.com|password1|clientid1|token1"></textarea>
+                            <small class="text-muted">每一行就是一个库存；如果用 | 分隔，会自动拆成邮箱、密码、ClientID、FreshToken，否则整行作为交付内容保存</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" id="btnPublishProduct" type="button">发布商品</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：卡密充值 ==================== -->
+    <div class="modal fade" id="cardRechargeModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-credit-card-2-front me-2"></i>卡密充值</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">请输入卡密</label>
+                        <input type="text" class="form-control" id="cardRechargeInput" placeholder="输入卡密代码">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" onclick="useCardRecharge()">充值</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：提现申请 ==================== -->
+    <div class="modal fade" id="withdrawModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-box-arrow-up me-2"></i>申请提现</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <small><i class="bi bi-info-circle me-1"></i>提现申请将在7个工作日内处理，请确保收款信息正确</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">提现金额</label>
+                        <input type="number" class="form-control" id="withdrawAmount" placeholder="输入提现金额" step="0.01" min="1">
+                        <small class="text-muted" id="withdrawFeeNote"></small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">收款方式</label>
+                        <select class="form-select" id="withdrawPaymentMethod" onchange="updateWithdrawInfo()">
+                            <option value="">请选择</option>
+                            <option value="支付宝">支付宝</option>
+                            <option value="微信">微信</option>
+                            <option value="QQ钱包">QQ钱包</option>
+                            <option value="银行卡">银行卡</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">收款账号</label>
+                        <input type="text" class="form-control" id="withdrawAccount" placeholder="输入收款账号">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">收款码（选填）</label>
+                        <input type="text" class="form-control" id="withdrawQrcode" placeholder="输入收款码图片URL或粘贴截图">
+                        <small class="text-muted">可上传收款码图片到图床，粘贴URL即可</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-warning" onclick="submitWithdraw()">提交申请</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：系统设置 ==================== -->
+    <div class="modal fade" id="systemConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear me-2"></i>系统设置</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <h6 class="fw-bold mb-3">提现设置</h6>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="configEnableWithdraw">
+                            <label class="form-check-label" for="configEnableWithdraw">启用提现功能</label>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">最低提现金额</label>
+                            <input type="number" class="form-control" id="configMinWithdraw" step="0.01" min="1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">提现手续费率(%)</label>
+                            <input type="number" class="form-control" id="configWithdrawFee" step="0.1" min="0" max="100">
+                        </div>
+                    </div>
+                    <hr>
+                    <h6 class="fw-bold mb-3">管理员收款码</h6>
+                    <div class="mb-3">
+                        <label class="form-label">管理员微信收款码URL</label>
+                        <input type="text" class="form-control" id="configWechatQrcode" placeholder="https://example.com/wechat.png">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">管理员支付宝收款码URL</label>
+                        <input type="text" class="form-control" id="configAlipayQrcode" placeholder="https://example.com/alipay.png">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" onclick="saveSystemConfig()">保存设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：在线充值 ==================== -->
+    <div class="modal fade" id="onlineRechargeModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cash-stack me-2"></i>在线充值</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">充值金额</label>
+                        <input type="number" class="form-control" id="rechargeAmount" placeholder="输入金额" step="0.01" min="1">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">支付方式</label>
+                        <div class="row g-2" id="rechargePaymentMethods">
+                            <!-- 动态加载支付方式 -->
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">支付类型</label>
+                        <select class="form-select" id="rechargePayType">
+                            <option value="alipay">支付宝</option>
+                            <option value="wxpay">微信支付</option>
+                            <option value="qqpay">QQ钱包</option>
+                            <option value="cashier">易支付收银台</option>
+                        </select>
+                        <div class="form-text" id="rechargePayTypeHelp">请先选择可用支付接口</div>
+                    </div>
+                    <div class="alert alert-info" id="rechargeFeeInfo" style="display: none;">
+                        <small><i class="bi bi-info-circle me-1"></i><span id="rechargeFeeText"></span></small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" onclick="submitOnlineRecharge()">确认充值</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：管理支付接口 ==================== -->
+    <div class="modal fade" id="paymentConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear me-2"></i>管理支付接口</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="fw-bold">支付接口列表</span>
+                            <button class="btn btn-sm btn-primary" onclick="toggleAddPaymentConfig()">
+                                <i class="bi bi-plus"></i>
+                            </button>
+                        </div>
+                        <div id="paymentConfigList" class="mb-3">
+                            <!-- 动态加载 -->
+                        </div>
+                    </div>
+                    <div id="addPaymentConfigForm" style="display: none;">
+                        <hr>
+                        <h6 class="fw-bold mb-3">添加支付接口</h6>
+                        <div class="row g-2">
+                            <div class="col-12">
+                                <label class="form-label">接口名称</label>
+                                <input type="text" class="form-control" id="paymentConfigName" placeholder="例如：易支付">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">接口类型</label>
+                                <select class="form-select" id="paymentConfigType">
+                                    <option value="yipay">易支付</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">API地址</label>
+                                <input type="text" class="form-control" id="paymentConfigApiUrl" placeholder="https://pay.example.com/">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">商户ID</label>
+                                <input type="text" class="form-control" id="paymentConfigPartnerId" placeholder="1001">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">密钥</label>
+                                <input type="text" class="form-control" id="paymentConfigKey" placeholder="密钥">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">手续费率（%）</label>
+                                <input type="number" class="form-control" id="paymentConfigFeeRate" placeholder="0.01" step="0.01" min="0" max="100">
+                            </div>
+                            <div class="col-6 d-flex align-items-end">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="paymentConfigEnabled" checked>
+                                    <label class="form-check-label" for="paymentConfigEnabled">启用</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+                    <button class="btn btn-primary" id="savePaymentConfigBtn" style="display: none;" onclick="savePaymentConfig()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 模态框：私信 ==================== -->
+    <div class="modal fade" id="messagesModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content" style="min-height:500px;">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-envelope me-2"></i>私信</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0 d-flex" style="min-height:420px;">
+                    <!-- 联系人列表 -->
+                    <div class="border-end p-2" style="width:35%;overflow-y:auto;max-height:420px;" id="contactList">
+                        <!-- 动态渲染 -->
+                    </div>
+                    <!-- 聊天区 -->
+                    <div class="flex-grow-1 d-flex flex-column" style="width:65%;">
+                        <div class="chat-container flex-grow-1" id="chatMessages">
+                            <div class="empty-state">
+                                <i class="bi bi-chat-dots"></i>
+                                <p>选择一个联系人或搜索用户开始对话</p>
+                            </div>
+                        </div>
+                        <div class="chat-input-area hidden" id="chatInputArea">
+                            <input type="text" class="form-control" id="chatMessageInput" placeholder="输入消息..." onkeypress="if(event.key==='Enter')sendMessage()">
+                            <button class="btn btn-primary" onclick="sendMessage()"><i class="bi bi-send"></i></button>
+                        </div>
+                        <div class="chat-input-area" id="newChatArea">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="searchUserInput" placeholder="搜索用户名开始对话..." onkeypress="if(event.key==='Enter')searchUserForChat()">
+                                <button class="btn btn-outline" onclick="searchUserForChat()"><i class="bi bi-search"></i></button>
+                            </div>
+                            <div id="userSearchResults" class="mt-1"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== Toast 容器 ==================== -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ==================== 脚本 ==================== -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/app.js"></script>
+    <script src="assets/js/product.js"></script>
+    <script src="assets/js/message.js"></script>
+    <script src="assets/js/auth.js"></script>
+    <script>
+        // 仪表板侧边栏点击事件
+        document.addEventListener('DOMContentLoaded', function() {
+            Toast.init();
+
+            // 侧边栏导航
+            document.getElementById('dashSidebar').addEventListener('click', function(e) {
+                const item = e.target.closest('.sidebar-nav-item');
+                if (item && item.dataset.tab) {
+                    renderDashboardTab(item.dataset.tab);
+                }
+            });
+
+            // 仪表板页面元素更新
+            const originalRenderDashboardTab = renderDashboardTab;
+            renderDashboardTab = function(tabName) {
+                originalRenderDashboardTab(tabName);
+                if (tabName === 'messages') {
+                    // 刷新消息计数
+                    App.updateUnreadBadge();
+                }
+            };
+
+            // 初始化
+            initApp();
+        });
+
+        async function initApp() {
+            // 检查登录状态
+            const result = await API.getCurrentUser();
+            if (result.success && result.logged_in) {
+                App.setUser(result.user);
+            }
+
+            // 按刷新前的页面恢复
+            const initialState = getInitialFrontendState();
+            App.currentTab = initialState.tab;
+            if (initialState.page === 'dashboard' && App.currentUser) {
+                showDashboard(initialState.tab);
+            } else {
+                showHome();
+            }
+
+            // 更新未读计数
+            App.updateUnreadBadge();
+
+            console.log('🔑 KeyNest 虚拟商品交易平台已就绪');
+        }
+
+        function renderDashboard(tabName = null) {
+            if (!App.currentUser) return;
+
+            document.getElementById('dashUsername').textContent = App.currentUser.username;
+            document.getElementById('dashAvatar').textContent = App.currentUser.username.charAt(0).toUpperCase();
+            document.getElementById('dashBalance').textContent = '¥ ' + App.currentUser.balance.toFixed(2);
+
+            renderDashboardTab(tabName || App.currentTab || 'overview');
+        }
+    </script>
+</body>
+</html>

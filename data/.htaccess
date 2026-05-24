@@ -1,0 +1,17 @@
+# 保护数据目录
+<Files "*.json">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# 保护核心文件
+<FilesMatch "\.(php|json)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# 允许API目录的PHP文件
+<FilesMatch "^[^.]+\.php$">
+    Order Allow,Deny
+    Allow from all
+</FilesMatch>

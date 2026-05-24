@@ -1,0 +1,2 @@
+# 这个文件用于确保 data 目录被 git 追踪
+# 但 .gitignore 会阻止 JSON 文件被提交
