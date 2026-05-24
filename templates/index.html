@@ -287,6 +287,17 @@
                             <small class="text-muted">商品详情页会按 Markdown 渲染，列表页会自动显示纯文本摘要</small>
                         </div>
                         <div class="col-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="pubPickupPasswordEnabled" onchange="togglePickupPasswordInput()">
+                                <label class="form-check-label" for="pubPickupPasswordEnabled">开启取卡密码</label>
+                            </div>
+                            <div id="pubPickupPasswordWrap" class="hidden">
+                                <label class="form-label">取卡密码</label>
+                                <input type="text" class="form-control" id="pubPickupPassword" maxlength="100" placeholder="买家查看发货信息时需要输入此密码">
+                                <small class="text-muted">开启后必须填写密码；不填写则不能取卡</small>
+                            </div>
+                        </div>
+                        <div class="col-12">
                             <hr>
                             <p class="text-muted mb-2"><i class="bi bi-box-seam me-1"></i>账号列表（支持一行一个；也兼容 邮箱|密码|ClientID|FreshToken）</p>
                             <textarea class="form-control" id="pubAccounts" rows="6" placeholder="示例 1：一行一个完整账号信息&#10;账号1----密码1----备注信息&#10;账号2----密码2----备注信息&#10;&#10;示例 2：兼容原格式&#10;user1@email.com|password1|clientid1|token1"></textarea>

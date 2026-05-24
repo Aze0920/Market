@@ -100,6 +100,10 @@ const API = {
         return this.request('product.php?action=list&' + params);
     },
 
+    getProductReviews(productId = '') {
+        return this.request('product.php?action=reviews' + (productId ? '&product_id=' + encodeURIComponent(productId) : ''));
+    },
+
     getProduct(id) {
         return this.request('product.php?action=detail&id=' + id);
     },
@@ -116,8 +120,8 @@ const API = {
         return this.request('product.php?action=my_products');
     },
 
-    buyProduct(id) {
-        return this.request('product.php?action=buy', 'POST', { id });
+    buyProduct(id, quantity = 1) {
+        return this.request('product.php?action=buy', 'POST', { id, quantity });
     },
 
     addComment(productId, orderId, rating, content) {
@@ -135,8 +139,8 @@ const API = {
         return this.request('order.php?action=my_sales');
     },
 
-    getOrder(id) {
-        return this.request('order.php?action=get&id=' + id);
+    getOrder(id, pickupPassword = '') {
+        return this.request('order.php?action=get&id=' + encodeURIComponent(id) + (pickupPassword ? '&pickup_password=' + encodeURIComponent(pickupPassword) : ''));
     },
 
     getOverview() {

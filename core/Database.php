@@ -585,16 +585,19 @@ class Database {
             'id' => 'pay_order_' . time() . '_' . bin2hex(random_bytes(6)),
             'trade_no' => $orderData['trade_no'] ?? 'KN' . date('YmdHis') . rand(1000, 9999),
             'user_id' => $orderData['user_id'],
-            'payment_config_id' => $orderData['payment_config_id'],
+            'payment_config_id' => $orderData['payment_config_id'] ?? '',
             'pay_type' => $orderData['pay_type'] ?? '',
-            'amount' => $orderData['amount'],
-            'actual_amount' => $orderData['actual_amount'],
-            'fee' => $orderData['fee'],
-            'status' => 'pending',
+            'amount' => $orderData['amount'] ?? 0,
+            'actual_amount' => $orderData['actual_amount'] ?? ($orderData['amount'] ?? 0),
+            'fee' => $orderData['fee'] ?? 0,
+            'status' => $orderData['status'] ?? 'pending',
             'type' => $orderData['type'] ?? 'recharge',
+            'title' => $orderData['title'] ?? '',
+            'description' => $orderData['description'] ?? '',
             'target_level' => $orderData['target_level'] ?? '',
+            'related_id' => $orderData['related_id'] ?? '',
             'created_at' => time(),
-            'paid_at' => null
+            'paid_at' => $orderData['paid_at'] ?? null
         ];
         $this->data['payment_orders'][] = $order;
         $this->saveRecord('payment_orders', $order);

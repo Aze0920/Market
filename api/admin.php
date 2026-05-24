@@ -518,6 +518,26 @@ switch ($action) {
         if (!$db->updateUser($payload['id'], $updates)) {
             adminJsonResponse(['success' => false, 'message' => '保存失败：用户名可能重复或字段格式错误'], 400);
         }
+        $oldBalance = floatval($target['balance'] ?? 0);
+        $newBalance = floatval($updates['balance'] ?? $oldBalance);
+        $diff = $newBalance - $oldBalance;
+        if (abs($diff) >= 0.01) {
+            $adminUser = $db->getUserById($_SESSION['user_id'] ?? '');
+            $db->createPaymentOrder([
+                'trade_no' => 'ADJ' . date('YmdHis') . rand(1000, 9999),
+                'user_id' => $payload['id'],
+                'payment_config_id' => 'admin',
+                'pay_type' => 'admin_adjust',
+                'amount' => $diff,
+                'actual_amount' => $diff,
+                'fee' => 0,
+                'status' => 'paid',
+                'type' => 'admin_balance_adjust',
+                'title' => '后台余额调整',
+                'description' => '管理员 ' . ($adminUser['username'] ?? 'admin') . ' 将余额从 ¥' . number_format($oldBalance, 2) . ' 调整为 ¥' . number_format($newBalance, 2),
+                'paid_at' => time()
+            ]);
+        }
         adminJsonResponse(['success' => true, 'message' => '用户信息已更新']);
 
     case 'delete_user':
@@ -533,6 +553,45 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => '删除失败'], 400);
         }
         adminJsonResponse(['success' => true, 'message' => '用户已删除']);
+
+    case 'delete_product':
+        $id = trim($_POST['id'] ?? '');
+        if ($id === '') {
+            adminJsonResponse(['success' => false, 'message' => '缺少商品ID'], 400);
+        }
+        if (!$db->getProductById($id)) {
+            adminJsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        if (!$db->deleteProduct($id)) {
+            adminJsonResponse(['success' => false, 'message' => '删除失败'], 400);
+        }
+        adminJsonResponse(['success' => true, 'message' => '商品已删除']);
+
+    case 'delete_products':
+        $idsJson = $_POST['ids'] ?? '[]';
+        $ids = json_decode($idsJson, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($ids)) {
+            adminJsonResponse(['success' => false, 'message' => '商品ID列表格式错误'], 400);
+        }
+        $ids = array_values(array_unique(array_filter(array_map('trim', $ids), fn($id) => $id !== '')));
+        if (empty($ids)) {
+            adminJsonResponse(['success' => false, 'message' => '请选择要删除的商品'], 400);
+        }
+        $deleted = 0;
+        $missing = 0;
+        foreach ($ids as $id) {
+            if (!$db->getProductById($id)) {
+                $missing++;
+                continue;
+            }
+            if ($db->deleteProduct($id)) {
+                $deleted++;
+            }
+        }
+        if ($deleted === 0) {
+            adminJsonResponse(['success' => false, 'message' => $missing > 0 ? '所选商品不存在或已被删除' : '删除失败'], 400);
+        }
+        adminJsonResponse(['success' => true, 'message' => '已删除 ' . $deleted . ' 个商品', 'deleted' => $deleted, 'missing' => $missing]);
 
     case 'stats':
         $users = $db->getTable('users');

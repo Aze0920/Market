@@ -85,6 +85,19 @@ function validateId($id) {
     return preg_match('/^[a-zA-Z0-9_]+$/', $id);
 }
 
+function productRatingStats($comments) {
+    $good = 0;
+    $bad = 0;
+    foreach ($comments as $comment) {
+        if ((int)($comment['rating'] ?? 0) >= 4) {
+            $good++;
+        } else {
+            $bad++;
+        }
+    }
+    return ['good' => $good, 'bad' => $bad, 'total' => count($comments)];
+}
+
 switch ($action) {
     case 'list':
         $filters = [
@@ -94,6 +107,10 @@ switch ($action) {
         ];
         $products = $db->getProducts($filters);
         foreach ($products as &$p) {
+            $stats = productRatingStats($db->getComments($p['id']));
+            $p['rating_good'] = $stats['good'];
+            $p['rating_bad'] = $stats['bad'];
+            $p['rating_total'] = $stats['total'];
             unset($p['account_list']);
         }
         jsonResponse(['success' => true, 'products' => $products]);
@@ -122,6 +139,7 @@ switch ($action) {
         $safe = $product;
         unset($safe['account_list']);
         $comments = $db->getComments($id);
+        $safe['rating_stats'] = productRatingStats($comments);
         jsonResponse(['success' => true, 'product' => $safe, 'comments' => $comments]);
 
     case 'publish':
@@ -148,6 +166,8 @@ switch ($action) {
         $price = floatval($_POST['price'] ?? 0);
         $description = sanitizeMarkdown($_POST['description'] ?? '');
         $accountListText = trim($_POST['account_list'] ?? '');
+        $pickupPasswordEnabled = ($_POST['pickup_password_enabled'] ?? '0') === '1';
+        $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
 
         if (empty($title) || strlen($title) > 100) {
             productPublishFail('请填写标题（最多100字符）');
@@ -157,6 +177,12 @@ switch ($action) {
         }
         if (empty($accountListText)) {
             productPublishFail('请填写账户列表');
+        }
+        if ($pickupPasswordEnabled && $pickupPassword === '') {
+            productPublishFail('开启取卡密码后必须填写取卡密码');
+        }
+        if (strlen($pickupPassword) > 100) {
+            productPublishFail('取卡密码最多100字符');
         }
 
         $accountLines = preg_split('/\r\n|\r|\n/', $accountListText);
@@ -190,6 +216,20 @@ switch ($action) {
 
         if ($publishFee > 0) {
             $db->updateUser($userId, ['balance' => $user['balance'] - $publishFee]);
+            $db->createPaymentOrder([
+                'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
+                'user_id' => $userId,
+                'payment_config_id' => 'balance',
+                'pay_type' => 'balance',
+                'amount' => -$publishFee,
+                'actual_amount' => -$publishFee,
+                'fee' => 0,
+                'status' => 'paid',
+                'type' => 'publish_fee',
+                'title' => '余额支付发布费用',
+                'description' => '发布商品扣费：' . $title,
+                'paid_at' => time()
+            ]);
         }
 
         $images = ['🎮', '📺', '🎨', '🎵', '🤖', '📦', '🔑', '💎', '🌟', '🚀'];
@@ -204,6 +244,8 @@ switch ($action) {
             'stock' => count($accountList),
             'description' => $description,
             'account_list' => $accountList,
+            'pickup_password_enabled' => $pickupPasswordEnabled,
+            'pickup_password' => $pickupPasswordEnabled ? password_hash($pickupPassword, PASSWORD_DEFAULT) : '',
             'sales' => 0,
             'created_at' => time(),
             'image' => $images[array_rand($images)]
@@ -245,6 +287,7 @@ switch ($action) {
         global $db;
         $user = getCurrentUser();
         $id = $_POST['id'] ?? '';
+        $quantity = max(1, min(100, intval($_POST['quantity'] ?? 1)));
         if (!validateId($id)) {
             jsonResponse(['success' => false, 'message' => '无效的ID'], 400);
         }
@@ -253,14 +296,11 @@ switch ($action) {
         if (!$product) {
             jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
         }
-        if ($product['stock'] <= 0) {
-            jsonResponse(['success' => false, 'message' => '商品已售罄'], 400);
+        if ($product['stock'] < $quantity) {
+            jsonResponse(['success' => false, 'message' => '库存不足'], 400);
         }
         if ($product['seller_id'] === $userId) {
             jsonResponse(['success' => false, 'message' => '不能购买自己的商品'], 400);
-        }
-        if ($user['balance'] < $product['price']) {
-            jsonResponse(['success' => false, 'message' => '余额不足'], 400);
         }
 
         $levels = $db->getMembershipLevels();
@@ -268,29 +308,36 @@ switch ($action) {
         $sellerLevel = $levels[$seller['membership_level']] ?? $levels['Free'];
         $feeRate = $sellerLevel['fee_rate'];
 
-        $price = $product['price'];
+        $price = $product['price'] * $quantity;
+        if ($user['balance'] < $price) {
+            jsonResponse(['success' => false, 'message' => '余额不足'], 400);
+        }
         $sellerAmount = $price * (1 - $feeRate);
         $fee = $price * $feeRate;
 
         $db->updateUser($userId, ['balance' => $user['balance'] - $price]);
 
-        $deliveryInfo = null;
-        $accountIndex = -1;
+        $deliveryList = [];
         foreach ($product['account_list'] as $idx => $acc) {
-            if (!$acc['sold']) {
-                $deliveryInfo = $acc;
-                $accountIndex = $idx;
-                break;
+            if (empty($acc['sold'])) {
+                $delivery = $acc;
+                $delivery['account_index'] = $idx;
+                $deliveryList[] = $delivery;
+                if (count($deliveryList) >= $quantity) {
+                    break;
+                }
             }
         }
 
-        if (!$deliveryInfo) {
-            jsonResponse(['success' => false, 'message' => '该商品暂无可用账户'], 400);
+        if (count($deliveryList) < $quantity) {
+            jsonResponse(['success' => false, 'message' => '该商品暂无足够可用账户'], 400);
         }
 
-        $product['account_list'][$accountIndex]['sold'] = true;
-        $product['stock'] -= 1;
-        $product['sales'] += 1;
+        foreach ($deliveryList as $delivery) {
+            $product['account_list'][$delivery['account_index']]['sold'] = true;
+        }
+        $product['stock'] -= $quantity;
+        $product['sales'] += $quantity;
         $db->updateProduct($product);
 
         if ($seller) {
@@ -306,19 +353,59 @@ switch ($action) {
             'product_id' => $product['id'],
             'product_title' => sanitizeString($product['title']),
             'price' => $price,
+            'unit_price' => $product['price'],
+            'quantity' => $quantity,
             'fee' => $fee,
             'seller_amount' => $sellerAmount,
             'purchase_date' => time(),
             'delivery_info' => [
-                'email' => $deliveryInfo['email'] ?? '',
-                'password' => $deliveryInfo['password'] ?? '',
-                'client_id' => $deliveryInfo['client_id'] ?? 'N/A',
-                'fresh_token' => $deliveryInfo['fresh_token'] ?? 'N/A',
-                'content' => $deliveryInfo['content'] ?? '',
-                'format' => $deliveryInfo['format'] ?? 'pipe'
+                'items' => array_map(function($deliveryInfo) {
+                    return [
+                        'email' => $deliveryInfo['email'] ?? '',
+                        'password' => $deliveryInfo['password'] ?? '',
+                        'client_id' => $deliveryInfo['client_id'] ?? 'N/A',
+                        'fresh_token' => $deliveryInfo['fresh_token'] ?? 'N/A',
+                        'content' => $deliveryInfo['content'] ?? '',
+                        'format' => $deliveryInfo['format'] ?? 'pipe'
+                    ];
+                }, $deliveryList),
+                'locked' => !empty($product['pickup_password_enabled']),
+                'password_required' => !empty($product['pickup_password_enabled'])
             ]
         ];
         $db->addOrder($order);
+        $db->createPaymentOrder([
+            'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
+            'user_id' => $userId,
+            'payment_config_id' => 'balance',
+            'pay_type' => 'balance',
+            'amount' => -$price,
+            'actual_amount' => -$price,
+            'fee' => $fee,
+            'status' => 'paid',
+            'type' => 'product_purchase',
+            'title' => '余额支付商品订单',
+            'description' => '购买商品：' . $product['title'] . ' × ' . $quantity,
+            'related_id' => $order['id'],
+            'paid_at' => time()
+        ]);
+        if ($seller) {
+            $db->createPaymentOrder([
+                'trade_no' => 'INC' . date('YmdHis') . rand(1000, 9999),
+                'user_id' => $seller['id'],
+                'payment_config_id' => 'balance',
+                'pay_type' => 'balance_income',
+                'amount' => $sellerAmount,
+                'actual_amount' => $sellerAmount,
+                'fee' => $fee,
+                'status' => 'paid',
+                'type' => 'product_sale_income',
+                'title' => '商品销售收入',
+                'description' => '售出商品：' . $product['title'] . ' × ' . $quantity,
+                'related_id' => $order['id'],
+                'paid_at' => time()
+            ]);
+        }
 
         jsonResponse(['success' => true, 'message' => '购买成功', 'order' => $order]);
 
@@ -358,6 +445,27 @@ switch ($action) {
 
         $db->addComment($comment);
         jsonResponse(['success' => true, 'message' => '评价成功']);
+
+    case 'reviews':
+        $userId = requireAuth();
+        $productId = $_GET['product_id'] ?? '';
+        $comments = $productId && validateId($productId) ? $db->getComments($productId) : $db->getComments();
+        $visible = [];
+        foreach ($comments as $comment) {
+            $product = $db->getProductById($comment['product_id'] ?? '');
+            if (!$product) continue;
+            $order = $db->getOrderById($comment['order_id'] ?? '');
+            if (($product['seller_id'] ?? '') !== $userId && ($comment['user_id'] ?? '') !== $userId && ($_SESSION['user_role'] ?? '') !== 'admin') {
+                continue;
+            }
+            $comment['product_title'] = $product['title'] ?? '';
+            $comment['seller_id'] = $product['seller_id'] ?? '';
+            $comment['buyer_name'] = $comment['username'] ?? '';
+            $comment['order_price'] = $order['price'] ?? 0;
+            $visible[] = $comment;
+        }
+        usort($visible, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        jsonResponse(['success' => true, 'comments' => $visible]);
 
     default:
         jsonResponse(['success' => false, 'message' => '未知操作'], 400);

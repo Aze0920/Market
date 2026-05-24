@@ -73,6 +73,21 @@ switch ($action) {
 
         $db->useCardCode($code, $userId);
         $db->updateUser($userId, ['balance' => $user['balance'] + $card['amount']]);
+        $db->createPaymentOrder([
+            'trade_no' => 'CARD' . date('YmdHis') . rand(1000, 9999),
+            'user_id' => $userId,
+            'payment_config_id' => 'card',
+            'pay_type' => 'card_code',
+            'amount' => $card['amount'],
+            'actual_amount' => $card['amount'],
+            'fee' => 0,
+            'status' => 'paid',
+            'type' => 'card_recharge',
+            'title' => '卡密充值',
+            'description' => '使用卡密充值余额',
+            'related_id' => $card['id'] ?? '',
+            'paid_at' => time()
+        ]);
 
         jsonResponse([
             'success' => true,

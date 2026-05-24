@@ -54,6 +54,17 @@ keynest_require_installed(false);
         .badge-soft.warning { background: #fef3c7; color: #92400e; }
         .badge-soft.danger { background: #fee2e2; color: #991b1b; }
         .badge-soft.info { background: #dbeafe; color: #1e40af; }
+        .order-status-pill { display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 999px; padding: 7px 12px; font-size: .82rem; font-weight: 800; line-height: 1; cursor: pointer; transition: .16s ease; }
+        .order-status-pill:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(15,23,42,.12); }
+        .order-status-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+        .order-status-pill.pending { background: #fef3c7; color: #92400e; }
+        .order-status-pill.paid { background: #dcfce7; color: #166534; }
+        .order-status-pill.failed, .order-status-pill.cancelled { background: #fee2e2; color: #991b1b; }
+        .order-status-editor-row td { padding-top: 0; border-top: 0; }
+        .order-status-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 18px; background: #f8fafc; }
+        .order-status-option { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 8px 13px; font-weight: 800; color: #475569; }
+        .order-status-option.active { border-color: var(--primary); color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary2)); }
+        .order-status-option:not(.active):hover { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
         .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 12% 16%, rgba(79,70,229,.26), transparent 28%), radial-gradient(circle at 88% 18%, rgba(14,165,233,.20), transparent 30%), linear-gradient(135deg, #eef2ff, #f8fafc); }
         .login-card { width: min(430px, 100%); background: rgba(255,255,255,.88); border: 1px solid rgba(255,255,255,.7); border-radius: 28px; padding: 34px; box-shadow: 0 28px 80px rgba(15,23,42,.16); backdrop-filter: blur(18px); }
         .login-logo { width: 64px; height: 64px; border-radius: 22px; display: grid; place-items: center; color: #fff; font-size: 30px; background: linear-gradient(135deg, var(--primary), var(--primary2)); margin-bottom: 20px; }
@@ -335,7 +346,44 @@ function renderOverview() {
 function stat(icon, bg, color, value, label) { return `<div class="col-md-6 col-xl-3"><div class="stat-card"><div class="stat-icon" style="background:${bg};color:${color}"><i class="bi ${icon}"></i></div><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div></div>`; }
 function renderUsers() {
     setTitle('用户管理');
-    document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>全部用户</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button></div>${userTable(Admin.cache.users || [], true)}</div>`;
+    const keyword = (document.getElementById('userSearchInput')?.value || '').trim().toLowerCase();
+    const users = Admin.cache.users || [];
+    const filteredUsers = keyword ? users.filter(u =>
+        String(u.username || '').toLowerCase().includes(keyword) ||
+        String(u.email || '').toLowerCase().includes(keyword)
+    ) : users;
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <div>
+                    <h5>全部用户</h5>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filteredUsers.length + ' / ' + users.length + ' 个用户' : '共 ' + users.length + ' 个用户'}</div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-md-7 col-lg-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input id="userSearchInput" class="form-control" placeholder="搜索用户名或邮箱" value="${escapeHtml(keyword)}" oninput="renderUsers()" autocomplete="off">
+                    </div>
+                </div>
+                <div class="col-md-auto">
+                    <button class="btn btn-outline-secondary" onclick="clearUserSearch()" ${keyword ? '' : 'disabled'}>清空</button>
+                </div>
+            </div>
+            ${userTable(filteredUsers, true)}
+        </div>`;
+    if (keyword) {
+        const input = document.getElementById('userSearchInput');
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+    }
+}
+function clearUserSearch() {
+    const input = document.getElementById('userSearchInput');
+    if (input) input.value = '';
+    renderUsers();
 }
 function userTable(users, withActions = false) {
     if (!users.length) return '<div class="text-muted py-4 text-center">暂无用户</div>';
@@ -406,11 +454,188 @@ async function deleteUserAdmin(id) {
     await loadAdminData();
     renderUsers();
 }
-function renderProducts() { setTitle('商品管理'); const products = Admin.cache.products || []; document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>全部商品</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div><div class="table-responsive"><table class="table"><thead><tr><th>标题</th><th>卖家</th><th>分类</th><th>价格</th><th>库存</th><th>销量</th></tr></thead><tbody>${products.map(p => `<tr><td><strong>${escapeHtml(p.title)}</strong></td><td>${escapeHtml(p.seller_name || '-')}</td><td>${escapeHtml(p.category || '-')}</td><td>${money(p.price)}</td><td>${p.stock || 0}</td><td>${p.sales || 0}</td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无商品</td></tr>'}</tbody></table></div></div>`; }
+function renderProducts() {
+    setTitle('商品管理');
+    const products = Admin.cache.products || [];
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <div>
+                    <h5>全部商品</h5>
+                    <div class="small text-muted mt-1">可单独删除，也可勾选多个商品后批量删除。</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button id="batchDeleteProductsBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedProductsAdmin()" disabled>
+                        <i class="bi bi-trash3 me-1"></i>批量删除
+                    </button>
+                    <button class="btn btn-sm btn-primary" onclick="loadAdminData()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+                    </button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width:44px"><input class="form-check-input" type="checkbox" id="productSelectAll" onchange="toggleAllProductSelection(this.checked)" ${products.length ? '' : 'disabled'}></th>
+                            <th>标题</th>
+                            <th>卖家</th>
+                            <th>分类</th>
+                            <th>价格</th>
+                            <th>库存</th>
+                            <th>销量</th>
+                            <th class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${products.map(p => `
+                            <tr>
+                                <td><input class="form-check-input product-select" type="checkbox" value="${escapeHtml(p.id)}" onchange="updateProductBatchToolbar()"></td>
+                                <td><strong>${escapeHtml(p.title)}</strong><div class="small text-muted"><code>${escapeHtml(p.id)}</code></div></td>
+                                <td>${escapeHtml(p.seller_name || '-')}</td>
+                                <td>${escapeHtml(p.category || '-')}</td>
+                                <td>${money(p.price)}</td>
+                                <td>${p.stock || 0}</td>
+                                <td>${p.sales || 0}</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteProductAdmin('${escapeHtml(p.id)}')">
+                                        <i class="bi bi-trash me-1"></i>删除
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('') || '<tr><td colspan="8" class="text-center text-muted py-4">暂无商品</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    updateProductBatchToolbar();
+}
+function selectedProductIds() {
+    return Array.from(document.querySelectorAll('.product-select:checked')).map(input => input.value).filter(Boolean);
+}
+function updateProductBatchToolbar() {
+    const checkboxes = Array.from(document.querySelectorAll('.product-select'));
+    const selectedCount = checkboxes.filter(input => input.checked).length;
+    const batchBtn = document.getElementById('batchDeleteProductsBtn');
+    const selectAll = document.getElementById('productSelectAll');
+    if (batchBtn) {
+        batchBtn.disabled = selectedCount === 0;
+        batchBtn.innerHTML = `<i class="bi bi-trash3 me-1"></i>${selectedCount ? '批量删除 (' + selectedCount + ')' : '批量删除'}`;
+    }
+    if (selectAll) {
+        selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+}
+function toggleAllProductSelection(checked) {
+    document.querySelectorAll('.product-select').forEach(input => { input.checked = checked; });
+    updateProductBatchToolbar();
+}
+async function deleteProductAdmin(id) {
+    const product = (Admin.cache.products || []).find(p => p.id === id);
+    if (!product) return showToast('商品不存在', 'error');
+    if (!confirm('确定删除商品“' + product.title + '”吗？此操作不可恢复。')) return;
+    const res = await request('admin.php?action=delete_product', 'POST', { id });
+    if (!res.success) return showToast(res.message || '删除失败', 'error');
+    showToast(res.message || '商品已删除', 'success');
+    await loadAdminData();
+    renderProducts();
+}
+async function deleteSelectedProductsAdmin() {
+    const ids = selectedProductIds();
+    if (!ids.length) return showToast('请先选择要删除的商品', 'error');
+    if (!confirm('确定删除选中的 ' + ids.length + ' 个商品吗？此操作不可恢复。')) return;
+    const res = await request('admin.php?action=delete_products', 'POST', { ids: JSON.stringify(ids) });
+    if (!res.success) return showToast(res.message || '批量删除失败', 'error');
+    showToast(res.message || ('已删除 ' + ids.length + ' 个商品'), 'success');
+    await loadAdminData();
+    renderProducts();
+}
+function orderTypeLabel(type, payType) {
+    const map = {
+        recharge: '在线充值',
+        membership_upgrade: '在线会员升级',
+        membership_upgrade_balance: '余额会员升级',
+        product_purchase: '余额购买商品',
+        product_sale_income: '商品销售收入',
+        publish_fee: '发布扣费',
+        admin_balance_adjust: '后台调整'
+    };
+    return map[type] || payType || type || '-';
+}
 function renderOrders() {
     setTitle('订单记录');
     const orders = Admin.cache.payOrders || [];
-    document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>支付订单</h5><div class="d-flex flex-wrap gap-2"><button class="btn btn-sm btn-outline-danger" onclick="deleteUnpaidOrdersAdmin()">删除所有未支付</button><button class="btn btn-sm btn-danger" onclick="deleteAllOrdersAdmin()">删除全部订单</button><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div></div><div class="table-responsive"><table class="table"><thead><tr><th>交易号</th><th>用户ID</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr></thead><tbody>${orders.map(o => `<tr><td><code>${escapeHtml(o.trade_no || o.id)}</code></td><td>${escapeHtml(o.user_id || '-')}</td><td>${money(o.amount)}</td><td>${money(o.actual_amount)}</td><td><select class="form-select form-select-sm" style="min-width:96px" onchange="updatePaymentOrderStatus('${escapeHtml(o.id)}', this.value)"><option value="pending" ${o.status === 'pending' ? 'selected' : ''}>待处理</option><option value="paid" ${o.status === 'paid' ? 'selected' : ''}>已支付</option><option value="failed" ${o.status === 'failed' ? 'selected' : ''}>失败</option><option value="cancelled" ${o.status === 'cancelled' ? 'selected' : ''}>已取消</option></select></td><td>${dateText(o.created_at)}</td><td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">暂无订单</td></tr>'}</tbody></table></div></div>`;
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <h5>支付订单</h5>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteUnpaidOrdersAdmin()">删除所有未支付</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteAllOrdersAdmin()">删除全部订单</button>
+                    <button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr><th>交易号</th><th>用户ID</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
+                    </thead>
+                    <tbody>
+                        ${orders.map(o => `
+                            <tr>
+                                <td><code>${escapeHtml(o.trade_no || o.id)}</code></td>
+                                <td>${escapeHtml(o.user_id || '-')}</td>
+                                <td>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</td>
+                                <td><div class="fw-semibold">${escapeHtml(o.title || '-')}</div><div class="small text-muted">${escapeHtml(o.description || '')}</div></td>
+                                <td>${money(o.amount)}</td>
+                                <td>${money(o.actual_amount)}</td>
+                                <td>${orderStatusPill(o)}</td>
+                                <td>${dateText(o.created_at)}</td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></td>
+                            </tr>
+                            <tr id="orderStatusEditor-${escapeHtml(o.id)}" class="order-status-editor-row hidden">
+                                <td colspan="9">${orderStatusEditor(o)}</td>
+                            </tr>
+                        `).join('') || '<tr><td colspan="9" class="text-center text-muted py-4">暂无订单</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+}
+function orderStatusMeta(status) {
+    const map = {
+        pending: { label: '待处理', className: 'pending' },
+        paid: { label: '已支付', className: 'paid' },
+        failed: { label: '失败', className: 'failed' },
+        cancelled: { label: '已取消', className: 'cancelled' }
+    };
+    return map[status] || { label: status || '-', className: 'pending' };
+}
+function orderStatusPill(order) {
+    const meta = orderStatusMeta(order.status);
+    return `<button class="order-status-pill ${meta.className}" onclick="toggleOrderStatusEditor('${escapeHtml(order.id)}')" title="点击修改状态">${escapeHtml(meta.label)}</button>`;
+}
+function orderStatusEditor(order) {
+    const options = [
+        ['pending', '待处理'],
+        ['paid', '已支付'],
+        ['failed', '失败'],
+        ['cancelled', '已取消']
+    ];
+    return `
+        <div class="order-status-editor">
+            <span class="fw-bold me-1">修改状态</span>
+            ${options.map(([value, label]) => `<button class="order-status-option ${order.status === value ? 'active' : ''}" onclick="updatePaymentOrderStatus('${escapeHtml(order.id)}', '${value}')">${label}</button>`).join('')}
+            <button class="btn btn-sm btn-light ms-auto" onclick="toggleOrderStatusEditor('${escapeHtml(order.id)}', false)">收起</button>
+        </div>`;
+}
+function toggleOrderStatusEditor(id, forceOpen = null) {
+    const row = document.getElementById('orderStatusEditor-' + id);
+    if (!row) return;
+    const shouldOpen = forceOpen === null ? row.classList.contains('hidden') : forceOpen;
+    document.querySelectorAll('.order-status-editor-row').forEach(el => el.classList.add('hidden'));
+    row.classList.toggle('hidden', !shouldOpen);
 }
 async function updatePaymentOrderStatus(id, status) { const res = await request('payment.php?action=update_order_status', 'POST', { id, status }); if (!res.success) { showToast(res.message || '状态更新失败', 'error'); await loadAdminData(); renderOrders(); return; } showToast('订单状态已更新', 'success'); await loadAdminData(); }
 async function deletePaymentOrderAdmin(id) { if (!confirm('确定删除这条订单吗？')) return; const res = await request('payment.php?action=delete_order', 'POST', { id }); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast('订单已删除', 'success'); await loadAdminData(); renderOrders(); }

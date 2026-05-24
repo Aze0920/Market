@@ -279,6 +279,9 @@ function renderDashboardTab(tabName) {
         case 'messages':
             loadMessagesTab(contentArea);
             break;
+        case 'reviews':
+            loadReviewsTab(contentArea);
+            break;
     }
 }
 
@@ -325,6 +328,9 @@ function renderDashboard(tabName = null) {
     sidebarHtml += `
         <div class="sidebar-nav-item" data-tab="messages">
             <i class="bi bi-chat-dots"></i><span>私信</span>
+        </div>
+        <div class="sidebar-nav-item" data-tab="reviews">
+            <i class="bi bi-star-half"></i><span>评价管理</span>
         </div>
     `;
     document.getElementById('dashSidebar').innerHTML = sidebarHtml;
@@ -429,7 +435,7 @@ async function loadOrdersTab(area) {
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="viewDeliveryInfo('${o.id}')">查看发货</button>
-                                <button class="btn btn-sm btn-primary" onclick="openCommentModal('${o.product_id}', '${o.id}')">评价</button>
+                                ${o.has_comment ? '<span class="badge badge-success ms-1">已评价</span>' : `<button class="btn btn-sm btn-primary" onclick="openCommentModal('${o.product_id}', '${o.id}')">评价</button>`}
                             </td>
                         </tr>
                     `).join('')}
@@ -504,7 +510,7 @@ async function loadMyProductsTab(area) {
         <div class="row g-3">
             ${result.products.map(p => `
                 <div class="col-md-6">
-                    <div class="card">
+                    <div class="card seller-product-card" onclick="openSellerProductManage('${p.id}')">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start">
                                 <div>
@@ -514,7 +520,7 @@ async function loadMyProductsTab(area) {
                                         库存: ${p.stock} | 已售: ${p.sales} | ¥${p.price.toFixed(2)}
                                     </p>
                                 </div>
-                                <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">
+                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteProduct('${p.id}')">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>
@@ -883,6 +889,46 @@ async function loadPaymentManageTab(area) {
                 </table>
             </div>`
         }
+    `;
+}
+
+async function loadReviewsTab(area) {
+    const result = await API.getProductReviews();
+    const comments = result.success ? result.comments : [];
+    area.innerHTML = `
+        <h5 class="fw-bold mb-4"><i class="bi bi-star-half me-2"></i>评价管理</h5>
+        ${comments.length === 0 ? `
+            <div class="empty-state">
+                <i class="bi bi-chat-square-heart"></i>
+                <h5>暂无评价</h5>
+                <p>买家评价后会显示在这里</p>
+            </div>
+        ` : `
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>商品</th>
+                            <th>买家</th>
+                            <th>评分</th>
+                            <th>内容</th>
+                            <th>时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${comments.map(c => `
+                            <tr>
+                                <td>${Security.escapeHtml(Utils.truncate(c.product_title || '-', 24))}</td>
+                                <td>${Security.escapeHtml(c.buyer_name || c.username || '-')}</td>
+                                <td><span class="text-warning">${'★'.repeat(Number(c.rating || 0))}</span><span class="text-muted">${'☆'.repeat(5 - Number(c.rating || 0))}</span></td>
+                                <td>${Security.escapeHtml(c.content || '未填写评价内容')}</td>
+                                <td class="text-muted small">${Utils.formatDate(c.created_at)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `}
     `;
 }
 

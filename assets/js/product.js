@@ -16,15 +16,20 @@ function plainTextSummary(markdown, maxLength = 80) {
 }
 
 function deliveryInfoHtml(d) {
-    if (d && d.format === 'line' && d.content) {
-        return `<div class="mb-2"><strong>账号信息:</strong><pre class="delivery-plain mt-2 mb-2">${Security.escapeHtml(d.content)}</pre><button class="btn btn-sm btn-outline-primary" onclick="Utils.copyText('${Security.escapeAttr(d.content)}')"><i class="bi bi-clipboard me-1"></i>复制账号信息</button></div>`;
-    }
-    return `
-        <p class="mb-2"><strong>📧 邮箱:</strong> ${Security.escapeHtml(d?.email || '')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(d?.email || '')}')"></i></p>
-        <p class="mb-2"><strong>🔑 密码:</strong> ${Security.escapeHtml(d?.password || '')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(d?.password || '')}')"></i></p>
-        <p class="mb-2"><strong>🆔 Client ID:</strong> ${Security.escapeHtml(d?.client_id || 'N/A')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(d?.client_id || 'N/A')}')"></i></p>
-        <p class="mb-0"><strong>🔄 Fresh Token:</strong> ${Security.escapeHtml(d?.fresh_token || 'N/A')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(d?.fresh_token || 'N/A')}')"></i></p>
-    `;
+    const items = Array.isArray(d?.items) ? d.items : [d];
+    return items.map((item, index) => {
+        if (item && item.format === 'line' && item.content) {
+            return `<div class="mb-3"><strong>账号信息 ${items.length > 1 ? '#' + (index + 1) : ''}:</strong><pre class="delivery-plain mt-2 mb-2">${Security.escapeHtml(item.content)}</pre><button class="btn btn-sm btn-outline-primary" onclick="Utils.copyText('${Security.escapeAttr(item.content)}')"><i class="bi bi-clipboard me-1"></i>复制账号信息</button></div>`;
+        }
+        return `
+            <div class="mb-3 pb-2 border-bottom">
+                <p class="mb-2"><strong>📧 邮箱:</strong> ${Security.escapeHtml(item?.email || '')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.email || '')}')"></i></p>
+                <p class="mb-2"><strong>🔑 密码:</strong> ${Security.escapeHtml(item?.password || '')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.password || '')}')"></i></p>
+                <p class="mb-2"><strong>🆔 Client ID:</strong> ${Security.escapeHtml(item?.client_id || 'N/A')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.client_id || 'N/A')}')"></i></p>
+                <p class="mb-0"><strong>🔄 Fresh Token:</strong> ${Security.escapeHtml(item?.fresh_token || 'N/A')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.fresh_token || 'N/A')}')"></i></p>
+            </div>
+        `;
+    }).join('');
 }
 
 async function loadProducts() {
@@ -59,6 +64,10 @@ async function loadProducts() {
                         <span class="price">¥${Security.escapeHtml(p.price.toFixed(2))}</span>
                         <span class="text-muted small">已售 ${Security.escapeHtml(p.sales)}</span>
                     </div>
+                    <div class="product-rating-line mt-2">
+                        <span class="text-success small">好评 ${Security.escapeHtml(p.rating_good || 0)}</span>
+                        <span class="text-danger small ms-2">差评 ${Security.escapeHtml(p.rating_bad || 0)}</span>
+                    </div>
                     <p class="text-muted small mb-0">卖家: ${Security.escapeHtml(p.seller_name)}</p>
                 </div>
             </div>
@@ -79,6 +88,7 @@ async function openProductDetail(id) {
 
     const product = result.product;
     const comments = result.comments || [];
+    const stats = product.rating_stats || { good: 0, bad: 0, total: comments.length };
 
     App.currentDetailProduct = product;
 
@@ -98,6 +108,14 @@ async function openProductDetail(id) {
                 <div class="product-description markdown-content mb-3">${renderMarkdown(product.description || '暂无描述')}</div>
                 <h3 class="text-danger fw-bold">¥${Security.escapeHtml(product.price.toFixed(2))}</h3>
                 <p><small>库存: <strong>${Security.escapeHtml(product.stock)}</strong> | 已售: <strong>${Security.escapeHtml(product.sales)}</strong> | 卖家: <strong>${Security.escapeHtml(product.seller_name)}</strong></small></p>
+                <p class="small mb-2"><span class="text-success">好评 ${Security.escapeHtml(stats.good || 0)}</span><span class="text-danger ms-3">差评 ${Security.escapeHtml(stats.bad || 0)}</span></p>
+                ${App.currentUser && App.currentUser.id !== product.seller_id ? `
+                    <div class="purchase-quantity-box mb-3">
+                        <label class="form-label">购买数量</label>
+                        <input type="number" id="buyQuantity" class="form-control" min="1" max="${Security.escapeAttr(product.stock)}" value="1" oninput="updatePurchaseQuantityTotal()">
+                        <small class="text-muted" id="buyQuantityTotal">合计：¥${Security.escapeHtml(product.price.toFixed(2))}</small>
+                    </div>
+                ` : ''}
                 <hr>
                 <h6 class="fw-bold">💬 买家评价</h6>
                 <div style="max-height: 150px; overflow-y: auto;">
@@ -128,6 +146,16 @@ async function openProductDetail(id) {
     modal.show();
 }
 
+function updatePurchaseQuantityTotal() {
+    const input = document.getElementById('buyQuantity');
+    const total = document.getElementById('buyQuantityTotal');
+    if (!input || !total || !App.currentDetailProduct) return;
+    const max = Math.max(1, Number(App.currentDetailProduct.stock || 1));
+    let quantity = Math.max(1, Math.min(max, parseInt(input.value || '1', 10)));
+    input.value = quantity;
+    total.textContent = `合计：¥${(Number(App.currentDetailProduct.price || 0) * quantity).toFixed(2)}`;
+}
+
 async function handleBuyNow() {
     if (!App.currentUser) {
         Toast.warning('请先登录');
@@ -147,7 +175,11 @@ async function handleBuyNow() {
         return;
     }
 
-    if (App.currentUser.balance < App.currentDetailProduct.price) {
+    const quantityInput = document.getElementById('buyQuantity');
+    const quantity = Math.max(1, Math.min(App.currentDetailProduct.stock, parseInt(quantityInput?.value || '1', 10)));
+    const totalPrice = App.currentDetailProduct.price * quantity;
+
+    if (App.currentUser.balance < totalPrice) {
         Toast.error('余额不足，请先充值');
         return;
     }
@@ -161,7 +193,8 @@ async function handleBuyNow() {
         <div class="card bg-light">
             <div class="card-body">
                 <h6 class="fw-bold">${Security.escapeHtml(App.currentDetailProduct.title)}</h6>
-                <p class="text-danger fs-5 fw-bold mb-1">¥${Security.escapeHtml(App.currentDetailProduct.price.toFixed(2))}</p>
+                <p class="text-muted small mb-1">单价：¥${Security.escapeHtml(App.currentDetailProduct.price.toFixed(2))} × ${Security.escapeHtml(quantity)}</p>
+                <p class="text-danger fs-5 fw-bold mb-1">¥${Security.escapeHtml(totalPrice.toFixed(2))}</p>
                 <p class="text-muted small mb-0">当前余额: ¥${Security.escapeHtml(App.currentUser.balance.toFixed(2))}</p>
             </div>
         </div>
@@ -169,16 +202,16 @@ async function handleBuyNow() {
 
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary" onclick="confirmPurchase()">确认购买</button>
+        <button class="btn btn-primary" onclick="confirmPurchase(${quantity})">确认购买</button>
     `;
 
     modal.show();
 }
 
-async function confirmPurchase() {
+async function confirmPurchase(quantity = 1) {
     if (!App.currentDetailProduct) return;
 
-    const result = await API.buyProduct(App.currentDetailProduct.id);
+    const result = await API.buyProduct(App.currentDetailProduct.id, quantity);
 
     if (!result.success) {
         Toast.error(result.message);
@@ -193,7 +226,7 @@ async function confirmPurchase() {
         <div class="text-center mb-3">
             <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
             <h5 class="fw-bold mt-2">购买成功！</h5>
-            <p class="text-muted">商品已自动发货，请保存好以下信息</p>
+            <p class="text-muted">商品已自动发货，${d?.locked ? '该商品需要取卡密码，请到购买记录输入密码查看' : '请保存好以下信息'}</p>
         </div>
         <div class="delivery-card">
             <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
@@ -221,8 +254,8 @@ async function afterPurchase() {
     }
 }
 
-async function viewDeliveryInfo(orderId) {
-    const result = await API.getOrder(orderId);
+async function viewDeliveryInfo(orderId, pickupPassword = '') {
+    const result = await API.getOrder(orderId, pickupPassword);
     if (!result.success) {
         Toast.error('订单不存在');
         return;
@@ -234,6 +267,13 @@ async function viewDeliveryInfo(orderId) {
     const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
     document.getElementById('purchaseBody').innerHTML = `
         <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
+        ${order.pickup_password_required ? `
+            <div class="alert alert-warning small">该商品开启了取卡密码，请输入卖家设置的取卡密码后查看。</div>
+            <div class="input-group mb-3">
+                <input type="password" class="form-control" id="pickupPasswordInput" placeholder="请输入取卡密码">
+                <button class="btn btn-primary" onclick="viewDeliveryInfo('${Security.escapeAttr(orderId)}', document.getElementById('pickupPasswordInput').value)">确认取卡</button>
+            </div>
+        ` : ''}
         <div class="delivery-card">
             <div class="small">
                 ${deliveryInfoHtml(d)}
@@ -249,16 +289,41 @@ async function viewDeliveryInfo(orderId) {
 }
 
 async function openCommentModal(productId, orderId) {
-    const rating = prompt('请给商品评分（1-5星）：');
-    if (!rating || rating < 1 || rating > 5) {
-        Toast.warning('请输入1-5的评分');
-        return;
-    }
-    const content = prompt('请输入评论内容（可选）：') || '';
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h6 class="fw-bold mb-3"><i class="bi bi-star me-1"></i>商品评价</h6>
+        <div class="mb-3">
+            <label class="form-label">评分（1-5星）</label>
+            <div class="rating-radio-group">
+                ${[1,2,3,4,5].map(n => `
+                    <label class="rating-radio">
+                        <input type="radio" name="commentRating" value="${n}" ${n === 5 ? 'checked' : ''}>
+                        <span>${n} 星</span>
+                    </label>
+                `).join('')}
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">评价内容</label>
+            <textarea class="form-control" id="commentContent" rows="4" maxlength="500" placeholder="可以写一下商品体验、发货质量等"></textarea>
+            <small class="text-muted">最多 500 字</small>
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="submitComment('${Security.escapeAttr(productId)}', '${Security.escapeAttr(orderId)}')">提交评价</button>
+    `;
+    modal.show();
+}
 
-    const result = await API.addComment(productId, orderId, parseInt(rating), content);
+async function submitComment(productId, orderId) {
+    const rating = parseInt(document.querySelector('input[name="commentRating"]:checked')?.value || '5', 10);
+    const content = document.getElementById('commentContent')?.value?.trim() || '';
+    const result = await API.addComment(productId, orderId, rating, content);
     if (result.success) {
         Toast.success('评价成功');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        if (App.currentPage === 'dashboard') renderDashboardTab(App.currentTab || 'orders');
     } else {
         Toast.error(result.message);
     }
@@ -276,6 +341,12 @@ async function deleteProduct(id) {
     }
 }
 
+function togglePickupPasswordInput() {
+    const enabled = document.getElementById('pubPickupPasswordEnabled')?.checked;
+    const wrap = document.getElementById('pubPickupPasswordWrap');
+    if (wrap) wrap.classList.toggle('hidden', !enabled);
+}
+
 function openPublishModal() {
     if (!App.currentUser) {
         Toast.warning('请先登录');
@@ -289,6 +360,11 @@ function openPublishModal() {
     document.getElementById('pubPrice').value = '';
     document.getElementById('pubDesc').value = '';
     document.getElementById('pubAccounts').value = '';
+    const pickupEnabled = document.getElementById('pubPickupPasswordEnabled');
+    const pickupPassword = document.getElementById('pubPickupPassword');
+    if (pickupEnabled) pickupEnabled.checked = false;
+    if (pickupPassword) pickupPassword.value = '';
+    togglePickupPasswordInput();
 
     const modal = new bootstrap.Modal(document.getElementById('publishModal'));
     modal.show();
@@ -341,6 +417,8 @@ async function handlePublish(event) {
         const priceEl = document.getElementById('pubPrice');
         const descEl = document.getElementById('pubDesc');
         const accountsEl = document.getElementById('pubAccounts');
+        const pickupEnabledEl = document.getElementById('pubPickupPasswordEnabled');
+        const pickupPasswordEl = document.getElementById('pubPickupPassword');
 
         if (!titleEl || !categoryEl || !priceEl || !descEl || !accountsEl) {
             showPublishError('发布表单加载不完整，请刷新页面后重试');
@@ -352,6 +430,8 @@ async function handlePublish(event) {
         const price = parseFloat(priceEl.value);
         const description = descEl.value.trim();
         const accountListText = accountsEl.value.trim();
+        const pickupPasswordEnabled = pickupEnabledEl && pickupEnabledEl.checked;
+        const pickupPassword = pickupPasswordEl ? pickupPasswordEl.value.trim() : '';
 
         if (!title || !price || price <= 0) {
             showPublishError('请填写标题和有效价格');
@@ -361,6 +441,10 @@ async function handlePublish(event) {
             showPublishError('请填写账户列表');
             return;
         }
+        if (pickupPasswordEnabled && !pickupPassword) {
+            showPublishError('开启取卡密码后必须填写取卡密码');
+            return;
+        }
 
         if (submitBtn) {
             submitBtn.disabled = true;
@@ -368,7 +452,9 @@ async function handlePublish(event) {
         }
 
         const result = await API.publishProduct({
-            title, category, price, description, account_list: accountListText
+            title, category, price, description, account_list: accountListText,
+            pickup_password_enabled: pickupPasswordEnabled ? '1' : '0',
+            pickup_password: pickupPassword
         });
 
         if (result && result.success) {

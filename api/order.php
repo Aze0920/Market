@@ -33,10 +33,33 @@ function validateId($id) {
     return preg_match('/^[a-zA-Z0-9_]+$/', $id);
 }
 
+function maskDeliveryInfo($deliveryInfo) {
+    if (!is_array($deliveryInfo)) return $deliveryInfo;
+    $deliveryInfo['items'] = array_map(function($item) {
+        return [
+            'format' => $item['format'] ?? 'line',
+            'content' => '该商品开启了取卡密码，请输入正确密码后查看',
+            'email' => '******',
+            'password' => '******',
+            'client_id' => '******',
+            'fresh_token' => '******'
+        ];
+    }, $deliveryInfo['items'] ?? [$deliveryInfo]);
+    $deliveryInfo['locked'] = true;
+    return $deliveryInfo;
+}
+
 switch ($action) {
     case 'my_orders':
         $userId = requireAuth();
         $orders = $db->getOrders($userId, 'buyer');
+        foreach ($orders as &$order) {
+            $order['has_comment'] = $db->hasComment($userId, $order['product_id'] ?? '', $order['id'] ?? '');
+            if (!empty($order['delivery_info']['password_required'])) {
+                $order['delivery_info'] = maskDeliveryInfo($order['delivery_info']);
+                $order['pickup_password_required'] = true;
+            }
+        }
         usort($orders, fn($a, $b) => $b['purchase_date'] - $a['purchase_date']);
         jsonResponse(['success' => true, 'orders' => $orders]);
 
@@ -59,6 +82,19 @@ switch ($action) {
         }
         if ($order['buyer_id'] !== $userId && $order['seller_id'] !== $userId) {
             jsonResponse(['success' => false, 'message' => '无权查看'], 403);
+        }
+
+        $product = $db->getProductById($order['product_id'] ?? '');
+        $pickupPassword = trim((string)($_GET['pickup_password'] ?? $_POST['pickup_password'] ?? ''));
+        if ($product && !empty($product['pickup_password_enabled']) && $order['buyer_id'] === $userId) {
+            $hash = (string)($product['pickup_password'] ?? '');
+            if ($hash === '' || $pickupPassword === '' || !password_verify($pickupPassword, $hash)) {
+                $order['delivery_info'] = maskDeliveryInfo($order['delivery_info'] ?? []);
+                $order['pickup_password_required'] = true;
+            } else {
+                if (isset($order['delivery_info']['locked'])) $order['delivery_info']['locked'] = false;
+                $order['pickup_password_required'] = false;
+            }
         }
 
         jsonResponse(['success' => true, 'order' => $order]);

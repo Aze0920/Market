@@ -245,7 +245,9 @@ switch ($action) {
             'amount' => $amount,
             'actual_amount' => $actualAmount,
             'fee' => $fee,
-            'type' => 'recharge'
+            'type' => 'recharge',
+            'title' => '在线充值',
+            'description' => '通过支付接口充值余额'
         ]);
 
         $yipay = new YiPay($config);
@@ -309,7 +311,9 @@ switch ($action) {
             'actual_amount' => $actualAmount,
             'fee' => $fee,
             'type' => 'membership_upgrade',
-            'target_level' => $targetLevel
+            'target_level' => $targetLevel,
+            'title' => '在线会员升级',
+            'description' => '开通 ' . $targetLevel . ' 会员'
         ]);
 
         $yipay = new YiPay($config);

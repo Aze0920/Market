@@ -96,6 +96,23 @@ switch ($action) {
             $updates['balance'] = $newBalance;
         }
         $db->updateUser($userId, $updates);
+        if ($cost > 0) {
+            $db->createPaymentOrder([
+                'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
+                'user_id' => $userId,
+                'payment_config_id' => 'balance',
+                'pay_type' => 'balance',
+                'amount' => -$cost,
+                'actual_amount' => -$cost,
+                'fee' => 0,
+                'status' => 'paid',
+                'type' => 'membership_upgrade_balance',
+                'title' => '余额支付会员升级',
+                'description' => '升级到 ' . $targetLevel . ' 会员',
+                'target_level' => $targetLevel,
+                'paid_at' => time()
+            ]);
+        }
 
         jsonResponse([
             'success' => true,
