@@ -280,6 +280,16 @@ function adminDeleteDirectory($dir) {
     rmdir($dir);
 }
 
+function adminPathIsPreserved($relative, $preserve) {
+    $relative = str_replace('\\', '/', trim($relative, '/'));
+    foreach ($preserve as $skip) {
+        if ($relative === $skip || str_starts_with($relative, $skip . '/')) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function adminCopyDirectory($source, $target, $rootSource = null) {
     $rootSource = $rootSource ?: $source;
     $preserve = ['.git', 'config/database.php', 'data', 'logs', 'data/install.lock', 'data/update_version.json'];
@@ -291,17 +301,27 @@ function adminCopyDirectory($source, $target, $rootSource = null) {
         $src = $source . DIRECTORY_SEPARATOR . $item;
         $dst = $target . DIRECTORY_SEPARATOR . $item;
         $relative = str_replace('\\', '/', ltrim(substr($src, strlen($rootSource)), DIRECTORY_SEPARATOR));
-        foreach ($preserve as $skip) {
-            if ($relative === $skip || str_starts_with($relative, $skip . '/')) {
-                continue 2;
-            }
+        if (adminPathIsPreserved($relative, $preserve)) {
+            continue;
         }
         if (is_dir($src)) {
-            if (is_dir($dst)) adminDeleteDirectory($dst);
+            if (!is_dir($dst)) {
+                mkdir($dst, 0755, true);
+            }
             adminCopyDirectory($src, $dst, $rootSource);
         } else {
             copy($src, $dst);
         }
+    }
+}
+
+function adminRequireDatabaseConfig($config) {
+    $databaseConfig = $config['site_dir'] . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'database.php';
+    if (!is_file($databaseConfig)) {
+        adminJsonResponse([
+            'success' => false,
+            'message' => '当前服务器缺少 config/database.php。请先从备份或本地重新上传数据库配置文件，否则系统会进入安装页。'
+        ], 500);
     }
 }
 
@@ -323,6 +343,7 @@ function adminApplyUpdate() {
     if (empty($config['git_bin'])) {
         adminJsonResponse(['success' => false, 'message' => '服务器 PHP 环境无法执行 Git 命令。请在宝塔 PHP 设置里删除 proc_open 的禁用项，并确认服务器已安装 git。', 'status' => adminUpdateStatus()], 500);
     }
+    adminRequireDatabaseConfig($config);
     adminEnsureUpdateRepo($config);
     $fetch = adminRunCommand(adminGitCommand('fetch origin ' . escapeshellarg($config['branch']), $config), $config['work_dir']);
     if ($fetch['code'] !== 0) {
