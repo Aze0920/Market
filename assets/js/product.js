@@ -32,6 +32,14 @@ function deliveryInfoHtml(d) {
     }).join('');
 }
 
+function productImageHtml(image, className = '') {
+    const value = String(image || '').trim();
+    if (/^(https?:\/\/|\/uploads\/products\/).+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(value)) {
+        return `<img class="product-custom-img ${className}" src="${Security.escapeAttr(value)}" alt="商品图片" loading="lazy">`;
+    }
+    return Security.escapeHtml(value || '📦');
+}
+
 async function loadProducts() {
     const grid = document.getElementById('productGrid');
     const emptyState = document.getElementById('emptyProductState');
@@ -55,7 +63,7 @@ async function loadProducts() {
                     `<span class="stock-badge in-stock">库存: ${Security.escapeHtml(p.stock)}</span>` :
                     `<span class="stock-badge low-stock">库存: ${Security.escapeHtml(p.stock)}</span>`
                 }
-                <div class="product-image">${p.image || '📦'}</div>
+                <div class="product-image">${productImageHtml(p.image)}</div>
                 <div class="product-body">
                     <span class="category-tag">${Security.escapeHtml(p.category)}</span>
                     <h6 class="fw-bold">${Security.escapeHtml(p.title)}</h6>
@@ -98,8 +106,8 @@ async function openProductDetail(id) {
     document.getElementById('detailBody').innerHTML = `
         <div class="row">
             <div class="col-md-5 text-center">
-                <div style="font-size: 6rem; background: linear-gradient(135deg, #f5f3ff, #e0e7ff); border-radius: 16px; padding: 2rem;">
-                    ${product.image || '📦'}
+                <div class="product-detail-image">
+                    ${productImageHtml(product.image, 'detail')}
                 </div>
             </div>
             <div class="col-md-7">
@@ -347,6 +355,63 @@ function togglePickupPasswordInput() {
     if (wrap) wrap.classList.toggle('hidden', !enabled);
 }
 
+function updatePublishImagePreview(value) {
+    const preview = document.getElementById('pubImagePreview');
+    if (!preview) return;
+    const url = String(value || '').trim();
+    if (/^(https?:\/\/|\/uploads\/products\/).+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(url)) {
+        preview.innerHTML = `<img src="${Security.escapeAttr(url)}" alt="商品图片预览">`;
+    } else {
+        preview.innerHTML = '<i class="bi bi-cloud-arrow-up"></i><span>点击选择或拖拽上传图片</span><small>支持 JPG / PNG / GIF / WEBP，最大 2MB</small>';
+    }
+}
+
+async function handlePublishImageFile(file) {
+    if (!file) return;
+    if (!/^image\/(jpeg|png|gif|webp)$/.test(file.type)) {
+        Toast.warning('仅支持 JPG、PNG、GIF、WEBP 图片');
+        return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+        Toast.warning('图片大小不能超过2MB');
+        return;
+    }
+    const preview = document.getElementById('pubImagePreview');
+    if (preview) preview.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div><span>上传中...</span>';
+    const result = await API.uploadProductImage(file);
+    if (!result.success) {
+        Toast.error(result.message || '图片上传失败');
+        updatePublishImagePreview(document.getElementById('pubImageUrl')?.value || '');
+        return;
+    }
+    const input = document.getElementById('pubImageUrl');
+    if (input) input.value = result.url;
+    updatePublishImagePreview(result.url);
+    Toast.success('图片上传成功');
+}
+
+function initPublishImageDropZone() {
+    const zone = document.getElementById('pubImageDropZone');
+    if (!zone || zone.dataset.bound === '1') return;
+    zone.dataset.bound = '1';
+    ['dragenter', 'dragover'].forEach(eventName => {
+        zone.addEventListener(eventName, event => {
+            event.preventDefault();
+            zone.classList.add('dragover');
+        });
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+        zone.addEventListener(eventName, event => {
+            event.preventDefault();
+            zone.classList.remove('dragover');
+        });
+    });
+    zone.addEventListener('drop', event => {
+        const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+        handlePublishImageFile(file);
+    });
+}
+
 function openPublishModal() {
     if (!App.currentUser) {
         Toast.warning('请先登录');
@@ -360,6 +425,11 @@ function openPublishModal() {
     document.getElementById('pubPrice').value = '';
     document.getElementById('pubDesc').value = '';
     document.getElementById('pubAccounts').value = '';
+    const imageInput = document.getElementById('pubImageUrl');
+    const fileInput = document.getElementById('pubImageFile');
+    if (imageInput) imageInput.value = '';
+    if (fileInput) fileInput.value = '';
+    updatePublishImagePreview('');
     const pickupEnabled = document.getElementById('pubPickupPasswordEnabled');
     const pickupPassword = document.getElementById('pubPickupPassword');
     if (pickupEnabled) pickupEnabled.checked = false;
@@ -368,6 +438,7 @@ function openPublishModal() {
 
     const modal = new bootstrap.Modal(document.getElementById('publishModal'));
     modal.show();
+    initPublishImageDropZone();
 }
 
 async function handlePublish(event) {
@@ -417,6 +488,7 @@ async function handlePublish(event) {
         const priceEl = document.getElementById('pubPrice');
         const descEl = document.getElementById('pubDesc');
         const accountsEl = document.getElementById('pubAccounts');
+        const imageEl = document.getElementById('pubImageUrl');
         const pickupEnabledEl = document.getElementById('pubPickupPasswordEnabled');
         const pickupPasswordEl = document.getElementById('pubPickupPassword');
 
@@ -430,6 +502,7 @@ async function handlePublish(event) {
         const price = parseFloat(priceEl.value);
         const description = descEl.value.trim();
         const accountListText = accountsEl.value.trim();
+        const image = imageEl ? imageEl.value.trim() : '';
         const pickupPasswordEnabled = pickupEnabledEl && pickupEnabledEl.checked;
         const pickupPassword = pickupPasswordEl ? pickupPasswordEl.value.trim() : '';
 
@@ -453,6 +526,7 @@ async function handlePublish(event) {
 
         const result = await API.publishProduct({
             title, category, price, description, account_list: accountListText,
+            image,
             pickup_password_enabled: pickupPasswordEnabled ? '1' : '0',
             pickup_password: pickupPassword
         });

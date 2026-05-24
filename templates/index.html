@@ -8,7 +8,7 @@
     <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=202605241809" rel="stylesheet">
+    <link href="assets/css/style.css?v=202605241825" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -39,6 +39,10 @@
                         <span class="badge bg-primary-light text-primary px-3 py-2" id="navBalance">¥ 0.00</span>
                         <div class="avatar" id="navAvatar">U</div>
                         <span class="fw-semibold" id="navUsername" style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                        <button class="btn btn-outline btn-sm position-relative hidden" onclick="openAnnouncementsModal()" id="navAnnouncementBtn" title="公告">
+                            <i class="bi bi-bell"></i>
+                            <span id="announcementBadge" class="badge badge-danger rounded-pill hidden" style="font-size:0.6rem;position:absolute;top:-6px;right:-6px;">0</span>
+                        </button>
                         <button class="btn btn-outline btn-sm" onclick="window.location.href='/admin/'" id="navAdminBtn" title="管理后台">
                             <i class="bi bi-shield-lock"></i>
                         </button>
@@ -219,6 +223,20 @@
         </div>
     </div>
 
+    <div class="modal fade" id="announcementsModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-bell me-2 text-primary"></i>平台公告</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="announcementsModalBody">
+                    <div class="text-center text-muted py-4">暂无公告</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="productDetailModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
@@ -280,6 +298,18 @@
                         <div class="col-md-3">
                             <label class="form-label">价格 (¥)</label>
                             <input type="number" class="form-control" id="pubPrice" placeholder="0.00" step="0.01" min="0.01">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">商品图片（选填）</label>
+                            <input type="text" class="form-control mb-2" id="pubImageUrl" placeholder="可填写 https://... 图片链接；不填则随机显示默认图标" oninput="updatePublishImagePreview(this.value)">
+                            <div class="product-image-uploader" id="pubImageDropZone" onclick="document.getElementById('pubImageFile').click()">
+                                <input type="file" id="pubImageFile" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" onchange="handlePublishImageFile(this.files[0])">
+                                <div id="pubImagePreview" class="product-image-preview-placeholder">
+                                    <i class="bi bi-cloud-arrow-up"></i>
+                                    <span>点击选择或拖拽上传图片</span>
+                                    <small>支持 JPG / PNG / GIF / WEBP，最大 2MB</small>
+                                </div>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label">商品描述（支持 Markdown）</label>
@@ -563,13 +593,13 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=202605241809"></script>
-    <script src="assets/js/app.js?v=202605241809"></script>
-    <script src="assets/js/product.js?v=202605241809"></script>
-    <script src="assets/js/message.js?v=202605241809"></script>
-    <script src="assets/js/auth.js?v=202605241809"></script>
+    <script src="assets/js/api.js?v=202605241825"></script>
+    <script src="assets/js/app.js?v=202605241825"></script>
+    <script src="assets/js/product.js?v=202605241825"></script>
+    <script src="assets/js/message.js?v=202605241825"></script>
+    <script src="assets/js/auth.js?v=202605241825"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = '202605241809';
+        window.KEYNEST_ASSET_VERSION = '202605241825';
 
         async function renderFrontMembershipCards(area) {
             if (!area) return;
@@ -856,8 +886,7 @@
             }
 
             App.updateUnreadBadge();
-
-            console.log('🔑 KeyNest 虚拟商品交易平台已就绪');
+            updateAnnouncementButton();
         }
 
         async function applySiteConfig() {
@@ -874,6 +903,67 @@
             if (marketTitle) marketTitle.textContent = siteDescription;
             if (marketDescription) marketDescription.textContent = siteDescription;
             if (footer) footer.textContent = '© 2026 ' + siteName + ' · ' + siteDescription;
+            window.KeyNestAnnouncements = normalizeAnnouncements(result.config);
+            updateAnnouncementButton();
+        }
+
+        function normalizeAnnouncements(config) {
+            if (!config || !config.announcement_enabled) return [];
+            let items = [];
+            if (Array.isArray(config.announcement_items)) {
+                items = config.announcement_items;
+            } else if (typeof config.announcement_items === 'string' && config.announcement_items.trim()) {
+                try {
+                    const parsed = JSON.parse(config.announcement_items);
+                    if (Array.isArray(parsed)) items = parsed;
+                } catch (e) {}
+            }
+            if (items.length === 0 && (config.announcement_title || config.announcement_content)) {
+                items = [{ title: config.announcement_title || '平台公告', content: config.announcement_content || '', enabled: true, created_at: 0 }];
+            }
+            return items
+                .filter(item => item && item.enabled !== false && item.enabled !== '0' && String(item.content || '').trim())
+                .map((item, index) => ({
+                    id: item.id || ('announcement_' + index),
+                    title: String(item.title || '平台公告'),
+                    content: String(item.content || ''),
+                    created_at: Number(item.created_at || 0)
+                }))
+                .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+        }
+
+        function updateAnnouncementButton() {
+            const btn = document.getElementById('navAnnouncementBtn');
+            const badge = document.getElementById('announcementBadge');
+            const count = (window.KeyNestAnnouncements || []).length;
+            if (!btn || !badge) return;
+            btn.classList.toggle('hidden', count === 0);
+            if (count > 0) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function openAnnouncementsModal() {
+            const items = window.KeyNestAnnouncements || [];
+            const body = document.getElementById('announcementsModalBody');
+            if (!body) return;
+            if (!items.length) {
+                body.innerHTML = '<div class="text-center text-muted py-4">暂无公告</div>';
+            } else {
+                body.innerHTML = `<div class="announcement-list">
+                    ${items.map(item => `<div class="announcement-card mb-3">
+                        <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+                            <h5 class="fw-bold mb-0">${Security.escapeHtml(item.title)}</h5>
+                            ${item.created_at ? `<span class="text-muted small text-nowrap">${Utils.formatDate(item.created_at)}</span>` : ''}
+                        </div>
+                        <div class="markdown-content">${typeof renderMarkdown === 'function' ? renderMarkdown(item.content) : Security.escapeHtml(item.content)}</div>
+                    </div>`).join('')}
+                </div>`;
+            }
+            new bootstrap.Modal(document.getElementById('announcementsModal')).show();
         }
 
         function renderDashboard(tabName = null) {

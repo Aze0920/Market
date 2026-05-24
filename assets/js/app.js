@@ -1026,17 +1026,55 @@ async function openSellerProductManage(productId) {
     const comments = reviewsResult.success ? reviewsResult.comments : [];
     const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
     document.getElementById('purchaseBody').innerHTML = `
-        <h5 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>${Security.escapeHtml(product.title)}</h5>
+        <h5 class="fw-bold mb-3"><i class="bi bi-pencil-square me-1"></i>编辑商品</h5>
         <div class="row g-2 mb-3">
             <div class="col-4"><div class="bg-light rounded-3 p-2 text-center"><strong>${Security.escapeHtml(product.stock)}</strong><br><small class="text-muted">库存</small></div></div>
             <div class="col-4"><div class="bg-light rounded-3 p-2 text-center"><strong>${Security.escapeHtml(product.sales)}</strong><br><small class="text-muted">已售</small></div></div>
-            <div class="col-4"><div class="bg-light rounded-3 p-2 text-center"><strong>¥${Security.escapeHtml(product.price.toFixed(2))}</strong><br><small class="text-muted">价格</small></div></div>
+            <div class="col-4"><div class="bg-light rounded-3 p-2 text-center"><strong>${comments.length}</strong><br><small class="text-muted">评价</small></div></div>
         </div>
-        <div class="mb-3">
-            <span class="badge badge-${product.pickup_password_enabled ? 'warning' : 'secondary'}">${product.pickup_password_enabled ? '已开启取卡密码' : '未开启取卡密码'}</span>
+        <div class="row g-3">
+            <div class="col-md-8">
+                <label class="form-label">商品标题</label>
+                <input class="form-control" id="editProductTitle" maxlength="100" value="${Security.escapeAttr(product.title || '')}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">价格 (¥)</label>
+                <input type="number" class="form-control" id="editProductPrice" min="0.01" step="0.01" value="${Security.escapeAttr(product.price || 0)}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">分类</label>
+                <select class="form-select" id="editProductCategory">
+                    ${['游戏账号', '流媒体', '软件许可', '其他'].map(cat => `<option value="${Security.escapeAttr(cat)}" ${cat === product.category ? 'selected' : ''}>${Security.escapeHtml(cat)}</option>`).join('')}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">商品图片链接</label>
+                <input class="form-control" id="editProductImage" value="${Security.escapeAttr(product.image || '')}" placeholder="图片链接或上传后的地址" oninput="updateEditProductImagePreview(this.value)">
+            </div>
+            <div class="col-12">
+                <div class="product-image-uploader" id="editProductImageDropZone" onclick="document.getElementById('editProductImageFile').click()">
+                    <input type="file" id="editProductImageFile" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" onchange="handleEditProductImageFile(this.files[0])">
+                    <div id="editProductImagePreview" class="product-image-preview-placeholder"></div>
+                </div>
+            </div>
+            <div class="col-12">
+                <label class="form-label">商品描述（支持 Markdown）</label>
+                <textarea class="form-control" id="editProductDesc" rows="4">${Security.escapeHtml(product.description || '')}</textarea>
+            </div>
+            <div class="col-12">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="editPickupPasswordEnabled" ${product.pickup_password_enabled ? 'checked' : ''} onchange="toggleEditPickupPasswordInput()">
+                    <label class="form-check-label" for="editPickupPasswordEnabled">开启取卡密码</label>
+                </div>
+                <div id="editPickupPasswordWrap" class="${product.pickup_password_enabled ? '' : 'hidden'}">
+                    <label class="form-label">新取卡密码</label>
+                    <input type="text" class="form-control" id="editPickupPassword" maxlength="100" placeholder="留空则保留原密码；首次开启必须填写">
+                </div>
+            </div>
         </div>
+        <hr>
         <h6 class="fw-bold">评价</h6>
-        ${comments.length === 0 ? '<p class="text-muted small">暂无评价</p>' : comments.map(c => `
+        ${comments.length === 0 ? '<p class="text-muted small">暂无评价</p>' : comments.slice(0, 5).map(c => `
             <div class="border-bottom py-2 small">
                 <strong>${Security.escapeHtml(c.buyer_name || c.username || '-')}</strong>
                 <span class="text-warning ms-2">${'★'.repeat(Number(c.rating || 0))}</span>
@@ -1048,8 +1086,105 @@ async function openSellerProductManage(productId) {
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
         <button class="btn btn-danger" onclick="deleteProduct('${Security.escapeAttr(product.id)}')" data-bs-dismiss="modal">下架删除</button>
+        <button class="btn btn-primary" onclick="saveSellerProduct('${Security.escapeAttr(product.id)}')">保存修改</button>
     `;
     modal.show();
+    updateEditProductImagePreview(product.image || '');
+    initEditProductImageDropZone();
+}
+
+async function saveSellerProduct(productId) {
+    const title = document.getElementById('editProductTitle')?.value?.trim() || '';
+    const category = document.getElementById('editProductCategory')?.value || '其他';
+    const price = parseFloat(document.getElementById('editProductPrice')?.value || '0');
+    const description = document.getElementById('editProductDesc')?.value?.trim() || '';
+    const image = document.getElementById('editProductImage')?.value?.trim() || '';
+    const pickupPasswordEnabled = document.getElementById('editPickupPasswordEnabled')?.checked ? '1' : '0';
+    const pickupPassword = document.getElementById('editPickupPassword')?.value?.trim() || '';
+    if (!title || !price || price <= 0) {
+        Toast.warning('请填写标题和有效价格');
+        return;
+    }
+    const result = await API.updateProduct(productId, {
+        title,
+        category,
+        price,
+        description,
+        image,
+        pickup_password_enabled: pickupPasswordEnabled,
+        pickup_password: pickupPassword
+    });
+    if (!result.success) {
+        Toast.error(result.message || '保存失败');
+        return;
+    }
+    Toast.success(result.message || '商品已更新');
+    bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+    renderDashboardTab('myproducts');
+    if (typeof loadProducts === 'function') loadProducts();
+}
+
+function toggleEditPickupPasswordInput() {
+    const enabled = document.getElementById('editPickupPasswordEnabled')?.checked;
+    const wrap = document.getElementById('editPickupPasswordWrap');
+    if (wrap) wrap.classList.toggle('hidden', !enabled);
+}
+
+function updateEditProductImagePreview(value) {
+    const preview = document.getElementById('editProductImagePreview');
+    if (!preview) return;
+    const url = String(value || '').trim();
+    if (/^(https?:\/\/|\/uploads\/products\/).+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(url)) {
+        preview.innerHTML = `<img src="${Security.escapeAttr(url)}" alt="商品图片预览">`;
+    } else {
+        preview.innerHTML = '<i class="bi bi-cloud-arrow-up"></i><span>点击选择或拖拽上传新图片</span><small>不上传则保留当前随机图标或图片</small>';
+    }
+}
+
+async function handleEditProductImageFile(file) {
+    if (!file) return;
+    if (!/^image\/(jpeg|png|gif|webp)$/.test(file.type)) {
+        Toast.warning('仅支持 JPG、PNG、GIF、WEBP 图片');
+        return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+        Toast.warning('图片大小不能超过2MB');
+        return;
+    }
+    const preview = document.getElementById('editProductImagePreview');
+    if (preview) preview.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div><span>上传中...</span>';
+    const result = await API.uploadProductImage(file);
+    if (!result.success) {
+        Toast.error(result.message || '图片上传失败');
+        updateEditProductImagePreview(document.getElementById('editProductImage')?.value || '');
+        return;
+    }
+    const input = document.getElementById('editProductImage');
+    if (input) input.value = result.url;
+    updateEditProductImagePreview(result.url);
+    Toast.success('图片上传成功');
+}
+
+function initEditProductImageDropZone() {
+    const zone = document.getElementById('editProductImageDropZone');
+    if (!zone || zone.dataset.bound === '1') return;
+    zone.dataset.bound = '1';
+    ['dragenter', 'dragover'].forEach(eventName => {
+        zone.addEventListener(eventName, event => {
+            event.preventDefault();
+            zone.classList.add('dragover');
+        });
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+        zone.addEventListener(eventName, event => {
+            event.preventDefault();
+            zone.classList.remove('dragover');
+        });
+    });
+    zone.addEventListener('drop', event => {
+        const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+        handleEditProductImageFile(file);
+    });
 }
 
 async function loadReviewsTab(area) {

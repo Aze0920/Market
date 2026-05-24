@@ -485,7 +485,8 @@ class Database {
             'announcement_enabled' => false,
             'announcement_title' => '',
             'announcement_content' => '',
-            'announcement_position' => 'home'
+            'announcement_position' => 'home',
+            'announcement_items' => []
         ];
     }
 

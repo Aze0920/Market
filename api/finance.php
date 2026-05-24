@@ -340,6 +340,7 @@ switch ($action) {
             'announcement_title',
             'announcement_content',
             'announcement_position',
+            'announcement_items',
             'oauth_qq_app_id',
             'oauth_qq_app_key',
             'oauth_qq_redirect_uri',
@@ -354,7 +355,29 @@ switch ($action) {
         foreach ($stringFields as $field) {
             if (isset($_POST[$field])) {
                 $value = trim((string)$_POST[$field]);
-                $config[$field] = in_array($field, ['announcement_content', 'captcha_extra_config'], true)
+                if ($field === 'announcement_items') {
+                    $items = json_decode($value, true);
+                    if (!is_array($items)) {
+                        jsonResponse(['success' => false, 'message' => '公告数据格式错误'], 400);
+                    }
+                    $normalizedItems = [];
+                    foreach ($items as $item) {
+                        if (!is_array($item)) continue;
+                        $title = sanitizeString($item['title'] ?? '');
+                        $content = trim((string)($item['content'] ?? ''));
+                        if ($title === '' && $content === '') continue;
+                        $normalizedItems[] = [
+                            'id' => sanitizeString($item['id'] ?? ('ann_' . time() . '_' . bin2hex(random_bytes(3)))),
+                            'title' => $title !== '' ? $title : '平台公告',
+                            'content' => $content,
+                            'enabled' => filter_var($item['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                            'created_at' => intval($item['created_at'] ?? time()),
+                        ];
+                    }
+                    $config[$field] = $normalizedItems;
+                    continue;
+                }
+                $config[$field] = in_array($field, ['announcement_content', 'captcha_extra_config', 'announcement_items'], true)
                     ? $value
                     : sanitizeString($value);
             }

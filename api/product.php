@@ -297,6 +297,61 @@ switch ($action) {
         unset($product['account_list'], $product['pickup_password']);
         jsonResponse(['success' => true, 'message' => '发布成功', 'product' => $product]);
 
+    case 'update':
+        $userId = requireAuth();
+        $id = $_POST['id'] ?? '';
+        if (!validateId($id)) {
+            jsonResponse(['success' => false, 'message' => '无效的商品ID'], 400);
+        }
+        $product = $db->getProductById($id);
+        if (!$product) {
+            jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        if (($product['seller_id'] ?? '') !== $userId && ($_SESSION['user_role'] ?? '') !== 'admin') {
+            jsonResponse(['success' => false, 'message' => '无权修改该商品'], 403);
+        }
+
+        $title = sanitizeString($_POST['title'] ?? '');
+        $category = sanitizeString($_POST['category'] ?? '其他');
+        $price = floatval($_POST['price'] ?? 0);
+        $description = sanitizeMarkdown($_POST['description'] ?? '');
+        $customImage = normalizeProductImage($_POST['image'] ?? '');
+        $pickupPasswordEnabled = ($_POST['pickup_password_enabled'] ?? '0') === '1';
+        $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
+
+        if ($title === '' || strlen($title) > 100) {
+            jsonResponse(['success' => false, 'message' => '请填写标题（最多100字符）'], 400);
+        }
+        if ($price <= 0 || $price > 999999) {
+            jsonResponse(['success' => false, 'message' => '请填写有效价格（最高999999）'], 400);
+        }
+        if ($pickupPasswordEnabled && empty($product['pickup_password']) && $pickupPassword === '') {
+            jsonResponse(['success' => false, 'message' => '首次开启取卡密码必须填写密码'], 400);
+        }
+        if (strlen($pickupPassword) > 100) {
+            jsonResponse(['success' => false, 'message' => '取卡密码最多100字符'], 400);
+        }
+
+        $product['title'] = $title;
+        $product['category'] = $category;
+        $product['price'] = $price;
+        $product['description'] = $description;
+        if ($customImage !== '') {
+            $product['image'] = $customImage;
+        }
+        $product['pickup_password_enabled'] = $pickupPasswordEnabled;
+        if ($pickupPasswordEnabled && $pickupPassword !== '') {
+            $product['pickup_password'] = password_hash($pickupPassword, PASSWORD_DEFAULT);
+        }
+        if (!$pickupPasswordEnabled) {
+            $product['pickup_password'] = '';
+        }
+        $product['updated_at'] = time();
+        $db->updateProduct($product);
+        $safe = $product;
+        unset($safe['account_list'], $safe['pickup_password']);
+        jsonResponse(['success' => true, 'message' => '商品已更新', 'product' => $safe]);
+
     case 'delete':
         $userId = requireAuth();
         global $db;

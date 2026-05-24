@@ -94,6 +94,24 @@ const API = {
         return this.request('auth.php?action=search_users&query=' + encodeURIComponent(query));
     },
 
+    async uploadProductImage(file) {
+        const options = {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new FormData()
+        };
+        options.body.append('image', file);
+        try {
+            const response = await fetch(this.baseUrl + 'product.php?action=upload_image', options);
+            const text = await response.text();
+            const result = text ? JSON.parse(text) : {};
+            return response.ok ? result : { success: false, message: result.message || '上传失败' };
+        } catch (error) {
+            console.error('Upload Error:', error);
+            return { success: false, message: '图片上传失败，请稍后重试' };
+        }
+    },
+
     // 商品
     getProducts(filters = {}) {
         const params = new URLSearchParams(filters).toString();
@@ -110,6 +128,10 @@ const API = {
 
     publishProduct(productData) {
         return this.request('product.php?action=publish', 'POST', productData);
+    },
+
+    updateProduct(id, productData) {
+        return this.request('product.php?action=update', 'POST', { id, ...productData });
     },
 
     deleteProduct(id) {
