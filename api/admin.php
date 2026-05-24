@@ -89,32 +89,48 @@ function adminUpdaterConfig() {
     return [
         'repo_url' => 'https://github.com/Aze0920/Market.git',
         'branch' => 'main',
-        'work_dir' => 'C:\\Users\\Administrator\\Desktop\\github\\Market',
+        'work_dir' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'update_repo' . DIRECTORY_SEPARATOR . 'Market',
         'site_dir' => dirname(__DIR__),
-        'token_file' => 'C:\\Users\\Administrator\\Desktop\\scripts\\.github-token',
+        'token_file' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'github-token.txt',
         'git_bin' => adminFindGitBinary(),
     ];
 }
 
 function adminFindGitBinary($withDebug = false) {
+    $disabled = array_filter(array_map('trim', explode(',', ini_get('disable_functions') ?: '')));
+    $requiredFunctions = ['proc_open'];
+    $blockedFunctions = array_values(array_intersect($requiredFunctions, $disabled));
+    $canRunCommand = function_exists('proc_open') && empty($blockedFunctions);
     $diagnostics = [
         'php_os' => PHP_OS,
         'disabled_functions' => ini_get('disable_functions') ?: '',
-        'proc_open_available' => function_exists('proc_open'),
+        'proc_open_available' => $canRunCommand,
+        'blocked_functions' => $blockedFunctions,
         'path' => getenv('PATH') ?: '',
         'candidates' => [],
     ];
-    $candidates = [
+    $candidates = stripos(PHP_OS, 'WIN') === 0 ? [
         'git',
         'C:\\Program Files\\Git\\cmd\\git.exe',
         'C:\\Program Files\\Git\\bin\\git.exe',
         'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
         'C:\\Program Files (x86)\\Git\\bin\\git.exe',
         getenv('LOCALAPPDATA') ? getenv('LOCALAPPDATA') . '\\Programs\\Git\\cmd\\git.exe' : '',
+    ] : [
+        'git',
+        '/usr/bin/git',
+        '/usr/local/bin/git',
+        '/bin/git',
+        '/www/server/git/bin/git',
     ];
     foreach ($candidates as $git) {
         if (!$git) continue;
         $item = ['path' => $git, 'exists' => $git === 'git' ? null : is_file($git), 'code' => null, 'output' => ''];
+        if (!$canRunCommand) {
+            $item['output'] = 'PHP 禁用了 proc_open，无法执行命令';
+            $diagnostics['candidates'][] = $item;
+            continue;
+        }
         if ($git !== 'git' && !$item['exists']) {
             $diagnostics['candidates'][] = $item;
             continue;
@@ -201,6 +217,12 @@ function adminUpdateStatus() {
         'git_bin' => $config['git_bin'],
         'git_diagnostics' => $gitCheck['diagnostics'],
     ];
+    if (!$status['git_available']) {
+        $status['local_commit'] = '';
+        $status['remote_commit'] = '';
+        $status['has_update'] = false;
+        return $status;
+    }
     if ($status['work_repo_exists']) {
         $local = adminRunCommand(adminGitCommand('rev-parse HEAD', $config), $config['work_dir']);
         $remote = adminRunCommand(adminGitCommand('ls-remote origin refs/heads/' . escapeshellarg($config['branch']), $config), $config['work_dir']);
@@ -255,7 +277,7 @@ function adminCopyDirectory($source, $target, $rootSource = null) {
 function adminApplyUpdate() {
     $config = adminUpdaterConfig();
     if (empty($config['git_bin'])) {
-        adminJsonResponse(['success' => false, 'message' => '服务器 PHP 环境找不到 Git，请检查 Git 是否安装，或将 Git 加入 Web 服务 PATH'], 500);
+        adminJsonResponse(['success' => false, 'message' => '服务器 PHP 环境无法执行 Git 命令。请在宝塔 PHP 设置里删除 proc_open 的禁用项，并确认服务器已安装 git。', 'status' => adminUpdateStatus()], 500);
     }
     adminEnsureUpdateRepo($config);
     $fetch = adminRunCommand(adminGitCommand('fetch origin ' . escapeshellarg($config['branch']), $config), $config['work_dir']);
