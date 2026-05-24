@@ -73,7 +73,7 @@ window.App = {
 
             document.getElementById('navUsername').textContent = Security.escapeHtml(this.currentUser.username);
             document.getElementById('navAvatar').textContent = Security.escapeHtml(this.currentUser.username.charAt(0).toUpperCase());
-            document.getElementById('navBalance').textContent = '¥ ' + this.currentUser.balance.toFixed(2);
+            document.getElementById('navBalance').textContent = '¥ ' + this.currentUser.balance.toFixed(2) + (this.currentUser.frozen_balance > 0 ? '（冻结 ¥' + Number(this.currentUser.frozen_balance).toFixed(2) + '）' : '');
             const navAdminBtn = document.getElementById('navAdminBtn');
             if (navAdminBtn) {
                 navAdminBtn.classList.toggle('hidden', this.currentUser.role !== 'admin');
@@ -290,7 +290,7 @@ function renderDashboard(tabName = null) {
 
     document.getElementById('dashUsername').textContent = App.currentUser.username;
     document.getElementById('dashAvatar').textContent = App.currentUser.username.charAt(0).toUpperCase();
-    document.getElementById('dashBalance').textContent = '¥ ' + App.currentUser.balance.toFixed(2);
+    document.getElementById('dashBalance').textContent = '¥ ' + App.currentUser.balance.toFixed(2) + (App.currentUser.frozen_balance > 0 ? '（冻结 ¥' + Number(App.currentUser.frozen_balance).toFixed(2) + '）' : '');
 
     let sidebarHtml = `
         <div class="sidebar-nav-item active" data-tab="overview">
@@ -430,12 +430,17 @@ async function loadOrdersTab(area) {
                 <tbody>
                     ${result.orders.map(o => `
                         <tr>
-                            <td>${Utils.truncate(o.product_title, 20)}</td>
+                            <td>
+                                ${Utils.truncate(o.product_title, 20)}
+                                ${o.complaint && o.complaint.status === 'open' ? '<div><span class="badge badge-warning">投诉中</span></div>' : ''}
+                                ${o.complaint && o.complaint.status === 'withdrawn' ? '<div><span class="badge badge-secondary">已撤诉</span></div>' : ''}
+                            </td>
                             <td class="text-danger fw-semibold">¥${o.price.toFixed(2)}</td>
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="viewDeliveryInfo('${o.id}')">查看发货</button>
                                 ${o.has_comment ? '<span class="badge badge-success ms-1">已评价</span>' : `<button class="btn btn-sm btn-primary" onclick="openCommentModal('${o.product_id}', '${o.id}')">评价</button>`}
+                                ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${o.id}')">撤诉</button>` : `<button class="btn btn-sm btn-danger" onclick="openComplaintModal('${o.id}')">投诉</button>`}
                             </td>
                         </tr>
                     `).join('')}
@@ -468,21 +473,138 @@ async function loadSalesTab(area) {
                         <th>买家</th>
                         <th>价格</th>
                         <th>时间</th>
+                        <th>操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${result.orders.map(o => `
                         <tr>
-                            <td>${Utils.truncate(o.product_title, 20)}</td>
+                            <td>
+                                ${Utils.truncate(o.product_title, 20)}
+                                ${o.complaint && o.complaint.status === 'open' ? '<div><span class="badge badge-warning">投诉中</span></div>' : ''}
+                            </td>
                             <td>${o.buyer_name}</td>
                             <td class="text-success fw-semibold">+¥${o.seller_amount ? o.seller_amount.toFixed(2) : o.price.toFixed(2)}</td>
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
+                            <td>
+                                ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${o.id}')">查看投诉</button>` : '<span class="text-muted small">-</span>'}
+                            </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         </div>
     `;
+}
+
+async function openComplaintModal(orderId) {
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h6 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle me-1"></i>投诉订单</h6>
+        <div class="alert alert-warning small">提交投诉后，该订单对应的卖家收入会被冻结。系统会把 8 位撤诉密码发送到你的邮箱，撤诉时必须输入该密码。</div>
+        <div class="mb-3">
+            <label class="form-label">接收撤诉密码的邮箱</label>
+            <input type="email" class="form-control" id="complaintEmail" placeholder="your@email.com">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">投诉原因</label>
+            <textarea class="form-control" id="complaintReason" rows="4" maxlength="500" placeholder="请说明问题，例如账号无法使用、商品与描述不符等"></textarea>
+            <small class="text-muted">最多 500 字</small>
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-danger" onclick="submitComplaint('${Security.escapeAttr(orderId)}')">提交投诉</button>
+    `;
+    modal.show();
+}
+
+async function submitComplaint(orderId) {
+    const email = document.getElementById('complaintEmail')?.value?.trim() || '';
+    const reason = document.getElementById('complaintReason')?.value?.trim() || '';
+    const result = await API.complainOrder(orderId, email, reason);
+    if (result.success) {
+        Toast.success(result.message || '投诉已提交');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        renderDashboardTab('orders');
+    } else {
+        Toast.error(result.message || '投诉提交失败');
+    }
+}
+
+function openWithdrawComplaintModal(orderId) {
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h6 class="fw-bold mb-3"><i class="bi bi-arrow-counterclockwise me-1"></i>撤诉</h6>
+        <div class="alert alert-info small">请输入投诉时邮件收到的 8 位数字撤诉密码。撤诉后冻结金额会解冻给卖家。</div>
+        <div class="mb-3">
+            <label class="form-label">撤诉密码</label>
+            <input type="text" class="form-control" id="withdrawComplaintPassword" maxlength="8" placeholder="8位数字密码">
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-warning" onclick="submitWithdrawComplaint('${Security.escapeAttr(orderId)}')">确认撤诉</button>
+    `;
+    modal.show();
+}
+
+async function submitWithdrawComplaint(orderId) {
+    const password = document.getElementById('withdrawComplaintPassword')?.value?.trim() || '';
+    const result = await API.withdrawComplaint(orderId, password);
+    if (result.success) {
+        Toast.success(result.message || '已撤诉');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        renderDashboardTab('orders');
+    } else {
+        Toast.error(result.message || '撤诉失败');
+    }
+}
+
+async function openSellerComplaintModal(orderId) {
+    const result = await API.getOrder(orderId);
+    if (!result.success) {
+        Toast.error(result.message || '订单不存在');
+        return;
+    }
+    const order = result.order;
+    const complaint = order.complaint || {};
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h6 class="fw-bold mb-3"><i class="bi bi-exclamation-circle me-1"></i>订单投诉</h6>
+        <div class="bg-light rounded-3 p-3 mb-3 small">
+            <div><strong>商品：</strong>${Security.escapeHtml(order.product_title || '-')}</div>
+            <div><strong>买家：</strong>${Security.escapeHtml(order.buyer_name || '-')}</div>
+            <div><strong>冻结金额：</strong>¥${Number(order.frozen_amount || 0).toFixed(2)}</div>
+            <div><strong>投诉时间：</strong>${Utils.formatDate(complaint.created_at)}</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">买家投诉内容</label>
+            <div class="complaint-reason-box">${Security.escapeHtml(complaint.reason || '-')}</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">卖家回复</label>
+            <textarea class="form-control" id="sellerComplaintReply" rows="4" maxlength="500" placeholder="请填写处理说明或解决方案">${Security.escapeHtml(complaint.seller_reply || '')}</textarea>
+            <small class="text-muted">最多 500 字</small>
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+        <button class="btn btn-primary" onclick="submitSellerComplaintReply('${Security.escapeAttr(orderId)}')">提交回复</button>
+    `;
+    modal.show();
+}
+
+async function submitSellerComplaintReply(orderId) {
+    const reply = document.getElementById('sellerComplaintReply')?.value?.trim() || '';
+    const result = await API.replyComplaint(orderId, reply);
+    if (result.success) {
+        Toast.success(result.message || '回复已提交');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        renderDashboardTab('sales');
+    } else {
+        Toast.error(result.message || '回复失败');
+    }
 }
 
 async function loadMyProductsTab(area) {
@@ -579,7 +701,7 @@ async function loadBalanceTab(area) {
                     <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                         <span>在线充值 ¥${o.amount.toFixed(2)}</span>
                         <span class="badge badge-${o.status === 'paid' ? 'success' : o.status === 'pending' ? 'warning' : 'danger'}">
-                            ${o.status === 'paid' ? '已到账' : o.status === 'pending' ? '处理中' : '失败'}
+                            ${o.status === 'paid' ? '已到账' : o.status === 'pending' ? '处理中' : o.status === 'unpaid' ? '未支付' : '失败'}
                         </span>
                         <span class="text-muted small">${Utils.formatDate(o.created_at)}</span>
                     </div>
@@ -652,7 +774,8 @@ async function loadBalanceTab(area) {
         <div class="card bg-light mb-4">
             <div class="card-body text-center py-4">
                 <h2 class="fw-bold text-primary mb-1">¥ ${App.currentUser.balance.toFixed(2)}</h2>
-                <p class="text-muted mb-3">当前余额</p>
+                ${App.currentUser.frozen_balance > 0 ? `<div class="text-warning fw-semibold mb-1">冻结余额：¥ ${Number(App.currentUser.frozen_balance).toFixed(2)}</div>` : ''}
+                <p class="text-muted mb-3">当前可用余额</p>
                 <div class="d-flex gap-2 justify-content-center flex-wrap">
                     <button class="btn btn-primary" onclick="openOnlineRechargeModal()">
                         <i class="bi bi-cash-stack me-1"></i>在线充值
@@ -879,7 +1002,7 @@ async function loadPaymentManageTab(area) {
                                 <td>¥${o.actual_amount.toFixed(2)}</td>
                                 <td>
                                     <span class="badge badge-${o.status === 'paid' ? 'success' : o.status === 'pending' ? 'warning' : 'danger'}">
-                                        ${o.status === 'paid' ? '已支付' : o.status === 'pending' ? '待支付' : '失败'}
+                                        ${o.status === 'paid' ? '已支付' : o.status === 'pending' ? '待支付' : o.status === 'unpaid' ? '未支付' : '失败'}
                                     </span>
                                 </td>
                                 <td class="text-muted small">${Utils.formatDate(o.created_at)}</td>

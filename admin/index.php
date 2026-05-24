@@ -65,6 +65,13 @@ keynest_require_installed(false);
         .order-status-option { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 8px 13px; font-weight: 800; color: #475569; }
         .order-status-option.active { border-color: var(--primary); color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary2)); }
         .order-status-option:not(.active):hover { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
+        .confirm-overlay { position: fixed; inset: 0; z-index: 9998; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(6px); }
+        .admin-confirm { width: min(430px, 100%); background: #fff; border: 1px solid rgba(255,255,255,.75); border-radius: 24px; padding: 24px; box-shadow: 0 28px 90px rgba(15,23,42,.28); animation: confirmPop .16s ease-out; }
+        .admin-confirm-icon { width: 50px; height: 50px; border-radius: 18px; display: grid; place-items: center; background: #fee2e2; color: var(--danger); font-size: 1.5rem; margin-bottom: 16px; }
+        .admin-confirm h5 { margin: 0 0 8px; font-weight: 850; }
+        .admin-confirm p { color: var(--muted); margin: 0; line-height: 1.7; }
+        .admin-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+        @keyframes confirmPop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 12% 16%, rgba(79,70,229,.26), transparent 28%), radial-gradient(circle at 88% 18%, rgba(14,165,233,.20), transparent 30%), linear-gradient(135deg, #eef2ff, #f8fafc); }
         .login-card { width: min(430px, 100%); background: rgba(255,255,255,.88); border: 1px solid rgba(255,255,255,.7); border-radius: 28px; padding: 34px; box-shadow: 0 28px 80px rgba(15,23,42,.16); backdrop-filter: blur(18px); }
         .login-logo { width: 64px; height: 64px; border-radius: 22px; display: grid; place-items: center; color: #fff; font-size: 30px; background: linear-gradient(135deg, var(--primary), var(--primary2)); margin-bottom: 20px; }
@@ -647,8 +654,131 @@ function renderFinance() { setTitle('充值提现'); document.getElementById('ad
 function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(r.username || r.user_id)}</strong><div class="small text-muted">${money(r.amount)} · ${dateText(r.created_at)}</div></div>${statusBadge(r.status)}</div>`).join(''); }
 function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(r.username || r.user_id)}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td>${r.status === 'pending' ? `<button class="btn btn-sm btn-success me-1" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : '-'}</td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
 async function handleRequest(id, action) { const res = await request(`finance.php?action=${action}`, 'POST', { id }); if (!res.success) return showToast(res.message || '操作失败', 'error'); showToast(res.message || '操作成功', 'success'); await loadAdminData(); }
-function renderCards() { setTitle('卡密管理'); const cards = Admin.cache.cards || []; document.getElementById('adminContent').innerHTML = `<div class="panel mb-4"><div class="panel-title"><h5>生成卡密</h5></div><div class="row g-3"><div class="col-md-5"><input id="cardAmount" class="form-control" type="number" placeholder="金额"></div><div class="col-md-5"><input id="cardCount" class="form-control" type="number" value="1" placeholder="数量"></div><div class="col-md-2"><button class="btn btn-primary w-100" onclick="createCards()">生成</button></div></div></div><div class="panel"><div class="panel-title"><h5>卡密列表</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div><div class="table-responsive"><table class="table"><thead><tr><th>卡密</th><th>金额</th><th>状态</th><th>使用者</th><th>创建时间</th></tr></thead><tbody>${cards.map(c => `<tr><td><code>${escapeHtml(c.code)}</code></td><td>${money(c.amount)}</td><td>${c.used ? '<span class="badge-soft danger">已使用</span>' : '<span class="badge-soft success">未使用</span>'}</td><td>${escapeHtml(c.used_by || '-')}</td><td>${dateText(c.created_at)}</td></tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted py-4">暂无卡密</td></tr>'}</tbody></table></div></div>`; }
-async function createCards() { const amount = document.getElementById('cardAmount').value; const count = document.getElementById('cardCount').value; const res = await request('card.php?action=create', 'POST', { amount, count }); if (!res.success) return showToast(res.message || '生成失败', 'error'); showToast(res.message || '生成成功', 'success'); await loadAdminData(); }
+function renderCards() {
+    setTitle('卡密管理');
+    const cards = Admin.cache.cards || [];
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel mb-4">
+            <div class="panel-title"><h5>生成卡密</h5></div>
+            <div class="row g-3">
+                <div class="col-md-5"><input id="cardAmount" class="form-control" type="number" placeholder="金额"></div>
+                <div class="col-md-5"><input id="cardCount" class="form-control" type="number" value="1" placeholder="数量"></div>
+                <div class="col-md-2"><button class="btn btn-primary w-100" onclick="createCards()">生成</button></div>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-title">
+                <div>
+                    <h5>卡密列表</h5>
+                    <div class="small text-muted mt-1">可勾选卡密后批量删除。</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button id="batchDeleteCardsBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedCardsAdmin()" disabled>
+                        <i class="bi bi-trash3 me-1"></i>批量删除
+                    </button>
+                    <button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width:44px"><input class="form-check-input" type="checkbox" id="cardSelectAll" onchange="toggleAllCardSelection(this.checked)" ${cards.length ? '' : 'disabled'}></th>
+                            <th>卡密</th><th>金额</th><th>状态</th><th>使用者</th><th>创建时间</th><th class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${cards.map(c => `
+                            <tr>
+                                <td><input class="form-check-input card-select" type="checkbox" value="${escapeHtml(c.id)}" onchange="updateCardBatchToolbar()"></td>
+                                <td><code>${escapeHtml(c.code)}</code></td>
+                                <td>${money(c.amount)}</td>
+                                <td>${c.used ? '<span class="badge-soft danger">已使用</span>' : '<span class="badge-soft success">未使用</span>'}</td>
+                                <td>${escapeHtml(c.used_by || '-')}</td>
+                                <td>${dateText(c.created_at)}</td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteCardAdmin('${escapeHtml(c.id)}')">删除</button></td>
+                            </tr>
+                        `).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">暂无卡密</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    updateCardBatchToolbar();
+}
+function selectedCardIds() {
+    return Array.from(document.querySelectorAll('.card-select:checked')).map(input => input.value).filter(Boolean);
+}
+function updateCardBatchToolbar() {
+    const checkboxes = Array.from(document.querySelectorAll('.card-select'));
+    const selectedCount = checkboxes.filter(input => input.checked).length;
+    const batchBtn = document.getElementById('batchDeleteCardsBtn');
+    const selectAll = document.getElementById('cardSelectAll');
+    if (batchBtn) {
+        batchBtn.disabled = selectedCount === 0;
+        batchBtn.innerHTML = `<i class="bi bi-trash3 me-1"></i>${selectedCount ? '批量删除 (' + selectedCount + ')' : '批量删除'}`;
+    }
+    if (selectAll) {
+        selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+}
+function toggleAllCardSelection(checked) {
+    document.querySelectorAll('.card-select').forEach(input => { input.checked = checked; });
+    updateCardBatchToolbar();
+}
+async function deleteCardAdmin(id) {
+    const card = (Admin.cache.cards || []).find(c => c.id === id);
+    if (!card) return showToast('卡密不存在', 'error');
+    if (!confirm('确定删除卡密 ' + card.code + ' 吗？')) return;
+    const res = await request('card.php?action=delete', 'POST', { id });
+    if (!res.success) return showToast(res.message || '删除失败', 'error');
+    showToast('卡密已删除', 'success');
+    await loadAdminData();
+    renderCards();
+}
+async function deleteSelectedCardsAdmin() {
+    const ids = selectedCardIds();
+    if (!ids.length) return showToast('请先选择要删除的卡密', 'error');
+    if (!confirm('确定删除选中的 ' + ids.length + ' 张卡密吗？此操作不可恢复。')) return;
+    const res = await request('card.php?action=delete_batch', 'POST', { ids: JSON.stringify(ids) });
+    if (!res.success) return showToast(res.message || '批量删除失败', 'error');
+    showToast(res.message || ('已删除 ' + ids.length + ' 张卡密'), 'success');
+    await loadAdminData();
+    renderCards();
+}
+async function createCards() {
+    const amount = document.getElementById('cardAmount').value;
+    const count = document.getElementById('cardCount').value;
+    const res = await request('card.php?action=create', 'POST', { amount, count });
+    if (!res.success) return showToast(res.message || '生成失败', 'error');
+    showToast(res.message || '生成成功', 'success');
+    await loadAdminData();
+    renderCards();
+    const codes = (res.cards || []).map(card => card.code).filter(Boolean);
+    if (codes.length && confirm('卡密已生成，是否复制生成的卡密？')) {
+        await copyTextToClipboard(codes.join('\n'));
+    }
+}
+async function copyTextToClipboard(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            document.execCommand('copy');
+            textarea.remove();
+        }
+        showToast('卡密已复制到剪贴板', 'success');
+    } catch (e) {
+        showToast('复制失败，请手动复制', 'error');
+    }
+}
 function renderMembershipAdmin() {
     setTitle('会员等级');
     document.getElementById('adminContent').innerHTML = `
@@ -947,7 +1077,50 @@ async function loadAdminLog(refreshDates = false) {
     document.getElementById('logViewer').textContent = res.content || '暂无日志内容';
 }
 function copyLogContent() { const text = document.getElementById('logViewer')?.textContent || ''; navigator.clipboard?.writeText(text).then(() => showToast('日志已复制', 'success')).catch(() => showToast('复制失败', 'error')); }
-async function clearAllLogsAdmin() { if (!confirm('确定删除全部日志内容吗？此操作会清空 logs 目录下所有 .log 文件。')) return; const res = await request('admin.php?action=clear_logs', 'POST'); if (!res.success) return showToast(res.message || '清空日志失败', 'error'); showToast(res.message || '日志已清空', 'success'); await loadAdminLog(true); }
+function adminConfirm({ title = '确认操作', message = '', confirmText = '确认', cancelText = '取消', danger = false } = {}) {
+    return new Promise(resolve => {
+        document.getElementById('adminConfirmOverlay')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'adminConfirmOverlay';
+        overlay.className = 'confirm-overlay';
+        overlay.innerHTML = `
+            <div class="admin-confirm" role="dialog" aria-modal="true" aria-labelledby="adminConfirmTitle">
+                <div class="admin-confirm-icon"><i class="bi ${danger ? 'bi-exclamation-triangle-fill' : 'bi-question-circle-fill'}"></i></div>
+                <h5 id="adminConfirmTitle">${escapeHtml(title)}</h5>
+                <p>${escapeHtml(message)}</p>
+                <div class="admin-confirm-actions">
+                    <button class="btn btn-light" id="adminConfirmCancel">${escapeHtml(cancelText)}</button>
+                    <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="adminConfirmOk">${escapeHtml(confirmText)}</button>
+                </div>
+            </div>`;
+        const close = value => { overlay.remove(); resolve(value); };
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+        document.addEventListener('keydown', function onKeydown(e) {
+            if (e.key === 'Escape') {
+                document.removeEventListener('keydown', onKeydown);
+                close(false);
+            }
+        });
+        document.body.appendChild(overlay);
+        document.getElementById('adminConfirmCancel').onclick = () => close(false);
+        document.getElementById('adminConfirmOk').onclick = () => close(true);
+        document.getElementById('adminConfirmOk').focus();
+    });
+}
+async function clearAllLogsAdmin() {
+    const confirmed = await adminConfirm({
+        title: '清空全部日志？',
+        message: '此操作会清空 logs 目录下所有 .log 文件，清空后不可恢复。',
+        confirmText: '确认清空',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!confirmed) return;
+    const res = await request('admin.php?action=clear_logs', 'POST');
+    if (!res.success) return showToast(res.message || '清空日志失败', 'error');
+    showToast(res.message || '日志已清空', 'success');
+    await loadAdminLog(true);
+}
 function renderSettings() {
     setTitle('系统设置');
     const tabs = [
@@ -1032,7 +1205,24 @@ async function saveEmailSettings() { await saveSystemConfigFields({ register_ema
 async function testEmailSettings() { const email = fieldValue('testEmailTo'); if (!email) return showToast('请输入测试收件邮箱', 'warning'); const res = await request('admin.php?action=test_email', 'POST', { email }); if (!res.success) return showToast(res.message || '测试发送失败', 'error'); showToast(res.message || '测试邮件已发送', 'success'); }
 function renderReservedCaptchaSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">选择你要用的验证码服务商，并填写前端 Site Key 和后端 Secret Key。不同服务商的前端组件接入方式不同，这里先保存参数，后续登录/注册页可按 provider 加载对应组件。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用人机验证</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码</option></select></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">选择你要用的验证码服务商，并填写前端 Site Key 和后端 Secret Key。不同服务商的前端组件接入方式不同，这里先保存参数，后续登录/注册页可按 provider 加载对应组件。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用人机验证</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select" onchange="updateCaptchaProviderLink()"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码</option></select></div><div class="col-md-8"><label class="form-label">服务商官网</label><div id="captchaProviderLink" class="config-help py-2"></div></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;
+    updateCaptchaProviderLink();
+}
+function captchaProviderInfo(provider) {
+    const map = {
+        turnstile: { name: 'Cloudflare Turnstile', url: 'https://www.cloudflare.com/products/turnstile/' },
+        recaptcha_v3: { name: 'Google reCAPTCHA v3', url: 'https://www.google.com/recaptcha/admin/create' },
+        geetest_v3: { name: '极验行为验证', url: 'https://www.geetest.com/' },
+        aliyun: { name: '阿里云验证码', url: 'https://www.aliyun.com/product/captcha' },
+        tencent: { name: '腾讯验证码', url: 'https://cloud.tencent.com/product/captcha' }
+    };
+    return map[provider] || map.turnstile;
+}
+function updateCaptchaProviderLink() {
+    const box = document.getElementById('captchaProviderLink');
+    if (!box) return;
+    const info = captchaProviderInfo(fieldValue('captchaProvider') || 'turnstile');
+    box.innerHTML = `<span class="text-muted me-2">当前选择：</span><strong>${escapeHtml(info.name)}</strong><a class="btn btn-sm btn-outline-primary ms-3" href="${escapeHtml(info.url)}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right me-1"></i>打开官网</a>`;
 }
 async function saveCaptchaSettings() { await saveSystemConfigFields({ captcha_enabled: checkedValue('captchaEnabled'), captcha_provider: fieldValue('captchaProvider'), captcha_site_key: fieldValue('captchaSiteKey'), captcha_secret_key: fieldValue('captchaSecretKey'), captcha_extra_config: fieldValue('captchaExtraConfig') }, '人机验证设置已保存'); }
 function renderReservedAnnouncementSettings(targetId = 'settingsContent') {

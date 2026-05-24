@@ -839,7 +839,7 @@ class Database {
             $userId = $updates['id'];
         }
 
-        $allowedFields = ['username', 'balance', 'email', 'role', 'membership_level', 'last_login'];
+        $allowedFields = ['username', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
                 unset($updates[$key]);
@@ -852,7 +852,7 @@ class Database {
             if ($key === 'role') {
                 $updates[$key] = $value === 'admin' ? 'admin' : 'user';
             }
-            if ($key === 'balance') {
+            if ($key === 'balance' || $key === 'frozen_balance') {
                 $updates[$key] = max(0, floatval($value));
             }
             if ($key === 'email' && $value !== '' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
@@ -1007,6 +1007,16 @@ class Database {
     public function addOrder($order) {
         $this->data['orders'][] = $order;
         return $this->saveRecord('orders', $order);
+    }
+
+    public function updateOrder($order) {
+        foreach ($this->data['orders'] as &$existing) {
+            if (($existing['id'] ?? '') === ($order['id'] ?? '')) {
+                $existing = array_merge($existing, $order);
+                return $this->saveRecord('orders', $existing);
+            }
+        }
+        return false;
     }
 
     public function getOrderById($id) {

@@ -279,6 +279,9 @@ switch ($action) {
             unset($config['smtp_password']);
             unset($config['resend_api_key']);
             unset($config['captcha_secret_key']);
+            unset($config['oauth_qq_app_key']);
+            unset($config['oauth_wechat_app_secret']);
+            unset($config['oauth_caihong_key']);
         }
         
         jsonResponse(['success' => true, 'config' => $config]);
@@ -336,7 +339,17 @@ switch ($action) {
             'captcha_extra_config',
             'announcement_title',
             'announcement_content',
-            'announcement_position'
+            'announcement_position',
+            'oauth_qq_app_id',
+            'oauth_qq_app_key',
+            'oauth_qq_redirect_uri',
+            'oauth_wechat_app_id',
+            'oauth_wechat_app_secret',
+            'oauth_wechat_redirect_uri',
+            'oauth_caihong_api_url',
+            'oauth_caihong_app_id',
+            'oauth_caihong_key',
+            'oauth_caihong_redirect_uri'
         ];
         foreach ($stringFields as $field) {
             if (isset($_POST[$field])) {

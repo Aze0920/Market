@@ -143,6 +143,18 @@ const API = {
         return this.request('order.php?action=get&id=' + encodeURIComponent(id) + (pickupPassword ? '&pickup_password=' + encodeURIComponent(pickupPassword) : ''));
     },
 
+    complainOrder(orderId, email, reason) {
+        return this.request('order.php?action=complain', 'POST', { order_id: orderId, email, reason });
+    },
+
+    withdrawComplaint(orderId, password) {
+        return this.request('order.php?action=withdraw_complaint', 'POST', { order_id: orderId, password });
+    },
+
+    replyComplaint(orderId, reply) {
+        return this.request('order.php?action=reply_complaint', 'POST', { order_id: orderId, reply });
+    },
+
     getOverview() {
         return this.request('order.php?action=overview');
     },

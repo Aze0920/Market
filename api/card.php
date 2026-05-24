@@ -147,6 +147,28 @@ switch ($action) {
         $db->deleteCardCode($id);
         jsonResponse(['success' => true, 'message' => '卡密已删除']);
 
+    case 'delete_batch':
+        requireAdmin();
+        $idsJson = $_POST['ids'] ?? '[]';
+        $ids = json_decode($idsJson, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($ids)) {
+            jsonResponse(['success' => false, 'message' => '卡密ID列表格式错误'], 400);
+        }
+        $ids = array_values(array_unique(array_filter(array_map('trim', $ids), fn($id) => validateId($id))));
+        if (empty($ids)) {
+            jsonResponse(['success' => false, 'message' => '请选择要删除的卡密'], 400);
+        }
+        $deleted = 0;
+        foreach ($ids as $id) {
+            if ($db->deleteCardCode($id)) {
+                $deleted++;
+            }
+        }
+        if ($deleted === 0) {
+            jsonResponse(['success' => false, 'message' => '所选卡密不存在或已被删除'], 400);
+        }
+        jsonResponse(['success' => true, 'message' => '已删除 ' . $deleted . ' 张卡密', 'deleted' => $deleted]);
+
     default:
         jsonResponse(['success' => false, 'message' => '未知操作'], 400);
 }

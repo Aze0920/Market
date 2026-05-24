@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net https://*.jsdelivr.net; img-src 'self' data: https:;">
-    <title>KeyNest - 虚拟商品交易平台</title>
+    <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=202605241752" rel="stylesheet">
+    <link href="assets/css/style.css?v=202605241809" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
         <nav class="navbar">
             <div class="container">
                     <a class="navbar-brand" href="#" onclick="showHome(); return false;">
-                    <i class="bi bi-key-fill"></i>KeyNest
+                    <i class="bi bi-key-fill"></i><span id="siteBrandName">KeyNest</span>
                 </a>
 
                 <div class="nav-center">
@@ -59,8 +59,8 @@
                 <div id="homePage">
                     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
                         <div>
-                            <h3 class="fw-bold mb-1"><i class="bi bi-grid-fill text-primary me-2"></i>虚拟商品市场</h3>
-                            <p class="text-muted mb-0 small">像闲鱼一样发布、浏览和交易虚拟商品</p>
+                            <h3 class="fw-bold mb-1"><i class="bi bi-grid-fill text-primary me-2"></i><span id="marketTitle">虚拟商品市场</span></h3>
+                            <p class="text-muted mb-0 small" id="marketDescription">像闲鱼一样发布、浏览和交易虚拟商品</p>
                         </div>
                         <div class="search-bar">
                             <div class="search-input">
@@ -131,7 +131,7 @@
         </main>
 
         <footer class="text-center py-3 text-muted small border-top bg-white">
-            <span>© 2026 KeyNest 虚拟商品交易平台 · 安全交易 · 自动发货</span>
+            <span id="siteFooterText">© 2026 KeyNest 虚拟商品交易平台 · 安全交易 · 自动发货</span>
         </footer>
     </div>
 
@@ -563,13 +563,13 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=202605241752"></script>
-    <script src="assets/js/app.js?v=202605241752"></script>
-    <script src="assets/js/product.js?v=202605241752"></script>
-    <script src="assets/js/message.js?v=202605241752"></script>
-    <script src="assets/js/auth.js?v=202605241752"></script>
+    <script src="assets/js/api.js?v=202605241809"></script>
+    <script src="assets/js/app.js?v=202605241809"></script>
+    <script src="assets/js/product.js?v=202605241809"></script>
+    <script src="assets/js/message.js?v=202605241809"></script>
+    <script src="assets/js/auth.js?v=202605241809"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = '202605241752';
+        window.KEYNEST_ASSET_VERSION = '202605241809';
 
         async function renderFrontMembershipCards(area) {
             if (!area) return;
@@ -834,6 +834,7 @@
         });
 
         async function initApp() {
+            await applySiteConfig();
             const result = await API.getCurrentUser();
             if (result.success && result.logged_in) {
                 App.setUser(result.user);
@@ -857,6 +858,22 @@
             App.updateUnreadBadge();
 
             console.log('🔑 KeyNest 虚拟商品交易平台已就绪');
+        }
+
+        async function applySiteConfig() {
+            const result = await API.getSystemConfig();
+            if (!result.success || !result.config) return;
+            const siteName = String(result.config.site_name || 'KeyNest').trim() || 'KeyNest';
+            const siteDescription = String(result.config.site_description || '虚拟商品市场').trim() || '虚拟商品市场';
+            document.title = siteName + ' - ' + siteDescription;
+            const brand = document.getElementById('siteBrandName');
+            const marketTitle = document.getElementById('marketTitle');
+            const marketDescription = document.getElementById('marketDescription');
+            const footer = document.getElementById('siteFooterText');
+            if (brand) brand.textContent = siteName;
+            if (marketTitle) marketTitle.textContent = siteDescription;
+            if (marketDescription) marketDescription.textContent = siteDescription;
+            if (footer) footer.textContent = '© 2026 ' + siteName + ' · ' + siteDescription;
         }
 
         function renderDashboard(tabName = null) {

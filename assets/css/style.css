@@ -879,6 +879,16 @@ a:hover {
     color: var(--primary-accent);
 }
 
+.complaint-reason-box {
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    min-height: 76px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .seller-product-card {
     cursor: pointer;
 }

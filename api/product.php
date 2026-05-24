@@ -98,7 +98,48 @@ function productRatingStats($comments) {
     return ['good' => $good, 'bad' => $bad, 'total' => count($comments)];
 }
 
+function normalizeProductImage($image) {
+    $image = trim((string)$image);
+    if ($image === '') return '';
+    if (preg_match('/^https?:\/\/[^\s<>"\']+\.(png|jpe?g|gif|webp)(\?[^\s<>"\']*)?$/i', $image)) {
+        return $image;
+    }
+    if (preg_match('/^\/uploads\/products\/[a-zA-Z0-9_.-]+\.(png|jpe?g|gif|webp)$/i', $image)) {
+        return $image;
+    }
+    return '';
+}
+
 switch ($action) {
+    case 'upload_image':
+        requireAuth();
+        if (empty($_FILES['image']) || !is_uploaded_file($_FILES['image']['tmp_name'])) {
+            jsonResponse(['success' => false, 'message' => '请选择要上传的图片'], 400);
+        }
+        $file = $_FILES['image'];
+        if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            jsonResponse(['success' => false, 'message' => '图片上传失败'], 400);
+        }
+        if (($file['size'] ?? 0) <= 0 || $file['size'] > 2 * 1024 * 1024) {
+            jsonResponse(['success' => false, 'message' => '图片大小不能超过2MB'], 400);
+        }
+        $info = @getimagesize($file['tmp_name']);
+        $mime = $info['mime'] ?? '';
+        $extMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+        if (!isset($extMap[$mime])) {
+            jsonResponse(['success' => false, 'message' => '仅支持 JPG、PNG、GIF、WEBP 图片'], 400);
+        }
+        $uploadDir = dirname(__DIR__) . '/uploads/products';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+            jsonResponse(['success' => false, 'message' => '上传目录创建失败'], 500);
+        }
+        $filename = 'product_' . date('YmdHis') . '_' . bin2hex(random_bytes(6)) . '.' . $extMap[$mime];
+        $target = $uploadDir . '/' . $filename;
+        if (!move_uploaded_file($file['tmp_name'], $target)) {
+            jsonResponse(['success' => false, 'message' => '保存图片失败'], 500);
+        }
+        jsonResponse(['success' => true, 'url' => '/uploads/products/' . $filename, 'message' => '图片上传成功']);
+
     case 'list':
         $filters = [
             'stock_min' => isset($_GET['stock_min']) ? max(0, (int)$_GET['stock_min']) : 1,
@@ -166,6 +207,7 @@ switch ($action) {
         $price = floatval($_POST['price'] ?? 0);
         $description = sanitizeMarkdown($_POST['description'] ?? '');
         $accountListText = trim($_POST['account_list'] ?? '');
+        $customImage = normalizeProductImage($_POST['image'] ?? '');
         $pickupPasswordEnabled = ($_POST['pickup_password_enabled'] ?? '0') === '1';
         $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
 
@@ -248,7 +290,7 @@ switch ($action) {
             'pickup_password' => $pickupPasswordEnabled ? password_hash($pickupPassword, PASSWORD_DEFAULT) : '',
             'sales' => 0,
             'created_at' => time(),
-            'image' => $images[array_rand($images)]
+            'image' => $customImage !== '' ? $customImage : $images[array_rand($images)]
         ];
 
         $db->addProduct($product);
