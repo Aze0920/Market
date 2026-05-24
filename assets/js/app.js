@@ -725,8 +725,6 @@ async function loadMembershipTab(area) {
     const myLevelName = myLevelResult.level || 'Free';
     const myLevel = myLevelResult.level_info || levels[myLevelName] || levelList[0] || {};
     const currentPriority = Number(myLevel.priority || 0);
-    const currentGradient = myLevel.gradient || 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)';
-    const currentIcon = myLevel.icon || 'bi-gem';
 
     const privileges = [
         { icon: 'bi-person-plus', text: `单商品最大 ${myLevel.max_accounts_per_product || 0} 个账号` },
@@ -740,17 +738,8 @@ async function loadMembershipTab(area) {
 
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
-        <div class="membership-current-card mb-4">
-            <div class="membership-badge" style="background: ${Security.escapeAttr(currentGradient)};">
-                <i class="bi ${Security.escapeAttr(currentIcon)}"></i>
-            </div>
-            <div class="membership-info">
-                <h3 class="fw-bold mb-1">${Security.escapeHtml(myLevelName)} 会员</h3>
-                <p class="text-muted mb-0">${Security.escapeHtml(myLevel.description || '')}</p>
-            </div>
-        </div>
 
-        <h6 class="fw-bold mb-3"><i class="bi bi-award me-2"></i>会员权益</h6>
+        <h6 class="fw-bold mb-3"><i class="bi bi-award me-2"></i>当前会员权益</h6>
         <div class="privileges-grid mb-4">
             ${privileges.map(p => `
                 <div class="privilege-item">
@@ -760,7 +749,7 @@ async function loadMembershipTab(area) {
             `).join('')}
         </div>
 
-        <h6 class="fw-bold mb-3"><i class="bi bi-arrow-up-circle me-2"></i>升级会员</h6>
+        <h6 class="fw-bold mb-3"><i class="bi bi-arrow-up-circle me-2"></i>会员等级</h6>
         <p class="text-muted small mb-3">会员等级由后台动态配置；启用几个就显示几个，一排最多显示 3 个。</p>
         <div class="membership-cards">
             ${upgradeLevels.map(level => {
