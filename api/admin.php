@@ -449,6 +449,7 @@ function adminApplyUpdate() {
         $fetch['output'],
         $reset['output'],
         '变更文件：' . count($diff['files']) . ' 个',
+        '已记录版本：' . substr($targetCommitHash, 0, 12),
         implode("\n", $applied['changed']),
         implode("\n", $applied['skipped']),
     ]));
