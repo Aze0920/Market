@@ -205,6 +205,7 @@ window.Utils = {
  * 页面导航
  */
 function persistFrontendState() {
+    if (!App.currentPage) return;
     localStorage.setItem('keynest_front_page', App.currentPage);
     localStorage.setItem('keynest_front_tab', App.currentTab || 'overview');
     const params = new URLSearchParams({ page: App.currentPage });
@@ -212,8 +213,16 @@ function persistFrontendState() {
     history.replaceState(null, '', '#' + params.toString());
 }
 
+function normalizeFrontendHash() {
+    const raw = (window.location.hash || '').replace(/^#/, '');
+    if (!raw) return new URLSearchParams();
+    if (raw.includes('=')) return new URLSearchParams(raw);
+    if (raw === 'market' || raw === 'home') return new URLSearchParams({ page: 'home' });
+    return new URLSearchParams({ page: 'dashboard', tab: raw });
+}
+
 function getInitialFrontendState() {
-    const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    const hash = normalizeFrontendHash();
     const page = hash.get('page') || localStorage.getItem('keynest_front_page') || 'home';
     const tab = hash.get('tab') || localStorage.getItem('keynest_front_tab') || 'overview';
     return {
@@ -727,7 +736,7 @@ async function loadMembershipTab(area) {
         ...(Number(myLevel.publish_fee_per_account || 0) > 0 ? [{ icon: 'bi-cash-stack', text: `发布费 ¥${myLevel.publish_fee_per_account}/账号` }] : [{ icon: 'bi-check-circle', text: '发布商品免费' }])
     ];
 
-    const upgradeLevels = levelList.filter(level => level.can_upgrade !== false && level.name !== myLevelName);
+    const upgradeLevels = levelList.filter(level => level.can_upgrade !== false);
 
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
@@ -752,7 +761,7 @@ async function loadMembershipTab(area) {
         </div>
 
         <h6 class="fw-bold mb-3"><i class="bi bi-arrow-up-circle me-2"></i>升级会员</h6>
-        <p class="text-muted small mb-3">会员等级由后台动态配置；后台启用几个，这里就显示几个。</p>
+        <p class="text-muted small mb-3">会员等级由后台动态配置；启用几个就显示几个，一排最多显示 3 个。</p>
         <div class="membership-cards">
             ${upgradeLevels.map(level => {
                 const levelName = level.name;

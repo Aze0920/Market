@@ -15,15 +15,15 @@
         <!-- ==================== 导航栏 ==================== -->
         <nav class="navbar">
             <div class="container">
-                <a class="navbar-brand" href="#" onclick="showHome()">
+                    <a class="navbar-brand" href="#" onclick="showHome(); return false;">
                     <i class="bi bi-key-fill"></i>KeyNest
                 </a>
 
                 <div class="nav-center">
-                    <a class="nav-link active" href="#market" onclick="showHome()">
+                    <a class="nav-link active" href="#" onclick="showHome(); return false;">
                         <i class="bi bi-shop"></i>市场
                     </a>
-                    <a class="nav-link hidden" id="navDashboardLink" href="#" onclick="showDashboard()">
+                    <a class="nav-link hidden" id="navDashboardLink" href="#" onclick="showDashboard(); return false;">
                         <i class="bi bi-speedometer2"></i>控制台
                     </a>
                     <a class="nav-link hidden" id="navSellLink" href="#" onclick="openPublishModal()">
@@ -619,9 +619,16 @@
 
             // 按刷新前的页面恢复
             const initialState = getInitialFrontendState();
+            App.currentPage = initialState.page;
             App.currentTab = initialState.tab;
             if (initialState.page === 'dashboard' && App.currentUser) {
                 showDashboard(initialState.tab);
+            } else if (initialState.page === 'dashboard' && !App.currentUser) {
+                App.currentPage = 'dashboard';
+                App.currentTab = initialState.tab;
+                localStorage.setItem('keynest_front_page', 'dashboard');
+                localStorage.setItem('keynest_front_tab', initialState.tab);
+                showHome();
             } else {
                 showHome();
             }
