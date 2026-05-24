@@ -59,7 +59,7 @@ keynest_require_installed(false);
         .order-status-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
         .order-status-pill.pending { background: #fef3c7; color: #92400e; }
         .order-status-pill.paid { background: #dcfce7; color: #166534; }
-        .order-status-pill.failed, .order-status-pill.cancelled { background: #fee2e2; color: #991b1b; }
+        .order-status-pill.failed, .order-status-pill.cancelled, .order-status-pill.unpaid { background: #fee2e2; color: #991b1b; }
         .order-status-editor-row td { padding-top: 0; border-top: 0; }
         .order-status-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 18px; background: #f8fafc; }
         .order-status-option { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 8px 13px; font-weight: 800; color: #475569; }
@@ -608,7 +608,8 @@ function orderStatusMeta(status) {
         pending: { label: '待处理', className: 'pending' },
         paid: { label: '已支付', className: 'paid' },
         failed: { label: '失败', className: 'failed' },
-        cancelled: { label: '已取消', className: 'cancelled' }
+        cancelled: { label: '已取消', className: 'cancelled' },
+        unpaid: { label: '未支付', className: 'unpaid' }
     };
     return map[status] || { label: status || '-', className: 'pending' };
 }
@@ -621,7 +622,8 @@ function orderStatusEditor(order) {
         ['pending', '待处理'],
         ['paid', '已支付'],
         ['failed', '失败'],
-        ['cancelled', '已取消']
+        ['cancelled', '已取消'],
+        ['unpaid', '未支付']
     ];
     return `
         <div class="order-status-editor">

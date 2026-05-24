@@ -843,8 +843,58 @@ a:hover {
     color: #fbbf24;
 }
 
-.star-rating i:hover {
+        .star-rating i:hover {
     transform: scale(1.2);
+}
+
+.rating-radio-group {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.rating-radio {
+    cursor: pointer;
+}
+
+.rating-radio input {
+    display: none;
+}
+
+.rating-radio span {
+    display: block;
+    text-align: center;
+    border: 1.5px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0.65rem 0.4rem;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-weight: 700;
+    transition: var(--transition-fast);
+}
+
+.rating-radio input:checked + span {
+    border-color: var(--primary-accent);
+    background: var(--primary-light);
+    color: var(--primary-accent);
+}
+
+.seller-product-card {
+    cursor: pointer;
+}
+
+.seller-product-card:hover {
+    border-color: rgba(99, 102, 241, 0.35);
+}
+
+.purchase-quantity-box {
+    max-width: 180px;
+}
+
+.product-rating-line {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
 }
 
 .pagination {

@@ -111,7 +111,7 @@ switch ($action) {
             $p['rating_good'] = $stats['good'];
             $p['rating_bad'] = $stats['bad'];
             $p['rating_total'] = $stats['total'];
-            unset($p['account_list']);
+            unset($p['account_list'], $p['pickup_password']);
         }
         jsonResponse(['success' => true, 'products' => $products]);
 
@@ -124,7 +124,7 @@ switch ($action) {
         if (!$product) {
             jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
         }
-        unset($product['account_list']);
+        unset($product['account_list'], $product['pickup_password']);
         jsonResponse(['success' => true, 'product' => $product]);
 
     case 'detail':
@@ -137,7 +137,7 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
         }
         $safe = $product;
-        unset($safe['account_list']);
+        unset($safe['account_list'], $safe['pickup_password']);
         $comments = $db->getComments($id);
         $safe['rating_stats'] = productRatingStats($comments);
         jsonResponse(['success' => true, 'product' => $safe, 'comments' => $comments]);
@@ -252,7 +252,7 @@ switch ($action) {
         ];
 
         $db->addProduct($product);
-        unset($product['account_list']);
+        unset($product['account_list'], $product['pickup_password']);
         jsonResponse(['success' => true, 'message' => '发布成功', 'product' => $product]);
 
     case 'delete':
@@ -278,7 +278,7 @@ switch ($action) {
         $userId = requireAuth();
         $products = $db->getProducts(['seller_id' => $userId]);
         foreach ($products as &$p) {
-            unset($p['account_list']);
+            unset($p['account_list'], $p['pickup_password']);
         }
         jsonResponse(['success' => true, 'products' => $products]);
 

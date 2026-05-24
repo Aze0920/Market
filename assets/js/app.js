@@ -892,6 +892,43 @@ async function loadPaymentManageTab(area) {
     `;
 }
 
+async function openSellerProductManage(productId) {
+    const productResult = await API.getProduct(productId);
+    const reviewsResult = await API.getProductReviews(productId);
+    if (!productResult.success) {
+        Toast.error(productResult.message || '商品不存在');
+        return;
+    }
+    const product = productResult.product;
+    const comments = reviewsResult.success ? reviewsResult.comments : [];
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h5 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>${Security.escapeHtml(product.title)}</h5>
+        <div class="row g-2 mb-3">
+            <div class="col-4"><div class="bg-light rounded-3 p-2 text-center"><strong>${Security.escapeHtml(product.stock)}</strong><br><small class="text-muted">库存</small></div></div>
+            <div class="col-4"><div class="bg-light rounded-3 p-2 text-center"><strong>${Security.escapeHtml(product.sales)}</strong><br><small class="text-muted">已售</small></div></div>
+            <div class="col-4"><div class="bg-light rounded-3 p-2 text-center"><strong>¥${Security.escapeHtml(product.price.toFixed(2))}</strong><br><small class="text-muted">价格</small></div></div>
+        </div>
+        <div class="mb-3">
+            <span class="badge badge-${product.pickup_password_enabled ? 'warning' : 'secondary'}">${product.pickup_password_enabled ? '已开启取卡密码' : '未开启取卡密码'}</span>
+        </div>
+        <h6 class="fw-bold">评价</h6>
+        ${comments.length === 0 ? '<p class="text-muted small">暂无评价</p>' : comments.map(c => `
+            <div class="border-bottom py-2 small">
+                <strong>${Security.escapeHtml(c.buyer_name || c.username || '-')}</strong>
+                <span class="text-warning ms-2">${'★'.repeat(Number(c.rating || 0))}</span>
+                <span class="text-muted ms-2">${Utils.formatDate(c.created_at)}</span>
+                <div>${Security.escapeHtml(c.content || '未填写评价内容')}</div>
+            </div>
+        `).join('')}
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+        <button class="btn btn-danger" onclick="deleteProduct('${Security.escapeAttr(product.id)}')" data-bs-dismiss="modal">下架删除</button>
+    `;
+    modal.show();
+}
+
 async function loadReviewsTab(area) {
     const result = await API.getProductReviews();
     const comments = result.success ? result.comments : [];

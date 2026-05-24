@@ -65,6 +65,28 @@ function getPayMethodsFromRequest() {
     return empty($methods) ? ['alipay', 'wxpay'] : $methods;
 }
 
+function expirePendingPaymentOrders($orders = null) {
+    global $db;
+    $orders = $orders === null ? $db->getPaymentOrders() : $orders;
+    $now = time();
+    $expireSeconds = 10 * 60;
+    $result = [];
+    foreach ($orders as $order) {
+        if (($order['status'] ?? 'pending') === 'pending' && !empty($order['created_at']) && ($now - (int)$order['created_at']) >= $expireSeconds) {
+            $order['status'] = 'unpaid';
+            $order['paid_at'] = null;
+            $order['expired_at'] = $order['expired_at'] ?? $now;
+            $db->updatePaymentOrder($order['id'], [
+                'status' => 'unpaid',
+                'paid_at' => null,
+                'expired_at' => $order['expired_at']
+            ]);
+        }
+        $result[] = $order;
+    }
+    return $result;
+}
+
 function buildPaymentUpdateFromPost($requireSecret = true) {
     $name = sanitizeString($_POST['name'] ?? '');
     $type = sanitizeString($_POST['type'] ?? 'yipay');
@@ -358,6 +380,10 @@ switch ($action) {
             echo 'success';
             exit;
         }
+        if (($order['status'] ?? '') === 'unpaid') {
+            echo 'fail';
+            exit;
+        }
 
         $db->updatePaymentOrder($order['id'], [
             'status' => 'paid',
@@ -390,7 +416,7 @@ switch ($action) {
 
     case 'get_orders':
         requireAdmin();
-        $orders = $db->getPaymentOrders();
+        $orders = expirePendingPaymentOrders($db->getPaymentOrders());
         usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         jsonResponse(['success' => true, 'orders' => $orders]);
 
@@ -398,7 +424,7 @@ switch ($action) {
         requireAdmin();
         $id = trim((string)($_POST['id'] ?? ''));
         $status = trim((string)($_POST['status'] ?? ''));
-        $allowed = ['pending', 'paid', 'failed', 'cancelled'];
+        $allowed = ['pending', 'paid', 'failed', 'cancelled', 'unpaid'];
         if ($id === '' || !in_array($status, $allowed, true)) {
             jsonResponse(['success' => false, 'message' => '订单ID或状态无效'], 400);
         }
@@ -431,7 +457,8 @@ switch ($action) {
 
     case 'delete_unpaid_orders':
         requireAdmin();
-        $count = $db->deletePaymentOrdersByStatus(['pending', 'failed', 'cancelled']);
+        expirePendingPaymentOrders();
+        $count = $db->deletePaymentOrdersByStatus(['pending', 'failed', 'cancelled', 'unpaid']);
         jsonResponse(['success' => true, 'message' => '已删除 ' . $count . ' 条未支付订单', 'count' => $count]);
 
     case 'delete_all_orders':
@@ -441,7 +468,7 @@ switch ($action) {
 
     case 'get_my_orders':
         $userId = requireAuth();
-        $orders = $db->getPaymentOrders($userId);
+        $orders = expirePendingPaymentOrders($db->getPaymentOrders($userId));
         jsonResponse(['success' => true, 'orders' => array_values($orders)]);
 
     default:
