@@ -75,9 +75,11 @@ keynest_require_installed(false);
         .form-check-label strong { display: block; }
         .form-check-label span { color: var(--muted); font-size: .82rem; }
         .log-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
-        .log-viewer { background: #0f172a; color: #dbeafe; border-radius: 18px; padding: 16px; min-height: 460px; max-height: 68vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: Consolas, Monaco, "Courier New", monospace; font-size: 12px; line-height: 1.65; }
+        .log-viewer { background: #0f172a; color: #dbeafe; border-radius: 18px; padding: 16px; min-height: 220px; max-height: min(52vh, 520px); overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: Consolas, Monaco, "Courier New", monospace; font-size: 12px; line-height: 1.65; }
+        .log-viewer.logs-page-viewer { height: clamp(320px, calc(100vh - 420px), 520px); min-height: 320px; max-height: calc(100vh - 320px); }
+        .logs-panel { margin-bottom: 28px; }
         .log-meta { color: var(--muted); font-size: .86rem; }
-        @media (max-width: 980px) { .admin-shell { grid-template-columns: 1fr; } .sidebar { position: relative; height: auto; } .content { padding: 20px; } .topbar { align-items: flex-start; flex-direction: column; } }
+        @media (max-width: 980px) { .admin-shell { grid-template-columns: 1fr; } .sidebar { position: relative; height: auto; } .content { padding: 20px; } .topbar { align-items: flex-start; flex-direction: column; } .log-viewer.logs-page-viewer { height: 420px; max-height: 55vh; } }
     </style>
 </head>
 <body>
@@ -502,7 +504,7 @@ function renderPayments() { Admin.settingsTab = 'payment'; renderSettings(); }
 function renderLogs() {
     setTitle('系统日志');
     document.getElementById('adminContent').innerHTML = `
-        <div class="panel">
+        <div class="panel logs-panel">
             <div class="panel-title"><h5>系统日志</h5><button class="btn btn-sm btn-primary" onclick="loadAdminLog()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button></div>
             <div class="config-help mb-3">日志文件位于服务器 <code>logs/</code> 目录。后台只显示最近指定行数，敏感字段已自动脱敏。</div>
             <div class="log-toolbar mb-3">
@@ -513,7 +515,7 @@ function renderLogs() {
                 <button class="btn btn-outline-secondary" onclick="copyLogContent()">复制日志</button>
             </div>
             <div id="logMeta" class="log-meta mb-2">正在加载...</div>
-            <pre id="logViewer" class="log-viewer">正在加载...</pre>
+            <pre id="logViewer" class="log-viewer logs-page-viewer">正在加载...</pre>
         </div>`;
     loadAdminLog(true);
 }
