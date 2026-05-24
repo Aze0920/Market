@@ -427,15 +427,15 @@ function adminApplyUpdate() {
     if ($fetch['code'] !== 0) {
         adminJsonResponse(['success' => false, 'message' => '拉取远程更新失败', 'output' => $fetch['output']], 500);
     }
-    $reset = adminRunCommand(adminGitCommand('reset --hard origin/' . escapeshellarg($config['branch']), $config), $config['work_dir']);
-    if ($reset['code'] !== 0) {
-        adminJsonResponse(['success' => false, 'message' => '更新工作目录失败', 'output' => $reset['output']], 500);
-    }
-    $targetCommit = adminRunCommand(adminGitCommand('rev-parse origin/' . escapeshellarg($config['branch']), $config), $config['work_dir']);
+    $targetCommit = adminRunCommand(adminGitCommand('rev-parse FETCH_HEAD', $config), $config['work_dir']);
     if ($targetCommit['code'] !== 0 || trim($targetCommit['output']) === '') {
         adminJsonResponse(['success' => false, 'message' => '读取远程版本失败', 'output' => $targetCommit['output']], 500);
     }
     $targetCommitHash = trim($targetCommit['output']);
+    $reset = adminRunCommand(adminGitCommand('reset --hard ' . escapeshellarg($targetCommitHash), $config), $config['work_dir']);
+    if ($reset['code'] !== 0) {
+        adminJsonResponse(['success' => false, 'message' => '更新工作目录失败', 'output' => $reset['output']], 500);
+    }
     $version = adminUpdaterVersion($config);
     $currentCommit = trim($version['commit'] ?? '');
     $diff = adminChangedFiles($config, $currentCommit, $targetCommitHash);
