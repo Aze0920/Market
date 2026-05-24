@@ -299,27 +299,36 @@ async function viewDeliveryInfo(orderId, pickupPassword = '') {
 async function openCommentModal(productId, orderId) {
     const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
     document.getElementById('purchaseBody').innerHTML = `
-        <h6 class="fw-bold mb-3"><i class="bi bi-star me-1"></i>商品评价</h6>
-        <div class="mb-3">
-            <label class="form-label">评分（1-5星）</label>
-            <div class="rating-radio-group">
+        <div class="review-modal-head text-center mb-4">
+            <div class="review-modal-icon"><i class="bi bi-star-fill"></i></div>
+            <h5 class="fw-bold mb-1">评价商品</h5>
+            <p class="text-muted small mb-0">请选择评分，评价内容可以不填写</p>
+        </div>
+        <div class="mb-4">
+            <label class="form-label fw-semibold">商品评分</label>
+            <div class="rating-radio-group rating-radio-beauty">
                 ${[1,2,3,4,5].map(n => `
                     <label class="rating-radio">
                         <input type="radio" name="commentRating" value="${n}" ${n === 5 ? 'checked' : ''}>
-                        <span>${n} 星</span>
+                        <span><b>${n}星</b><small>${'★'.repeat(n)}</small></span>
                     </label>
                 `).join('')}
             </div>
         </div>
-        <div class="mb-3">
-            <label class="form-label">评价内容</label>
-            <textarea class="form-control" id="commentContent" rows="4" maxlength="500" placeholder="可以写一下商品体验、发货质量等"></textarea>
-            <small class="text-muted">最多 500 字</small>
+        <div class="mb-2">
+            <label class="form-label fw-semibold">评价内容</label>
+            <textarea class="form-control review-textarea" id="commentContent" rows="5" maxlength="500" placeholder="可以写，也可以留空，例如：发货很快、账号正常、描述一致"></textarea>
+            <div class="d-flex justify-content-between mt-2">
+                <small class="text-muted">内容可写可不写</small>
+                <small class="text-muted">最多 500 字</small>
+            </div>
         </div>
     `;
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary" onclick="submitComment('${Security.escapeAttr(productId)}', '${Security.escapeAttr(orderId)}')">提交评价</button>
+        <button class="btn btn-primary" onclick="submitComment('${Security.escapeAttr(productId)}', '${Security.escapeAttr(orderId)}')">
+            <i class="bi bi-send me-1"></i>提交评价
+        </button>
     `;
     modal.show();
 }
@@ -331,9 +340,9 @@ async function submitComment(productId, orderId) {
     if (result.success) {
         Toast.success('评价成功');
         bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
-        if (App.currentPage === 'dashboard') renderDashboardTab(App.currentTab || 'orders');
+        if (App.currentPage === 'dashboard') renderDashboardTab('orders');
     } else {
-        Toast.error(result.message);
+        Toast.error(result.message || '评价失败');
     }
 }
 

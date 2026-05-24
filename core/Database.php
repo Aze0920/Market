@@ -483,6 +483,7 @@ class Database {
             'captcha_secret_key' => '',
             'captcha_extra_config' => '',
             'announcement_enabled' => false,
+            'announcement_popup_enabled' => false,
             'announcement_title' => '',
             'announcement_content' => '',
             'announcement_position' => 'home',

@@ -319,7 +319,8 @@ switch ($action) {
             'oauth_caihong_enabled',
             'register_email_verify_enabled',
             'captcha_enabled',
-            'announcement_enabled'
+            'announcement_enabled',
+            'announcement_popup_enabled'
         ];
         foreach ($booleanFields as $field) {
             if (isset($_POST[$field])) {
@@ -371,6 +372,7 @@ switch ($action) {
                             'title' => $title !== '' ? $title : '平台公告',
                             'content' => $content,
                             'enabled' => filter_var($item['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                            'popup_enabled' => filter_var($item['popup_enabled'] ?? true, FILTER_VALIDATE_BOOLEAN),
                             'created_at' => intval($item['created_at'] ?? time()),
                         ];
                     }

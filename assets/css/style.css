@@ -959,10 +959,84 @@ a:hover {
 
 .seller-product-card {
     cursor: pointer;
+    border: 1px solid rgba(99, 102, 241, 0.12);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
 
 .seller-product-card:hover {
-    border-color: rgba(99, 102, 241, 0.35);
+    transform: translateY(-3px);
+    border-color: rgba(99, 102, 241, 0.45);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.10);
+}
+
+.seller-product-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.seller-product-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+}
+
+.seller-product-delete {
+    box-shadow: 0 8px 20px rgba(239, 68, 68, 0.18);
+}
+
+.review-modal-head {
+    padding: 0.5rem 0 0.25rem;
+}
+
+.review-modal-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 0.75rem;
+    display: grid;
+    place-items: center;
+    border-radius: 18px;
+    color: #fff;
+    background: linear-gradient(135deg, #f59e0b, #f97316);
+    box-shadow: 0 12px 30px rgba(249, 115, 22, 0.28);
+    font-size: 1.35rem;
+}
+
+.rating-radio-beauty .rating-radio span {
+    min-height: 74px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+}
+
+.rating-radio-beauty .rating-radio span small {
+    color: #f59e0b;
+    letter-spacing: -1px;
+}
+
+.rating-radio-beauty .rating-radio input:checked + span {
+    border-color: #f59e0b;
+    background: linear-gradient(180deg, #fff7ed, #ffffff);
+    color: #b45309;
+    box-shadow: 0 10px 24px rgba(245, 158, 11, 0.16);
+}
+
+.review-textarea {
+    resize: vertical;
+    border-radius: 16px;
+}
+
+.complaint-manage-card {
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1rem;
+    margin-bottom: 0.85rem;
+    background: var(--bg-surface);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
 }
 
 .purchase-quantity-box {

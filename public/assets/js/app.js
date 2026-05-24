@@ -282,6 +282,9 @@ function renderDashboardTab(tabName) {
         case 'reviews':
             loadReviewsTab(contentArea);
             break;
+        case 'complaints':
+            loadComplaintsTab(contentArea);
+            break;
     }
 }
 
@@ -331,6 +334,9 @@ function renderDashboard(tabName = null) {
         </div>
         <div class="sidebar-nav-item" data-tab="reviews">
             <i class="bi bi-star-half"></i><span>评价管理</span>
+        </div>
+        <div class="sidebar-nav-item" data-tab="complaints">
+            <i class="bi bi-exclamation-octagon"></i><span>投诉管理</span>
         </div>
     `;
     document.getElementById('dashSidebar').innerHTML = sidebarHtml;
@@ -629,20 +635,25 @@ async function loadMyProductsTab(area) {
                 <i class="bi bi-plus-circle me-1"></i>发布新商品
             </button>
         </div>
-        <div class="row g-3">
+        <div class="row g-3 seller-product-grid">
             ${result.products.map(p => `
-                <div class="col-md-6">
-                    <div class="card seller-product-card" onclick="openSellerProductManage('${p.id}')">
+                <div class="col-md-6 col-xl-4">
+                    <div class="card seller-product-card h-100" onclick="openSellerProductManage('${Security.escapeAttr(p.id)}')" role="button" title="点击编辑商品">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <span class="badge badge-primary mb-1">${p.category}</span>
-                                    <h6 class="fw-bold">${p.title}</h6>
-                                    <p class="text-muted small mb-1">
-                                        库存: ${p.stock} | 已售: ${p.sales} | ¥${p.price.toFixed(2)}
-                                    </p>
+                            <div class="d-flex justify-content-between align-items-start gap-3">
+                                <div class="flex-grow-1 min-width-0">
+                                    <div class="d-flex align-items-center gap-2 mb-2">
+                                        <span class="badge badge-primary">${Security.escapeHtml(p.category || '其他')}</span>
+                                        <span class="text-muted small"><i class="bi bi-pencil-square me-1"></i>点击编辑</span>
+                                    </div>
+                                    <h6 class="fw-bold seller-product-title mb-2">${Security.escapeHtml(p.title || '-')}</h6>
+                                    <div class="seller-product-meta">
+                                        <span><i class="bi bi-box"></i> 库存 ${Security.escapeHtml(p.stock)}</span>
+                                        <span><i class="bi bi-graph-up"></i> 已售 ${Security.escapeHtml(p.sales)}</span>
+                                        <span class="text-danger fw-semibold">¥${Number(p.price || 0).toFixed(2)}</span>
+                                    </div>
                                 </div>
-                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteProduct('${p.id}')">
+                                <button class="btn btn-danger btn-sm seller-product-delete" onclick="event.stopPropagation(); deleteProduct('${Security.escapeAttr(p.id)}')" title="删除商品">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>
@@ -1972,6 +1983,105 @@ async function deleteCard(id) {
         loadCardManageTab(document.getElementById('dashContentArea'));
     } else {
         Toast.error(result.message);
+    }
+}
+
+async function loadComplaintsTab(area) {
+    const [ordersResult, salesResult] = await Promise.all([API.getMyOrders(), API.getMySales()]);
+    const buyerComplaints = ordersResult.success ? ordersResult.orders.filter(o => o.complaint) : [];
+    const sellerComplaints = salesResult.success ? salesResult.orders.filter(o => o.complaint) : [];
+    const renderStatus = complaint => {
+        if (!complaint) return '<span class="badge badge-secondary">无投诉</span>';
+        if (complaint.status === 'open') return '<span class="badge badge-warning">处理中</span>';
+        if (complaint.status === 'withdrawn') return '<span class="badge badge-secondary">已撤诉</span>';
+        return '<span class="badge badge-info">已记录</span>';
+    };
+    const renderComplaintCard = (order, role) => `
+        <div class="complaint-manage-card">
+            <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+                <div>
+                    <div class="fw-bold">${Security.escapeHtml(order.product_title || '-')}</div>
+                    <div class="text-muted small">${role === 'buyer' ? '我是买家' : '我是卖家'} · 订单 ${Security.escapeHtml(order.id || '-')} · ${Utils.formatDate(order.complaint?.created_at || order.purchase_date)}</div>
+                </div>
+                ${renderStatus(order.complaint)}
+            </div>
+            <div class="complaint-reason-box mb-3">${Security.escapeHtml(order.complaint?.reason || '未填写投诉原因')}</div>
+            ${order.complaint?.seller_reply ? `<div class="alert alert-info py-2 small mb-3"><strong>卖家回复：</strong>${Security.escapeHtml(order.complaint.seller_reply)}</div>` : ''}
+            <div class="d-flex flex-wrap gap-2 justify-content-end">
+                ${role === 'buyer' && order.complaint?.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${Security.escapeAttr(order.id)}')">撤诉</button>` : ''}
+                ${role === 'seller' && order.complaint?.status === 'open' ? `<button class="btn btn-sm btn-primary" onclick="openSellerComplaintModal('${Security.escapeAttr(order.id)}')">查看并回复</button>` : ''}
+            </div>
+        </div>
+    `;
+    area.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="fw-bold mb-0"><i class="bi bi-exclamation-octagon me-2 text-warning"></i>投诉管理</h5>
+            <span class="badge badge-warning">${buyerComplaints.length + sellerComplaints.length} 条</span>
+        </div>
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card h-100"><div class="card-body">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-cart-check me-1"></i>我的投诉</h6>
+                    ${buyerComplaints.length === 0 ? '<p class="text-muted small mb-0">暂无你发起的投诉</p>' : buyerComplaints.map(o => renderComplaintCard(o, 'buyer')).join('')}
+                </div></div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card h-100"><div class="card-body">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-shop me-1"></i>收到的投诉</h6>
+                    ${sellerComplaints.length === 0 ? '<p class="text-muted small mb-0">暂无买家投诉</p>' : sellerComplaints.map(o => renderComplaintCard(o, 'seller')).join('')}
+                </div></div>
+            </div>
+        </div>
+    `;
+}
+
+function openCommentModal(productId, orderId) {
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <div class="review-modal-head text-center mb-4">
+            <div class="review-modal-icon"><i class="bi bi-star-fill"></i></div>
+            <h5 class="fw-bold mb-1">评价商品</h5>
+            <p class="text-muted small mb-0">请选择评分，评价内容可以不填写</p>
+        </div>
+        <div class="mb-4">
+            <label class="form-label fw-semibold">商品评分</label>
+            <div class="rating-radio-group rating-radio-beauty">
+                ${[1,2,3,4,5].map(n => `
+                    <label class="rating-radio">
+                        <input type="radio" name="commentRating" value="${n}" ${n === 5 ? 'checked' : ''}>
+                        <span><b>${n}星</b><small>${'★'.repeat(n)}</small></span>
+                    </label>
+                `).join('')}
+            </div>
+        </div>
+        <div class="mb-2">
+            <label class="form-label fw-semibold">评价内容</label>
+            <textarea class="form-control review-textarea" id="commentContent" rows="5" maxlength="500" placeholder="可以写，也可以留空，例如：发货很快、账号正常、描述一致"></textarea>
+            <div class="d-flex justify-content-between mt-2">
+                <small class="text-muted">内容可写可不写</small>
+                <small class="text-muted">最多 500 字</small>
+            </div>
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="submitComment('${Security.escapeAttr(productId)}', '${Security.escapeAttr(orderId)}')">
+            <i class="bi bi-send me-1"></i>提交评价
+        </button>
+    `;
+    modal.show();
+}
+
+async function submitComment(productId, orderId) {
+    const rating = parseInt(document.querySelector('input[name="commentRating"]:checked')?.value || '5', 10);
+    const content = document.getElementById('commentContent')?.value?.trim() || '';
+    const result = await API.addComment(productId, orderId, rating, content);
+    if (result.success) {
+        Toast.success('评价成功');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        if (App.currentPage === 'dashboard') renderDashboardTab('orders');
+    } else {
+        Toast.error(result.message || '评价失败');
     }
 }
 

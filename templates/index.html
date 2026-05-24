@@ -8,7 +8,7 @@
     <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=202605241825" rel="stylesheet">
+    <link href="assets/css/style.css?v=202605241834" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -232,6 +232,10 @@
                 </div>
                 <div class="modal-body" id="announcementsModalBody">
                     <div class="text-center text-muted py-4">暂无公告</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" type="button" onclick="dismissAnnouncementToday()">今日不再提醒</button>
+                    <button class="btn btn-primary" type="button" data-bs-dismiss="modal">知道了</button>
                 </div>
             </div>
         </div>
@@ -593,13 +597,13 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=202605241825"></script>
-    <script src="assets/js/app.js?v=202605241825"></script>
-    <script src="assets/js/product.js?v=202605241825"></script>
-    <script src="assets/js/message.js?v=202605241825"></script>
-    <script src="assets/js/auth.js?v=202605241825"></script>
+    <script src="assets/js/api.js?v=202605241834"></script>
+    <script src="assets/js/app.js?v=202605241834"></script>
+    <script src="assets/js/product.js?v=202605241834"></script>
+    <script src="assets/js/message.js?v=202605241834"></script>
+    <script src="assets/js/auth.js?v=202605241834"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = '202605241825';
+        window.KEYNEST_ASSET_VERSION = '202605241834';
 
         async function renderFrontMembershipCards(area) {
             if (!area) return;
@@ -887,6 +891,7 @@
 
             App.updateUnreadBadge();
             updateAnnouncementButton();
+            maybeShowAnnouncementPopup();
         }
 
         async function applySiteConfig() {
@@ -904,6 +909,7 @@
             if (marketDescription) marketDescription.textContent = siteDescription;
             if (footer) footer.textContent = '© 2026 ' + siteName + ' · ' + siteDescription;
             window.KeyNestAnnouncements = normalizeAnnouncements(result.config);
+            window.KeyNestAnnouncementPopupEnabled = !!result.config.announcement_popup_enabled;
             updateAnnouncementButton();
         }
 
@@ -919,7 +925,7 @@
                 } catch (e) {}
             }
             if (items.length === 0 && (config.announcement_title || config.announcement_content)) {
-                items = [{ title: config.announcement_title || '平台公告', content: config.announcement_content || '', enabled: true, created_at: 0 }];
+                items = [{ title: config.announcement_title || '平台公告', content: config.announcement_content || '', enabled: true, popup_enabled: !!config.announcement_popup_enabled, created_at: 0 }];
             }
             return items
                 .filter(item => item && item.enabled !== false && item.enabled !== '0' && String(item.content || '').trim())
@@ -927,6 +933,7 @@
                     id: item.id || ('announcement_' + index),
                     title: String(item.title || '平台公告'),
                     content: String(item.content || ''),
+                    popup_enabled: item.popup_enabled !== false && item.popup_enabled !== '0',
                     created_at: Number(item.created_at || 0)
                 }))
                 .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
@@ -946,8 +953,10 @@
             }
         }
 
-        function openAnnouncementsModal() {
-            const items = window.KeyNestAnnouncements || [];
+        function openAnnouncementsModal(autoPopup = false) {
+            const items = autoPopup
+                ? (window.KeyNestAnnouncements || []).filter(item => item.popup_enabled !== false)
+                : (window.KeyNestAnnouncements || []);
             const body = document.getElementById('announcementsModalBody');
             if (!body) return;
             if (!items.length) {
@@ -964,6 +973,29 @@
                 </div>`;
             }
             new bootstrap.Modal(document.getElementById('announcementsModal')).show();
+        }
+
+        function announcementTodayKey() {
+            const today = new Date();
+            const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            const signature = (window.KeyNestAnnouncements || [])
+                .filter(item => item.popup_enabled !== false)
+                .map(item => `${item.id}:${item.created_at}`)
+                .join('|');
+            return 'keynest_announcement_no_remind_' + day + '_' + btoa(unescape(encodeURIComponent(signature))).slice(0, 32);
+        }
+
+        function maybeShowAnnouncementPopup() {
+            const popupItems = (window.KeyNestAnnouncements || []).filter(item => item.popup_enabled !== false);
+            if (!window.KeyNestAnnouncementPopupEnabled || popupItems.length === 0) return;
+            const key = announcementTodayKey();
+            if (localStorage.getItem(key) === '1') return;
+            setTimeout(() => openAnnouncementsModal(true), 300);
+        }
+
+        function dismissAnnouncementToday() {
+            localStorage.setItem(announcementTodayKey(), '1');
+            bootstrap.Modal.getInstance(document.getElementById('announcementsModal'))?.hide();
         }
 
         function renderDashboard(tabName = null) {

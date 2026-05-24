@@ -68,6 +68,7 @@ keynest_require_installed(false);
         .confirm-overlay { position: fixed; inset: 0; z-index: 9998; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(6px); }
         .admin-confirm { width: min(430px, 100%); background: #fff; border: 1px solid rgba(255,255,255,.75); border-radius: 24px; padding: 24px; box-shadow: 0 28px 90px rgba(15,23,42,.28); animation: confirmPop .16s ease-out; }
         .admin-confirm-icon { width: 50px; height: 50px; border-radius: 18px; display: grid; place-items: center; background: #fee2e2; color: var(--danger); font-size: 1.5rem; margin-bottom: 16px; }
+        .admin-confirm-icon.primary { background: #eef2ff; color: var(--primary); }
         .admin-confirm h5 { margin: 0 0 8px; font-weight: 850; }
         .admin-confirm p { color: var(--muted); margin: 0; line-height: 1.7; }
         .admin-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
@@ -673,6 +674,9 @@ function renderCards() {
                     <div class="small text-muted mt-1">可勾选卡密后批量删除。</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
+                    <button id="batchCopyCardsBtn" class="btn btn-sm btn-outline-primary" onclick="copySelectedCardsAdmin()" disabled>
+                        <i class="bi bi-clipboard me-1"></i>批量复制
+                    </button>
                     <button id="batchDeleteCardsBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedCardsAdmin()" disabled>
                         <i class="bi bi-trash3 me-1"></i>批量删除
                     </button>
@@ -712,7 +716,12 @@ function updateCardBatchToolbar() {
     const checkboxes = Array.from(document.querySelectorAll('.card-select'));
     const selectedCount = checkboxes.filter(input => input.checked).length;
     const batchBtn = document.getElementById('batchDeleteCardsBtn');
+    const copyBtn = document.getElementById('batchCopyCardsBtn');
     const selectAll = document.getElementById('cardSelectAll');
+    if (copyBtn) {
+        copyBtn.disabled = selectedCount === 0;
+        copyBtn.innerHTML = `<i class="bi bi-clipboard me-1"></i>${selectedCount ? '批量复制 (' + selectedCount + ')' : '批量复制'}`;
+    }
     if (batchBtn) {
         batchBtn.disabled = selectedCount === 0;
         batchBtn.innerHTML = `<i class="bi bi-trash3 me-1"></i>${selectedCount ? '批量删除 (' + selectedCount + ')' : '批量删除'}`;
@@ -725,6 +734,16 @@ function updateCardBatchToolbar() {
 function toggleAllCardSelection(checked) {
     document.querySelectorAll('.card-select').forEach(input => { input.checked = checked; });
     updateCardBatchToolbar();
+}
+async function copySelectedCardsAdmin() {
+    const ids = selectedCardIds();
+    if (!ids.length) return showToast('请先选择要复制的卡密', 'error');
+    const codes = (Admin.cache.cards || [])
+        .filter(card => ids.includes(card.id))
+        .map(card => card.code)
+        .filter(Boolean);
+    if (!codes.length) return showToast('没有可复制的卡密', 'error');
+    await copyTextToClipboard(codes.join('\n'));
 }
 async function deleteCardAdmin(id) {
     const card = (Admin.cache.cards || []).find(c => c.id === id);
@@ -755,8 +774,14 @@ async function createCards() {
     await loadAdminData();
     renderCards();
     const codes = (res.cards || []).map(card => card.code).filter(Boolean);
-    if (codes.length && confirm('卡密已生成，是否复制生成的卡密？')) {
-        await copyTextToClipboard(codes.join('\n'));
+    if (codes.length) {
+        const confirmed = await adminConfirm({
+            title: '复制生成的卡密？',
+            message: '本次成功生成 ' + codes.length + ' 张卡密，确认后会按一行一个复制到剪贴板。',
+            confirmText: '复制卡密',
+            cancelText: '暂不复制'
+        });
+        if (confirmed) await copyTextToClipboard(codes.join('\n'));
     }
 }
 async function copyTextToClipboard(text) {
@@ -774,7 +799,7 @@ async function copyTextToClipboard(text) {
             document.execCommand('copy');
             textarea.remove();
         }
-        showToast('卡密已复制到剪贴板', 'success');
+        showToast('卡密已复制到剪贴板，共 ' + text.split('\n').filter(Boolean).length + ' 条', 'success');
     } catch (e) {
         showToast('复制失败，请手动复制', 'error');
     }
@@ -1085,7 +1110,7 @@ function adminConfirm({ title = '确认操作', message = '', confirmText = '确
         overlay.className = 'confirm-overlay';
         overlay.innerHTML = `
             <div class="admin-confirm" role="dialog" aria-modal="true" aria-labelledby="adminConfirmTitle">
-                <div class="admin-confirm-icon"><i class="bi ${danger ? 'bi-exclamation-triangle-fill' : 'bi-question-circle-fill'}"></i></div>
+                <div class="admin-confirm-icon ${danger ? '' : 'primary'}"><i class="bi ${danger ? 'bi-exclamation-triangle-fill' : 'bi-clipboard-check-fill'}"></i></div>
                 <h5 id="adminConfirmTitle">${escapeHtml(title)}</h5>
                 <p>${escapeHtml(message)}</p>
                 <div class="admin-confirm-actions">
@@ -1191,79 +1216,9 @@ async function deletePaymentConfigAdmin(id) { if (!confirm('确定删除该支�
 function copyText(text) { navigator.clipboard?.writeText(text).then(() => showToast('已复制', 'success')).catch(() => showToast('复制失败，请手动复制', 'error')); }
 function renderReservedLoginSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    const callbackBase = `${location.origin}/api/auth.php?action=oauth_callback&provider=`;
-    document.getElementById(targetId).innerHTML = `
-        <div class="panel">
-            <div class="panel-title"><h5>登录注册</h5><button class="btn btn-sm btn-primary" onclick="saveLoginSettings()">保存登录设置</button></div>
-            <div class="config-help mb-3">这里控制第三方登录入口是否显示。勾选后请填写对应平台应用参数；回调地址需同步配置到第三方开放平台。</div>
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="oauthQqEnabled" onchange="toggleLoginProviderFields()" ${c.oauth_qq_enabled ? 'checked' : ''}>
-                        <label class="form-check-label" for="oauthQqEnabled"><strong>QQ 官方登录</strong><span>需要 App ID / App Key / 回调地址</span></label>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="oauthWechatEnabled" onchange="toggleLoginProviderFields()" ${c.oauth_wechat_enabled ? 'checked' : ''}>
-                        <label class="form-check-label" for="oauthWechatEnabled"><strong>微信官方登录</strong><span>需要 App ID / App Secret / 回调地址</span></label>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="oauthCaihongEnabled" onchange="toggleLoginProviderFields()" ${c.oauth_caihong_enabled ? 'checked' : ''}>
-                        <label class="form-check-label" for="oauthCaihongEnabled"><strong>彩虹聚合登录</strong><span>需要聚合登录网关、商户 ID 和 Key</span></label>
-                    </div>
-                </div>
-
-                <div class="col-12 oauth-provider-fields oauth-qq-fields">
-                    <div class="border rounded-4 p-3 bg-light">
-                        <h6 class="mb-3">QQ 官方登录参数</h6>
-                        <div class="row g-3">
-                            <div class="col-md-4"><label class="form-label">App ID</label><input id="oauthQqAppId" class="form-control" value="${escapeHtml(c.oauth_qq_app_id || '')}" placeholder="QQ 互联 App ID"></div>
-                            <div class="col-md-4"><label class="form-label">App Key</label><input id="oauthQqAppKey" class="form-control" type="password" value="${escapeHtml(c.oauth_qq_app_key || '')}" placeholder="QQ 互联 App Key"></div>
-                            <div class="col-md-4"><label class="form-label">回调地址</label><input id="oauthQqRedirectUri" class="form-control" value="${escapeHtml(c.oauth_qq_redirect_uri || callbackBase + 'qq')}" placeholder="https://你的域名/api/auth.php?action=oauth_callback&provider=qq"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-12 oauth-provider-fields oauth-wechat-fields">
-                    <div class="border rounded-4 p-3 bg-light">
-                        <h6 class="mb-3">微信官方登录参数</h6>
-                        <div class="row g-3">
-                            <div class="col-md-4"><label class="form-label">App ID</label><input id="oauthWechatAppId" class="form-control" value="${escapeHtml(c.oauth_wechat_app_id || '')}" placeholder="微信开放平台 App ID"></div>
-                            <div class="col-md-4"><label class="form-label">App Secret</label><input id="oauthWechatAppSecret" class="form-control" type="password" value="${escapeHtml(c.oauth_wechat_app_secret || '')}" placeholder="微信开放平台 App Secret"></div>
-                            <div class="col-md-4"><label class="form-label">回调地址</label><input id="oauthWechatRedirectUri" class="form-control" value="${escapeHtml(c.oauth_wechat_redirect_uri || callbackBase + 'wechat')}" placeholder="https://你的域名/api/auth.php?action=oauth_callback&provider=wechat"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-12 oauth-provider-fields oauth-caihong-fields">
-                    <div class="border rounded-4 p-3 bg-light">
-                        <h6 class="mb-3">彩虹聚合登录参数</h6>
-                        <div class="row g-3">
-                            <div class="col-md-4"><label class="form-label">登录网关</label><input id="oauthCaihongApiUrl" class="form-control" value="${escapeHtml(c.oauth_caihong_api_url || '')}" placeholder="https://login.example.com/"></div>
-                            <div class="col-md-4"><label class="form-label">商户 ID</label><input id="oauthCaihongAppId" class="form-control" value="${escapeHtml(c.oauth_caihong_app_id || '')}" placeholder="聚合登录商户 ID / App ID"></div>
-                            <div class="col-md-4"><label class="form-label">通信 Key</label><input id="oauthCaihongKey" class="form-control" type="password" value="${escapeHtml(c.oauth_caihong_key || '')}" placeholder="聚合登录通信密钥"></div>
-                            <div class="col-12"><label class="form-label">回调地址</label><input id="oauthCaihongRedirectUri" class="form-control" value="${escapeHtml(c.oauth_caihong_redirect_uri || callbackBase + 'caihong')}" placeholder="https://你的域名/api/auth.php?action=oauth_callback&provider=caihong"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    toggleLoginProviderFields();
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>登录注册</h5><button class="btn btn-sm btn-primary" onclick="saveLoginSettings()">保存登录设置</button></div><div class="config-help mb-3">这里控制第三方登录入口是否显示。勾选后还需要填写对应平台应用参数；未接入真实回调前建议保持关闭。</div><div class="row g-3"><div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" id="oauthQqEnabled" ${c.oauth_qq_enabled ? 'checked' : ''}><label class="form-check-label" for="oauthQqEnabled"><strong>QQ 官方登录</strong><span>需要 App ID / App Key / 回调地址</span></label></div></div><div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" id="oauthWechatEnabled" ${c.oauth_wechat_enabled ? 'checked' : ''}><label class="form-check-label" for="oauthWechatEnabled"><strong>微信官方登录</strong><span>需要 App ID / App Secret / 回调地址</span></label></div></div><div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" id="oauthCaihongEnabled" ${c.oauth_caihong_enabled ? 'checked' : ''}><label class="form-check-label" for="oauthCaihongEnabled"><strong>彩虹聚合登录</strong><span>需要聚合登录网关、商户 ID 和 Key</span></label></div></div></div></div>`;
 }
-function toggleLoginProviderFields() {
-    const visibleMap = {
-        'oauth-qq-fields': document.getElementById('oauthQqEnabled')?.checked,
-        'oauth-wechat-fields': document.getElementById('oauthWechatEnabled')?.checked,
-        'oauth-caihong-fields': document.getElementById('oauthCaihongEnabled')?.checked
-    };
-    Object.entries(visibleMap).forEach(([className, visible]) => {
-        document.querySelectorAll(`.${className}`).forEach(el => el.style.display = visible ? '' : 'none');
-    });
-}
-async function saveLoginSettings() { await saveSystemConfigFields({ oauth_qq_enabled: checkedValue('oauthQqEnabled'), oauth_qq_app_id: fieldValue('oauthQqAppId'), oauth_qq_app_key: fieldValue('oauthQqAppKey'), oauth_qq_redirect_uri: fieldValue('oauthQqRedirectUri'), oauth_wechat_enabled: checkedValue('oauthWechatEnabled'), oauth_wechat_app_id: fieldValue('oauthWechatAppId'), oauth_wechat_app_secret: fieldValue('oauthWechatAppSecret'), oauth_wechat_redirect_uri: fieldValue('oauthWechatRedirectUri'), oauth_caihong_enabled: checkedValue('oauthCaihongEnabled'), oauth_caihong_api_url: fieldValue('oauthCaihongApiUrl'), oauth_caihong_app_id: fieldValue('oauthCaihongAppId'), oauth_caihong_key: fieldValue('oauthCaihongKey'), oauth_caihong_redirect_uri: fieldValue('oauthCaihongRedirectUri') }, '登录设置已保存'); }
+async function saveLoginSettings() { await saveSystemConfigFields({ oauth_qq_enabled: checkedValue('oauthQqEnabled'), oauth_wechat_enabled: checkedValue('oauthWechatEnabled'), oauth_caihong_enabled: checkedValue('oauthCaihongEnabled') }, '登录设置已保存'); }
 function renderReservedEmailSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     const provider = c.email_provider || 'smtp';
@@ -1275,96 +1230,32 @@ async function saveEmailSettings() { await saveSystemConfigFields({ register_ema
 async function testEmailSettings() { const email = fieldValue('testEmailTo'); if (!email) return showToast('请输入测试收件邮箱', 'warning'); const res = await request('admin.php?action=test_email', 'POST', { email }); if (!res.success) return showToast(res.message || '测试发送失败', 'error'); showToast(res.message || '测试邮件已发送', 'success'); }
 function renderReservedCaptchaSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">选择你要用的验证码服务商，并填写前端 Site Key 和后端 Secret Key。不同服务商的前端组件接入方式不同，这里先保存参数，后续登录/注册页可按 provider 加载对应组件。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用人机验证</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码</option></select></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">选择你要用的验证码服务商，并填写前端 Site Key 和后端 Secret Key。不同服务商的前端组件接入方式不同，这里先保存参数，后续登录/注册页可按 provider 加载对应组件。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用人机验证</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select" onchange="updateCaptchaProviderLink()"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码</option></select></div><div class="col-md-8"><label class="form-label">服务商官网</label><div id="captchaProviderLink" class="config-help py-2"></div></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;
+    updateCaptchaProviderLink();
+}
+function captchaProviderInfo(provider) {
+    const map = {
+        turnstile: { name: 'Cloudflare Turnstile', url: 'https://www.cloudflare.com/products/turnstile/' },
+        recaptcha_v3: { name: 'Google reCAPTCHA v3', url: 'https://www.google.com/recaptcha/admin/create' },
+        geetest_v3: { name: '极验行为验证', url: 'https://www.geetest.com/' },
+        aliyun: { name: '阿里云验证码', url: 'https://www.aliyun.com/product/captcha' },
+        tencent: { name: '腾讯验证码', url: 'https://cloud.tencent.com/product/captcha' }
+    };
+    return map[provider] || map.turnstile;
+}
+function updateCaptchaProviderLink() {
+    const box = document.getElementById('captchaProviderLink');
+    if (!box) return;
+    const info = captchaProviderInfo(fieldValue('captchaProvider') || 'turnstile');
+    box.innerHTML = `<span class="text-muted me-2">当前选择：</span><strong>${escapeHtml(info.name)}</strong><a class="btn btn-sm btn-outline-primary ms-3" href="${escapeHtml(info.url)}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right me-1"></i>打开官网</a>`;
 }
 async function saveCaptchaSettings() { await saveSystemConfigFields({ captcha_enabled: checkedValue('captchaEnabled'), captcha_provider: fieldValue('captchaProvider'), captcha_site_key: fieldValue('captchaSiteKey'), captcha_secret_key: fieldValue('captchaSecretKey'), captcha_extra_config: fieldValue('captchaExtraConfig') }, '人机验证设置已保存'); }
 function renderReservedAnnouncementSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    const items = getAdminAnnouncementItems(c);
-    document.getElementById(targetId).innerHTML = `
-        <div class="panel">
-            <div class="panel-title"><h5>公告设置</h5><button class="btn btn-sm btn-primary" onclick="saveAnnouncementSettings()">保存公告</button></div>
-            <div class="config-help mb-3">公告支持 Markdown 格式。可发布多条公告，前台用户名前侧会显示铃铛按钮，点击即可查看全部启用公告。</div>
-            <div class="row g-3">
-                <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="announcementEnabled" ${c.announcement_enabled ? 'checked' : ''}><label class="form-check-label" for="announcementEnabled">启用公告</label></div></div>
-                <div class="col-12"><button class="btn btn-outline-primary btn-sm" onclick="addAnnouncementItem()"><i class="bi bi-plus-lg me-1"></i>新增公告</button></div>
-                <div class="col-12" id="announcementItemsBox">${renderAnnouncementItemsHtml(items)}</div>
-            </div>
-        </div>`;
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>公告设置</h5><button class="btn btn-sm btn-primary" onclick="saveAnnouncementSettings()">保存公告</button></div><div class="config-help mb-3">公告支持 Markdown 格式。可用于首页公告、弹窗内容或后台通知，开启后前台即可读取配置展示。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="announcementEnabled" ${c.announcement_enabled ? 'checked' : ''}><label class="form-check-label" for="announcementEnabled">启用公告</label></div></div><div class="col-md-6"><label class="form-label">公告标题</label><input id="announcementTitle" class="form-control" value="${escapeHtml(c.announcement_title || '')}" placeholder="例如：平台维护通知"></div><div class="col-md-6"><label class="form-label">展示位置</label><select id="announcementPosition" class="form-select"><option value="home" ${c.announcement_position === 'home' ? 'selected' : ''}>首页公告</option><option value="modal" ${c.announcement_position === 'modal' ? 'selected' : ''}>弹窗公告</option><option value="both" ${c.announcement_position === 'both' ? 'selected' : ''}>首页 + 弹窗</option></select></div><div class="col-lg-6"><label class="form-label">Markdown 内容</label><textarea id="announcementContent" class="form-control" rows="12" oninput="updateAnnouncementPreview()" placeholder="# 公告标题&#10;&#10;- 支持列表&#10;- 支持 **加粗**、链接、代码块">${escapeHtml(c.announcement_content || '')}</textarea></div><div class="col-lg-6"><label class="form-label">实时预览</label><div id="announcementPreview" class="markdown-preview"></div></div></div></div>`;
+    updateAnnouncementPreview();
 }
-function getAdminAnnouncementItems(c) {
-    let items = [];
-    if (Array.isArray(c.announcement_items)) {
-        items = c.announcement_items;
-    } else if (typeof c.announcement_items === 'string' && c.announcement_items.trim()) {
-        try {
-            const parsed = JSON.parse(c.announcement_items);
-            if (Array.isArray(parsed)) items = parsed;
-        } catch (e) {}
-    }
-    if (items.length === 0 && (c.announcement_title || c.announcement_content)) {
-        items = [{ id: 'legacy_' + Date.now(), title: c.announcement_title || '平台公告', content: c.announcement_content || '', enabled: true, created_at: Math.floor(Date.now() / 1000) }];
-    }
-    if (items.length === 0) {
-        items = [{ id: 'ann_' + Date.now(), title: '', content: '', enabled: true, created_at: Math.floor(Date.now() / 1000) }];
-    }
-    return items;
-}
-function renderAnnouncementItemsHtml(items) {
-    return (items || []).map((item, index) => `
-        <div class="announcement-admin-item border rounded-4 p-3 mb-3" data-index="${index}">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div class="form-check"><input class="form-check-input announcement-item-enabled" type="checkbox" ${item.enabled === false || item.enabled === '0' ? '' : 'checked'}><label class="form-check-label">启用这条公告</label></div>
-                <button class="btn btn-sm btn-outline-danger" onclick="removeAnnouncementItem(this)"><i class="bi bi-trash"></i> 删除</button>
-            </div>
-            <div class="row g-3">
-                <div class="col-md-8"><label class="form-label">公告标题</label><input class="form-control announcement-item-title" value="${escapeHtml(item.title || '')}" placeholder="例如：平台维护通知"></div>
-                <div class="col-md-4"><label class="form-label">发布时间</label><input class="form-control announcement-item-date" type="datetime-local" value="${announcementDateInputValue(item.created_at)}"></div>
-                <div class="col-12"><label class="form-label">Markdown 内容</label><textarea class="form-control announcement-item-content" rows="6" placeholder="# 公告标题&#10;&#10;- 支持列表&#10;- 支持 **加粗**、链接、代码块">${escapeHtml(item.content || '')}</textarea></div>
-            </div>
-        </div>
-    `).join('') || '<div class="text-muted text-center py-4">暂无公告，请点击“新增公告”</div>';
-}
-function announcementDateInputValue(timestamp) {
-    const date = timestamp ? new Date(Number(timestamp) * 1000) : new Date();
-    const pad = n => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-function announcementTimestampFromInput(value) {
-    const time = value ? new Date(value).getTime() : Date.now();
-    return Number.isFinite(time) ? Math.floor(time / 1000) : Math.floor(Date.now() / 1000);
-}
-function addAnnouncementItem() {
-    const box = document.getElementById('announcementItemsBox');
-    const items = collectAnnouncementItems();
-    items.unshift({ id: 'ann_' + Date.now(), title: '', content: '', enabled: true, created_at: Math.floor(Date.now() / 1000) });
-    box.innerHTML = renderAnnouncementItemsHtml(items);
-}
-function removeAnnouncementItem(btn) {
-    btn.closest('.announcement-admin-item')?.remove();
-    if (!document.querySelector('.announcement-admin-item')) {
-        document.getElementById('announcementItemsBox').innerHTML = renderAnnouncementItemsHtml([]);
-    }
-}
-function collectAnnouncementItems() {
-    return Array.from(document.querySelectorAll('.announcement-admin-item')).map((el, index) => ({
-        id: 'ann_' + index + '_' + announcementTimestampFromInput(el.querySelector('.announcement-item-date')?.value),
-        title: el.querySelector('.announcement-item-title')?.value || '',
-        content: el.querySelector('.announcement-item-content')?.value || '',
-        enabled: el.querySelector('.announcement-item-enabled')?.checked ? 1 : 0,
-        created_at: announcementTimestampFromInput(el.querySelector('.announcement-item-date')?.value)
-    })).filter(item => item.title.trim() || item.content.trim());
-}
-async function saveAnnouncementSettings() {
-    const items = collectAnnouncementItems();
-    await saveSystemConfigFields({
-        announcement_enabled: checkedValue('announcementEnabled'),
-        announcement_items: JSON.stringify(items),
-        announcement_title: items[0]?.title || '',
-        announcement_position: 'bell',
-        announcement_content: items[0]?.content || ''
-    }, '公告设置已保存');
-}
+async function saveAnnouncementSettings() { await saveSystemConfigFields({ announcement_enabled: checkedValue('announcementEnabled'), announcement_title: fieldValue('announcementTitle'), announcement_position: fieldValue('announcementPosition'), announcement_content: fieldValue('announcementContent') }, '公告设置已保存'); }
 
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && !document.getElementById('loginView').classList.contains('hidden')) adminLogin(); });
 bootstrapAdmin();
