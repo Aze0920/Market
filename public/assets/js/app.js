@@ -1,8 +1,4 @@
-/**
- * XSS防护工具函数
- */
 window.Security = {
-    // HTML转义
     escapeHtml: function(str) {
         if (str === null || str === undefined) return '';
         var div = document.createElement('div');
@@ -10,13 +6,11 @@ window.Security = {
         return div.innerHTML;
     },
     
-    // 属性转义
     escapeAttr: function(attr) {
         if (attr === null || attr === undefined) return '';
         return String(attr).replace(/"/g, '&quot;').replace(/'/g, '&#x27;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     },
     
-    // URL转义
     escapeUrl: function(url) {
         if (url === null || url === undefined) return '';
         try {
@@ -26,7 +20,6 @@ window.Security = {
         }
     },
     
-    // 验证输入长度
     validateLength: function(str, min, max) {
         if (typeof str !== 'string') return false;
         var len = str.length;
@@ -35,25 +28,19 @@ window.Security = {
         return true;
     },
     
-    // 验证用户名格式
     validateUsername: function(username) {
         return /^[a-zA-Z0-9_]{3,20}$/.test(username);
     },
     
-    // 验证邮箱格式
     validateEmail: function(email) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     },
     
-    // 验证密码强度
     validatePassword: function(password) {
         return password && password.length >= 6;
     }
 };
 
-/**
- * 应用状态管理
- */
 window.App = {
     currentUser: null,
     currentPage: 'home',
@@ -120,9 +107,6 @@ window.App = {
     }
 };
 
-/**
- * Toast 通知
- */
 window.Toast = {
     container: null,
     initialized: false,
@@ -175,14 +159,10 @@ window.Toast = {
     info(message) { this.show(message, 'info'); }
 };
 
-// 添加滑出动画
 const slideStyle = document.createElement('style');
 slideStyle.textContent = '@keyframes slideOut{to{transform:translateX(100%);opacity:0}}';
 document.head.appendChild(slideStyle);
 
-/**
- * 工具函数
- */
 window.Utils = {
     formatDate(timestamp) {
         const date = new Date(timestamp * 1000);
@@ -201,9 +181,6 @@ window.Utils = {
     }
 };
 
-/**
- * 页面导航
- */
 function persistFrontendState() {
     localStorage.setItem('keynest_front_page', App.currentPage);
     localStorage.setItem('keynest_front_tab', App.currentTab || 'overview');
@@ -303,7 +280,6 @@ function renderDashboard(tabName = null) {
     document.getElementById('dashAvatar').textContent = App.currentUser.username.charAt(0).toUpperCase();
     document.getElementById('dashBalance').textContent = '¥ ' + App.currentUser.balance.toFixed(2);
 
-    // 构建侧边栏
     let sidebarHtml = `
         <div class="sidebar-nav-item active" data-tab="overview">
             <i class="bi bi-house"></i><span>概览</span>
@@ -344,7 +320,6 @@ function renderDashboard(tabName = null) {
     `;
     document.getElementById('dashSidebar').innerHTML = sidebarHtml;
 
-    // 绑定侧边栏点击
     document.querySelectorAll('#dashSidebar .sidebar-nav-item[data-tab]').forEach(item => {
         item.onclick = function() {
             renderDashboardTab(this.dataset.tab);
@@ -356,7 +331,6 @@ function renderDashboard(tabName = null) {
     renderDashboardTab(hasActiveTab ? activeTab : 'overview');
 }
 
-// 仪表板各Tab加载函数
 async function loadOverviewTab(area) {
     const result = await API.getOverview();
     if (!result.success) {
@@ -624,7 +598,6 @@ async function loadBalanceTab(area) {
         `;
     }
 
-    // 如果是管理员，加载所有请求
     let adminSection = '';
     if (isAdmin) {
         const allResult = await API.getAllRequests();
@@ -712,41 +685,45 @@ async function loadMembershipTab(area) {
     }
 
     const levels = levelsResult.levels || {};
-    const levelList = Object.values(levels).filter(level => level.enabled !== false).sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    const levelList = Object.values(levels).filter(level => level.enabled !== false).sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
     const myLevelName = myLevelResult.level || 'Free';
-    const myLevel = myLevelResult.level_info || levels[myLevelName] || levelList[0] || {};
+    const myLevel = myLevelResult.level_info || levels[myLevelName] || {};
     const currentPriority = Number(myLevel.priority || 0);
-
-    const upgradeLevels = levelList;
 
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
-
-        <h6 class="fw-bold mb-3"><i class="bi bi-arrow-up-circle me-2"></i>会员等级</h6>
-        <p class="text-muted small mb-3">会员等级由后台动态配置；启用几个就显示几个，一排最多显示 3 个。</p>
         <div class="membership-cards">
-            ${upgradeLevels.map(level => {
-                const levelName = level.name;
+            ${levelList.map(level => {
+                const levelName = level.name || '';
+                const levelPriority = Number(level.priority || 0);
                 const isCurrentLevel = myLevelName === levelName;
-                const isLowerOrEqual = Number(level.priority || 0) <= currentPriority;
-                const isUpgraded = myLevelName !== 'Free' && isLowerOrEqual;
+                const isLowerLevel = !isCurrentLevel && myLevelName !== 'Free' && levelPriority < currentPriority;
                 const cost = Number(level.cost || 0);
-                const canAfford = !App.currentUser || App.currentUser.balance >= cost;
+                const canAfford = !App.currentUser || Number(App.currentUser.balance || 0) >= cost;
                 const levelGradient = level.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6)';
                 const levelIcon = level.icon || 'bi-gem';
                 const levelPrivileges = [
-                    `单商品最大 ${level.max_accounts_per_product} 账号`,
-                    level.max_products >= 9999 ? '无限商品' : `${level.max_products} 个商品`,
+                    `单商品最大 ${level.max_accounts_per_product || 0} 账号`,
+                    Number(level.max_products || 0) >= 9999 ? '无限商品' : `${level.max_products || 0} 个商品`,
                     `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
                     Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
                 ];
+                const footerHtml = isCurrentLevel
+                    ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-check-circle"></i> 当前会员</span>'
+                    : isLowerLevel
+                        ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 当前会员比此会员等级高，禁止升级</span>'
+                        : level.can_upgrade === false
+                            ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 暂不支持开通</span>'
+                            : `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>
+                                <i class="bi bi-rocket-takeoff"></i> ${cost === 0 ? '免费开通' : '立即开通'}
+                            </button>`;
 
                 return `
                     <div class="membership-card ${isCurrentLevel ? 'current' : ''}" style="--card-gradient: ${Security.escapeAttr(levelGradient)};">
                         <div class="card-header">
                             <i class="bi ${Security.escapeAttr(levelIcon)}"></i>
                             <h5>${Security.escapeHtml(levelName)}</h5>
-                            ${isCurrentLevel ? '<span class="current-badge">当前</span>' : ''}
+                            ${isCurrentLevel ? '<span class="current-badge">当前会员</span>' : ''}
                         </div>
                         <div class="card-body">
                             <div class="text-center mb-3">
@@ -756,17 +733,10 @@ async function loadMembershipTab(area) {
                                 ${levelPrivileges.map(p => `<li><i class="bi bi-check"></i> ${Security.escapeHtml(p)}</li>`).join('')}
                             </ul>
                         </div>
-                        <div class="card-footer">
-                            ${isCurrentLevel ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-check-circle"></i> 当前会员</span>' :
-                                isUpgraded ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 当前会员比此会员等级高，禁止升级</span>' :
-                                level.can_upgrade === false ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 暂不支持开通</span>' :
-                                    `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>
-                                        <i class="bi bi-rocket-takeoff"></i> ${cost === 0 ? '免费开通' : '立即开通'}
-                                    </button>`}
-                        </div>
+                        <div class="card-footer">${footerHtml}</div>
                     </div>
                 `;
-            }).join('') || '<div class="text-muted py-4">暂无可升级会员等级</div>'}
+            }).join('') || '<div class="text-muted py-4">暂无会员等级</div>'}
         </div>
     `;
 }
@@ -975,13 +945,12 @@ async function selectContactTab(username) {
         </div>
     `;
 
-    // 滚动到底部
     const chatContainer = document.getElementById('tabChatMessages');
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
-    await API.getConversation(username); // 标记已读
+    await API.getConversation(username);
     App.updateUnreadBadge();
-    renderDashboardTab('messages'); // 刷新列表
+    renderDashboardTab('messages');
 }
 
 async function sendMessageTab() {
@@ -1063,7 +1032,6 @@ async function rejectRequest(id) {
     }
 }
 
-// 提现功能
 let withdrawFeeRate = 0.01;
 let minWithdrawAmount = 10;
 
@@ -1134,7 +1102,6 @@ async function submitWithdraw() {
     }
 }
 
-// 系统设置
 async function openSystemConfigModal() {
     if (App.currentUser.role !== 'admin') {
         Toast.warning('需要管理员权限');
@@ -1235,7 +1202,6 @@ function selectPaymentConfig(configId) {
         }
     });
     
-    // 更新UI显示选中状态
     document.querySelectorAll('.payment-select-card').forEach(card => {
         card.classList.remove('border-primary');
         const checkIcon = card.querySelector('.bi-check-circle');
@@ -1447,7 +1413,6 @@ async function deletePaymentConfig(id) {
 }
 
 async function upgradeMembership(levelName) {
-    // 第一次点击，显示确认警告
     const confirmed = await new Promise(resolve => {
         const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
         document.getElementById('confirmModalTitle').textContent = '确认升级到 ' + levelName;
@@ -1490,7 +1455,6 @@ async function upgradeMembership(levelName) {
     }
 }
 
-// 获取比当前等级低的等级列表
 function getLowerLevels(levelName) {
     const levels = ['Free', 'VIP', 'PRO', 'Infinite'];
     const currentIndex = levels.indexOf(levelName);
@@ -1519,7 +1483,6 @@ async function generateCards() {
 
     Toast.success(result.message);
     
-    // 显示新卡密
     const newCardsSection = document.getElementById('newCardsSection');
     const newCardsList = document.getElementById('newCardsList');
     newCardsSection.style.display = 'block';
@@ -1531,7 +1494,6 @@ async function generateCards() {
         </div>`
     ).join('');
 
-    // 刷新列表
     loadCardManageTab(document.getElementById('dashContentArea'));
 }
 
