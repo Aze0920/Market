@@ -1,4 +1,10 @@
 /* ==================== 变量定义 ==================== */
+.membership-current-card,
+.privileges-grid,
+.privilege-item {
+    display: none !important;
+}
+
 :root {
     --primary-accent: #6366f1;
     --primary-hover: #4f46e5;
