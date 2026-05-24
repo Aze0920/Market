@@ -64,6 +64,21 @@ keynest_require_installed(false);
         .settings-tab { border: 1px solid var(--border); background: #fff; color: #475569; border-radius: 999px; padding: 9px 14px; font-weight: 700; }
         .settings-tab.active { color: #fff; border-color: var(--primary); background: linear-gradient(135deg, var(--primary), var(--primary2)); }
         .method-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 9px; background: #eef2ff; color: #3730a3; font-size: .78rem; font-weight: 700; margin: 2px; }
+        .membership-admin-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+        .membership-admin-card { border: 1px solid var(--border); border-radius: 22px; background: #fff; overflow: hidden; box-shadow: 0 14px 34px rgba(15,23,42,.06); cursor: pointer; transition: .18s ease; }
+        .membership-admin-card:hover { transform: translateY(-3px); box-shadow: 0 20px 48px rgba(15,23,42,.12); }
+        .membership-admin-card.disabled { opacity: .58; filter: grayscale(.15); }
+        .membership-admin-head { min-height: 118px; padding: 22px; color: #fff; text-align: center; background: var(--card-gradient, linear-gradient(135deg, var(--primary), var(--primary2))); }
+        .membership-admin-head i { display: block; font-size: 2rem; margin-bottom: 8px; }
+        .membership-admin-head h5 { margin: 0; font-weight: 850; }
+        .membership-admin-body { padding: 18px; }
+        .membership-admin-price { text-align: center; color: #10b981; font-weight: 850; margin-bottom: 12px; }
+        .membership-admin-list { list-style: none; padding: 0; margin: 0; color: #334155; font-size: .9rem; }
+        .membership-admin-list li { display: flex; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
+        .membership-admin-list li:last-child { border-bottom: 0; }
+        .membership-admin-list i { color: #10b981; }
+        @media (max-width: 1200px) { .membership-admin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 720px) { .membership-admin-grid { grid-template-columns: 1fr; } }
         .config-help { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 18px; padding: 16px; color: #475569; }
         .markdown-preview { min-height: 180px; background: #f8fafc; border: 1px solid var(--border); border-radius: 16px; padding: 16px; color: #1f2937; }
         .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { font-weight: 800; margin-top: .6rem; }
@@ -404,8 +419,8 @@ function renderMembershipAdmin() {
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title"><h5>会员等级配置</h5><div><button class="btn btn-sm btn-outline-primary me-2" onclick="addMembershipLevelRow()">新增等级</button><button class="btn btn-sm btn-primary" onclick="saveMembershipLevels()">保存配置</button></div></div>
-            <div class="config-help mb-3">这里控制前台会员中心显示的等级、升级价格、发布数量、发布费和手续费。你配置几个，前台就显示几个；默认会初始化 Free、VIP、PRO、Infinite。</div>
-            <div id="membershipAdminList" class="d-grid gap-3">加载中...</div>
+            <div class="config-help mb-3">点击卡片即可编辑等级。后台启用几个，前台会员中心就显示几个；卡片样式与前台保持一致。</div>
+            <div id="membershipAdminList" class="membership-admin-grid">加载中...</div>
         </div>`;
     loadMembershipLevelsAdmin();
 }
@@ -421,28 +436,114 @@ async function loadMembershipLevelsAdmin() {
 function renderMembershipLevelRows(levels) {
     const list = document.getElementById('membershipAdminList');
     if (!levels.length) levels = [];
+    levels.sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
     list.innerHTML = levels.map((level, index) => membershipLevelRow(level, index)).join('') || '<div class="text-muted text-center py-4">暂无等级，请新增</div>';
 }
 function membershipLevelRow(level = {}, index = 0) {
-    const name = escapeHtml(level.name || '');
+    const levelName = escapeHtml(level.name || '');
+    const gradient = escapeHtml(level.gradient || 'linear-gradient(135deg, #6366f1, #8b5cf6)');
+    const icon = escapeHtml(level.icon || 'bi-gem');
+    const feeRate = (Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '');
+    const maxProducts = Number(level.max_products || 0) >= 9999 ? '无限商品' : `${Number(level.max_products || 0)} 个商品`;
     return `
-        <div class="border rounded-4 p-3 membership-level-row" data-index="${index}">
-            <div class="row g-3">
-                <div class="col-md-2"><label class="form-label">等级名称</label><input class="form-control ml-name" value="${name}" ${level.name === 'Free' ? 'readonly' : ''} placeholder="VIP"></div>
-                <div class="col-md-3"><label class="form-label">描述</label><input class="form-control ml-description" value="${escapeHtml(level.description || '')}" placeholder="会员描述"></div>
-                <div class="col-md-2"><label class="form-label">排序权重</label><input type="number" class="form-control ml-priority" value="${Number(level.priority || index)}"></div>
-                <div class="col-md-2"><label class="form-label">开通价格</label><input type="number" step="0.01" class="form-control ml-cost" value="${Number(level.cost || 0)}"></div>
-                <div class="col-md-3"><label class="form-label">图标 class</label><input class="form-control ml-icon" value="${escapeHtml(level.icon || 'bi-gem')}" placeholder="bi-gem"></div>
-                <div class="col-md-3"><label class="form-label">单商品账号数</label><input type="number" class="form-control ml-max-accounts" value="${Number(level.max_accounts_per_product || 1)}"></div>
-                <div class="col-md-3"><label class="form-label">最多商品数</label><input type="number" class="form-control ml-max-products" value="${Number(level.max_products || 1)}"></div>
-                <div class="col-md-3"><label class="form-label">交易手续费 %</label><input type="number" step="0.01" class="form-control ml-fee-rate" value="${Number(level.fee_rate || 0) * 100}"></div>
-                <div class="col-md-3"><label class="form-label">发布费/账号</label><input type="number" step="0.01" class="form-control ml-publish-fee" value="${Number(level.publish_fee_per_account || 0)}"></div>
-                <div class="col-md-6"><label class="form-label">卡片渐变 CSS</label><input class="form-control ml-gradient" value="${escapeHtml(level.gradient || '')}" placeholder="linear-gradient(...)"></div>
-                <div class="col-md-3 d-flex align-items-end"><div class="form-check"><input class="form-check-input ml-enabled" type="checkbox" ${level.enabled !== false ? 'checked' : ''}><label class="form-check-label">启用显示</label></div></div>
-                <div class="col-md-3 d-flex align-items-end"><div class="form-check"><input class="form-check-input ml-can-upgrade" type="checkbox" ${level.can_upgrade !== false ? 'checked' : ''}><label class="form-check-label">允许前台升级</label></div></div>
-                <div class="col-12 d-flex justify-content-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteMembershipLevelRow(this, '${name}')" ${level.name === 'Free' ? 'disabled' : ''}>删除</button></div>
+        <div class="membership-admin-card membership-level-row ${level.enabled === false ? 'disabled' : ''}" data-index="${index}" onclick="openMembershipLevelEditor(${index})">
+            <div class="membership-admin-head" style="--card-gradient: ${gradient};">
+                <i class="bi ${icon}"></i>
+                <h5>${levelName}</h5>
+                <div class="small opacity-75 mt-1">${escapeHtml(level.description || '')}</div>
+            </div>
+            <div class="membership-admin-body">
+                <input type="hidden" class="ml-name" value="${levelName}">
+                <input type="hidden" class="ml-description" value="${escapeHtml(level.description || '')}">
+                <input type="hidden" class="ml-priority" value="${Number(level.priority || index)}">
+                <input type="hidden" class="ml-cost" value="${Number(level.cost || 0)}">
+                <input type="hidden" class="ml-icon" value="${icon}">
+                <input type="hidden" class="ml-max-accounts" value="${Number(level.max_accounts_per_product || 1)}">
+                <input type="hidden" class="ml-max-products" value="${Number(level.max_products || 1)}">
+                <input type="hidden" class="ml-fee-rate" value="${feeRate}">
+                <input type="hidden" class="ml-publish-fee" value="${Number(level.publish_fee_per_account || 0)}">
+                <input type="hidden" class="ml-gradient" value="${gradient}">
+                <input type="checkbox" class="ml-enabled d-none" ${level.enabled !== false ? 'checked' : ''}>
+                <input type="checkbox" class="ml-can-upgrade d-none" ${level.can_upgrade !== false ? 'checked' : ''}>
+                <div class="membership-admin-price">${Number(level.cost || 0) === 0 ? '<i class="bi bi-gift"></i> 免费' : '¥ ' + Number(level.cost || 0).toFixed(2)}</div>
+                <ul class="membership-admin-list">
+                    <li><i class="bi bi-check"></i> 单商品最大 ${Number(level.max_accounts_per_product || 0)} 账号</li>
+                    <li><i class="bi bi-check"></i> ${maxProducts}</li>
+                    <li><i class="bi bi-check"></i> 手续费 ${feeRate}%</li>
+                    <li><i class="bi bi-check"></i> ${Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : '发布费 ¥' + Number(level.publish_fee_per_account || 0) + '/账号'}</li>
+                </ul>
+                <div class="d-flex justify-content-between align-items-center mt-3 small text-muted">
+                    <span>${level.enabled !== false ? '已启用' : '已隐藏'}</span>
+                    <span>${level.can_upgrade !== false ? '允许升级' : '禁止升级'}</span>
+                </div>
             </div>
         </div>`;
+}
+function openMembershipLevelEditor(index) {
+    const row = document.querySelector(`.membership-level-row[data-index="${index}"]`);
+    if (!row) return;
+    const value = cls => row.querySelector(cls)?.value || '';
+    const checked = cls => !!row.querySelector(cls)?.checked;
+    const name = value('.ml-name');
+    document.getElementById('membershipLevelEditorModal')?.remove();
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'membershipLevelEditorModal';
+    modal.innerHTML = `
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header"><h5 class="modal-title">编辑会员等级</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input type="hidden" id="editLevelIndex" value="${index}">
+                    <div class="row g-3">
+                        <div class="col-md-4"><label class="form-label">等级名称</label><input id="editLevelName" class="form-control" value="${escapeHtml(name)}" ${name === 'Free' ? 'readonly' : ''}></div>
+                        <div class="col-md-8"><label class="form-label">描述</label><input id="editLevelDescription" class="form-control" value="${escapeHtml(value('.ml-description'))}"></div>
+                        <div class="col-md-4"><label class="form-label">排序权重</label><input id="editLevelPriority" type="number" class="form-control" value="${escapeHtml(value('.ml-priority'))}"></div>
+                        <div class="col-md-4"><label class="form-label">开通价格</label><input id="editLevelCost" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-cost'))}"></div>
+                        <div class="col-md-4"><label class="form-label">图标 class</label><input id="editLevelIcon" class="form-control" value="${escapeHtml(value('.ml-icon'))}"></div>
+                        <div class="col-md-3"><label class="form-label">单商品账号数</label><input id="editLevelMaxAccounts" type="number" class="form-control" value="${escapeHtml(value('.ml-max-accounts'))}"></div>
+                        <div class="col-md-3"><label class="form-label">最多商品数</label><input id="editLevelMaxProducts" type="number" class="form-control" value="${escapeHtml(value('.ml-max-products'))}"></div>
+                        <div class="col-md-3"><label class="form-label">交易手续费 %</label><input id="editLevelFeeRate" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-fee-rate'))}"></div>
+                        <div class="col-md-3"><label class="form-label">发布费/账号</label><input id="editLevelPublishFee" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-publish-fee'))}"></div>
+                        <div class="col-md-12"><label class="form-label">卡片渐变 CSS</label><input id="editLevelGradient" class="form-control" value="${escapeHtml(value('.ml-gradient'))}"></div>
+                        <div class="col-md-6"><div class="form-check"><input id="editLevelEnabled" class="form-check-input" type="checkbox" ${checked('.ml-enabled') ? 'checked' : ''}><label class="form-check-label">启用显示</label></div></div>
+                        <div class="col-md-6"><div class="form-check"><input id="editLevelCanUpgrade" class="form-check-input" type="checkbox" ${checked('.ml-can-upgrade') ? 'checked' : ''}><label class="form-check-label">允许前台升级</label></div></div>
+                    </div>
+                </div>
+                <div class="modal-footer d-flex justify-content-between">
+                    <button class="btn btn-outline-danger" onclick="deleteMembershipLevelByIndex(${index})" ${name === 'Free' ? 'disabled' : ''}>删除等级</button>
+                    <div><button class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="applyMembershipLevelEditor()">应用</button></div>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+function applyMembershipLevelEditor() {
+    const index = document.getElementById('editLevelIndex').value;
+    const row = document.querySelector(`.membership-level-row[data-index="${index}"]`);
+    if (!row) return;
+    row.querySelector('.ml-name').value = document.getElementById('editLevelName').value.trim();
+    row.querySelector('.ml-description').value = document.getElementById('editLevelDescription').value.trim();
+    row.querySelector('.ml-priority').value = document.getElementById('editLevelPriority').value;
+    row.querySelector('.ml-cost').value = document.getElementById('editLevelCost').value;
+    row.querySelector('.ml-icon').value = document.getElementById('editLevelIcon').value.trim();
+    row.querySelector('.ml-max-accounts').value = document.getElementById('editLevelMaxAccounts').value;
+    row.querySelector('.ml-max-products').value = document.getElementById('editLevelMaxProducts').value;
+    row.querySelector('.ml-fee-rate').value = document.getElementById('editLevelFeeRate').value;
+    row.querySelector('.ml-publish-fee').value = document.getElementById('editLevelPublishFee').value;
+    row.querySelector('.ml-gradient').value = document.getElementById('editLevelGradient').value.trim();
+    row.querySelector('.ml-enabled').checked = document.getElementById('editLevelEnabled').checked;
+    row.querySelector('.ml-can-upgrade').checked = document.getElementById('editLevelCanUpgrade').checked;
+    bootstrap.Modal.getInstance(document.getElementById('membershipLevelEditorModal'))?.hide();
+    renderMembershipLevelRows(collectMembershipLevels());
+}
+function deleteMembershipLevelByIndex(index) {
+    const row = document.querySelector(`.membership-level-row[data-index="${index}"]`);
+    if (!row) return;
+    const name = row.querySelector('.ml-name')?.value || '';
+    bootstrap.Modal.getInstance(document.getElementById('membershipLevelEditorModal'))?.hide();
+    deleteMembershipLevelRow(row, name);
 }
 function collectMembershipLevels() {
     return Array.from(document.querySelectorAll('.membership-level-row')).map(row => ({
@@ -473,8 +574,9 @@ async function saveMembershipLevels() {
     Admin.cache.membershipLevels = res.levels || {};
     renderMembershipLevelRows(Object.values(Admin.cache.membershipLevels));
 }
-async function deleteMembershipLevelRow(btn, name) {
-    if (!name || name.startsWith('NewLevel')) { btn.closest('.membership-level-row')?.remove(); return; }
+async function deleteMembershipLevelRow(target, name) {
+    const row = target.closest ? target.closest('.membership-level-row') : target;
+    if (!name || name.startsWith('NewLevel')) { row?.remove(); renderMembershipLevelRows(collectMembershipLevels()); return; }
     if (!confirm('确定删除会员等级 ' + name + ' 吗？已有用户使用的等级不能删除。')) return;
     const res = await request('admin.php?action=delete_membership_level', 'POST', { name });
     if (!res.success) return showToast(res.message || '删除失败', 'error');
