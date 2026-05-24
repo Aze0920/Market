@@ -92,10 +92,40 @@ function adminUpdaterConfig() {
         'work_dir' => 'C:\\Users\\Administrator\\Desktop\\github\\Market',
         'site_dir' => dirname(__DIR__),
         'token_file' => 'C:\\Users\\Administrator\\Desktop\\scripts\\.github-token',
+        'git_bin' => adminFindGitBinary(),
     ];
 }
 
-function adminRunCommand($command, $cwd = null) {
+function adminFindGitBinary() {
+    $candidates = [
+        'git',
+        'C:\\Program Files\\Git\\cmd\\git.exe',
+        'C:\\Program Files\\Git\\bin\\git.exe',
+        'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
+        'C:\\Program Files (x86)\\Git\\bin\\git.exe',
+        getenv('LOCALAPPDATA') ? getenv('LOCALAPPDATA') . '\\Programs\\Git\\cmd\\git.exe' : '',
+    ];
+    foreach ($candidates as $git) {
+        if (!$git) continue;
+        if ($git !== 'git' && !is_file($git)) continue;
+        $cmd = ($git === 'git' ? 'git' : escapeshellarg($git)) . ' --version';
+        $res = adminRunCommandRaw($cmd);
+        if ($res['code'] === 0) {
+            return $git;
+        }
+    }
+    return '';
+}
+
+function adminGitCommand($args, $config = null) {
+    $config = $config ?: adminUpdaterConfig();
+    if (empty($config['git_bin'])) {
+        return '';
+    }
+    return ($config['git_bin'] === 'git' ? 'git' : escapeshellarg($config['git_bin'])) . ' ' . $args;
+}
+
+function adminRunCommandRaw($command, $cwd = null) {
     $descriptorSpec = [
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w'],
@@ -109,6 +139,10 @@ function adminRunCommand($command, $cwd = null) {
     fclose($pipes[2]);
     $code = proc_close($process);
     return ['code' => $code, 'output' => trim($output)];
+}
+
+function adminRunCommand($command, $cwd = null) {
+    return adminRunCommandRaw($command, $cwd);
 }
 
 function adminGitRemoteUrl($config) {
@@ -131,12 +165,12 @@ function adminEnsureUpdateRepo($config) {
         if (is_dir($config['work_dir'])) {
             adminDeleteDirectory($config['work_dir']);
         }
-        $clone = adminRunCommand('git clone --branch ' . escapeshellarg($config['branch']) . ' ' . escapeshellarg(adminGitRemoteUrl($config)) . ' ' . escapeshellarg($config['work_dir']), $parent);
+        $clone = adminRunCommand(adminGitCommand('clone --branch ' . escapeshellarg($config['branch']) . ' ' . escapeshellarg(adminGitRemoteUrl($config)) . ' ' . escapeshellarg($config['work_dir']), $config), $parent);
         if ($clone['code'] !== 0) {
             adminJsonResponse(['success' => false, 'message' => '克隆 GitHub 仓库失败', 'output' => $clone['output']], 500);
         }
     }
-    adminRunCommand('git remote set-url origin ' . escapeshellarg(adminGitRemoteUrl($config)), $config['work_dir']);
+    adminRunCommand(adminGitCommand('remote set-url origin ' . escapeshellarg(adminGitRemoteUrl($config)), $config), $config['work_dir']);
 }
 
 function adminUpdateStatus() {
@@ -147,16 +181,17 @@ function adminUpdateStatus() {
         'work_dir' => $config['work_dir'],
         'site_dir' => $config['site_dir'],
         'work_repo_exists' => is_dir($config['work_dir'] . DIRECTORY_SEPARATOR . '.git'),
-        'git_available' => adminRunCommand('git --version')['code'] === 0,
+        'git_available' => !empty($config['git_bin']),
+        'git_bin' => $config['git_bin'],
     ];
     if ($status['work_repo_exists']) {
-        $local = adminRunCommand('git rev-parse HEAD', $config['work_dir']);
-        $remote = adminRunCommand('git ls-remote origin refs/heads/' . escapeshellarg($config['branch']), $config['work_dir']);
+        $local = adminRunCommand(adminGitCommand('rev-parse HEAD', $config), $config['work_dir']);
+        $remote = adminRunCommand(adminGitCommand('ls-remote origin refs/heads/' . escapeshellarg($config['branch']), $config), $config['work_dir']);
         $status['local_commit'] = $local['code'] === 0 ? trim($local['output']) : '';
         $status['remote_commit'] = $remote['code'] === 0 ? trim(strtok($remote['output'], "\t")) : '';
         $status['has_update'] = $status['remote_commit'] && $status['local_commit'] && $status['remote_commit'] !== $status['local_commit'];
     } else {
-        $remote = adminRunCommand('git ls-remote ' . escapeshellarg($config['repo_url']) . ' refs/heads/' . escapeshellarg($config['branch']));
+        $remote = adminRunCommand(adminGitCommand('ls-remote ' . escapeshellarg($config['repo_url']) . ' refs/heads/' . escapeshellarg($config['branch']), $config));
         $status['local_commit'] = '';
         $status['remote_commit'] = $remote['code'] === 0 ? trim(strtok($remote['output'], "\t")) : '';
         $status['has_update'] = !empty($status['remote_commit']);
@@ -202,15 +237,15 @@ function adminCopyDirectory($source, $target, $rootSource = null) {
 
 function adminApplyUpdate() {
     $config = adminUpdaterConfig();
-    if (adminRunCommand('git --version')['code'] !== 0) {
-        adminJsonResponse(['success' => false, 'message' => '服务器未安装 Git，无法自动更新'], 500);
+    if (empty($config['git_bin'])) {
+        adminJsonResponse(['success' => false, 'message' => '服务器 PHP 环境找不到 Git，请检查 Git 是否安装，或将 Git 加入 Web 服务 PATH'], 500);
     }
     adminEnsureUpdateRepo($config);
-    $fetch = adminRunCommand('git fetch origin ' . escapeshellarg($config['branch']), $config['work_dir']);
+    $fetch = adminRunCommand(adminGitCommand('fetch origin ' . escapeshellarg($config['branch']), $config), $config['work_dir']);
     if ($fetch['code'] !== 0) {
         adminJsonResponse(['success' => false, 'message' => '拉取远程更新失败', 'output' => $fetch['output']], 500);
     }
-    $reset = adminRunCommand('git reset --hard origin/' . escapeshellarg($config['branch']), $config['work_dir']);
+    $reset = adminRunCommand(adminGitCommand('reset --hard origin/' . escapeshellarg($config['branch']), $config), $config['work_dir']);
     if ($reset['code'] !== 0) {
         adminJsonResponse(['success' => false, 'message' => '更新工作目录失败', 'output' => $reset['output']], 500);
     }
