@@ -92,6 +92,7 @@ function adminUpdaterConfig() {
         'work_dir' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'update_repo' . DIRECTORY_SEPARATOR . 'Market',
         'site_dir' => dirname(__DIR__),
         'token_file' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'github-token.txt',
+        'version_file' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'update_version.json',
         'git_bin' => adminFindGitBinary(),
     ];
 }
@@ -175,6 +176,29 @@ function adminRunCommand($command, $cwd = null) {
     return adminRunCommandRaw($command, $cwd);
 }
 
+function adminUpdaterVersion($config) {
+    if (!is_file($config['version_file'])) {
+        return [];
+    }
+    $data = json_decode(file_get_contents($config['version_file']), true);
+    return is_array($data) ? $data : [];
+}
+
+function adminSaveUpdaterVersion($config, $commit) {
+    $dir = dirname($config['version_file']);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    $payload = [
+        'commit' => $commit,
+        'branch' => $config['branch'],
+        'repo_url' => $config['repo_url'],
+        'updated_at' => time(),
+        'updated_at_text' => date('Y-m-d H:i:s'),
+    ];
+    file_put_contents($config['version_file'], json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+}
+
 function adminGitRemoteUrl($config) {
     if (!is_file($config['token_file'])) {
         return $config['repo_url'];
@@ -207,18 +231,23 @@ function adminUpdateStatus() {
     $gitCheck = adminFindGitBinary(true);
     $config = adminUpdaterConfig();
     $config['git_bin'] = $gitCheck['git_bin'];
+    $version = adminUpdaterVersion($config);
     $status = [
         'repo_url' => $config['repo_url'],
         'branch' => $config['branch'],
         'work_dir' => $config['work_dir'],
         'site_dir' => $config['site_dir'],
+        'version_file' => $config['version_file'],
+        'site_commit' => $version['commit'] ?? '',
+        'site_updated_at' => $version['updated_at_text'] ?? '',
         'work_repo_exists' => is_dir($config['work_dir'] . DIRECTORY_SEPARATOR . '.git'),
         'git_available' => !empty($config['git_bin']),
         'git_bin' => $config['git_bin'],
         'git_diagnostics' => $gitCheck['diagnostics'],
     ];
     if (!$status['git_available']) {
-        $status['local_commit'] = '';
+        $status['local_commit'] = $status['site_commit'];
+        $status['work_commit'] = '';
         $status['remote_commit'] = '';
         $status['has_update'] = false;
         return $status;
@@ -226,14 +255,16 @@ function adminUpdateStatus() {
     if ($status['work_repo_exists']) {
         $local = adminRunCommand(adminGitCommand('rev-parse HEAD', $config), $config['work_dir']);
         $remote = adminRunCommand(adminGitCommand('ls-remote origin refs/heads/' . escapeshellarg($config['branch']), $config), $config['work_dir']);
-        $status['local_commit'] = $local['code'] === 0 ? trim($local['output']) : '';
+        $status['work_commit'] = $local['code'] === 0 ? trim($local['output']) : '';
+        $status['local_commit'] = $status['site_commit'] ?: $status['work_commit'];
         $status['remote_commit'] = $remote['code'] === 0 ? trim(strtok($remote['output'], "\t")) : '';
         $status['has_update'] = $status['remote_commit'] && $status['local_commit'] && $status['remote_commit'] !== $status['local_commit'];
     } else {
         $remote = adminRunCommand(adminGitCommand('ls-remote ' . escapeshellarg($config['repo_url']) . ' refs/heads/' . escapeshellarg($config['branch']), $config));
-        $status['local_commit'] = '';
+        $status['local_commit'] = $status['site_commit'];
+        $status['work_commit'] = '';
         $status['remote_commit'] = $remote['code'] === 0 ? trim(strtok($remote['output'], "\t")) : '';
-        $status['has_update'] = !empty($status['remote_commit']);
+        $status['has_update'] = !empty($status['remote_commit']) && $status['remote_commit'] !== $status['local_commit'];
     }
     return $status;
 }
@@ -289,6 +320,10 @@ function adminApplyUpdate() {
         adminJsonResponse(['success' => false, 'message' => '更新工作目录失败', 'output' => $reset['output']], 500);
     }
     adminCopyDirectory($config['work_dir'], $config['site_dir']);
+    $updatedCommit = adminRunCommand(adminGitCommand('rev-parse HEAD', $config), $config['work_dir']);
+    if ($updatedCommit['code'] === 0 && trim($updatedCommit['output']) !== '') {
+        adminSaveUpdaterVersion($config, trim($updatedCommit['output']));
+    }
     return ['success' => true, 'message' => '更新完成', 'status' => adminUpdateStatus(), 'output' => $fetch['output'] . "\n" . $reset['output']];
 }
 
