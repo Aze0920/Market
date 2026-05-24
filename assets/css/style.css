@@ -1187,6 +1187,33 @@ a:hover {
     display: none !important;
 }
 
+.membership-card {
+    min-height: 100%;
+}
+
+.membership-card .card-header {
+    min-height: 118px;
+}
+
+.membership-card .card-header small {
+    display: block;
+    margin-top: 0.35rem;
+    opacity: 0.8;
+    font-weight: 500;
+}
+
+.membership-card .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 56px;
+}
+
+.membership-status-text {
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+
 @media (min-width: 992px) {
     .membership-cards {
         grid-template-columns: repeat(3, minmax(0, 1fr));

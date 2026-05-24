@@ -8,7 +8,7 @@
     <title>KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=202605241637" rel="stylesheet">
+    <link href="assets/css/style.css?v=202605241642" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -545,13 +545,77 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=202605241637"></script>
-    <script src="assets/js/app.js?v=202605241637"></script>
-    <script src="assets/js/product.js?v=202605241637"></script>
-    <script src="assets/js/message.js?v=202605241637"></script>
-    <script src="assets/js/auth.js?v=202605241637"></script>
+    <script src="assets/js/api.js?v=202605241642"></script>
+    <script src="assets/js/app.js?v=202605241642"></script>
+    <script src="assets/js/product.js?v=202605241642"></script>
+    <script src="assets/js/message.js?v=202605241642"></script>
+    <script src="assets/js/auth.js?v=202605241642"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = '202605241637';
+        window.KEYNEST_ASSET_VERSION = '202605241642';
+
+        async function renderFrontMembershipCards(area) {
+            if (!area) return;
+            const [levelsResult, myLevelResult] = await Promise.all([
+                API.getMembershipLevels(),
+                API.getMyMembership()
+            ]);
+            if (!levelsResult.success) {
+                area.innerHTML = '<div class="empty-state"><p>加载失败</p></div>';
+                return;
+            }
+            const levels = levelsResult.levels || {};
+            const levelList = Object.values(levels).filter(level => level.enabled !== false).sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
+            const myLevelName = myLevelResult.level || 'Free';
+            const myLevel = myLevelResult.level_info || levels[myLevelName] || {};
+            const currentPriority = Number(myLevel.priority || 0);
+            area.innerHTML = `
+                <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
+                <div class="membership-cards">
+                    ${levelList.map(level => {
+                        const levelName = level.name || '';
+                        const levelPriority = Number(level.priority || 0);
+                        const isCurrentLevel = myLevelName === levelName;
+                        const isLowerLevel = !isCurrentLevel && myLevelName !== 'Free' && levelPriority < currentPriority;
+                        const cost = Number(level.cost || 0);
+                        const canAfford = !App.currentUser || Number(App.currentUser.balance || 0) >= cost;
+                        const levelGradient = level.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6)';
+                        const levelIcon = level.icon || 'bi-gem';
+                        const levelPrivileges = [
+                            `单商品最大 ${level.max_accounts_per_product || 0} 账号`,
+                            Number(level.max_products || 0) >= 9999 ? '无限商品' : `${level.max_products || 0} 个商品`,
+                            `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
+                            Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
+                        ];
+                        const footerHtml = isCurrentLevel
+                            ? '<span class="membership-status-text">当前会员</span>'
+                            : isLowerLevel
+                                ? '<span class="membership-status-text text-muted">当前会员比此会员等级高，禁止升级</span>'
+                                : level.can_upgrade === false
+                                    ? '<span class="membership-status-text text-muted">暂不支持开通</span>'
+                                    : `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>${cost === 0 ? '免费开通' : '立即开通'}</button>`;
+                        return `
+                            <div class="membership-card ${isCurrentLevel ? 'current' : ''}" style="--card-gradient: ${Security.escapeAttr(levelGradient)};">
+                                <div class="card-header">
+                                    <i class="bi ${Security.escapeAttr(levelIcon)}"></i>
+                                    <h5>${Security.escapeHtml(levelName)}</h5>
+                                    <small>${Security.escapeHtml(level.description || levelName + '会员')}</small>
+                                    ${isCurrentLevel ? '<span class="current-badge">当前会员</span>' : ''}
+                                </div>
+                                <div class="card-body">
+                                    <div class="text-center mb-3">
+                                        ${cost === 0 ? '<span class="badge bg-success-light text-success fs-5"><i class="bi bi-gift"></i> 免费</span>' : `<span class="badge bg-primary-light text-primary fs-5"><i class="bi bi-cash"></i> ¥${cost.toFixed(2)}</span>`}
+                                    </div>
+                                    <ul class="privilege-list">
+                                        ${levelPrivileges.map(p => `<li><i class="bi bi-check"></i> ${Security.escapeHtml(p)}</li>`).join('')}
+                                    </ul>
+                                </div>
+                                <div class="card-footer">${footerHtml}</div>
+                            </div>
+                        `;
+                    }).join('') || '<div class="text-muted py-4">暂无会员等级</div>'}
+                </div>
+            `;
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
             Toast.init();
@@ -565,6 +629,17 @@
 
             const originalRenderDashboardTab = renderDashboardTab;
             renderDashboardTab = function(tabName) {
+                if (tabName === 'membership') {
+                    App.currentTab = 'membership';
+                    if (App.currentPage === 'dashboard') persistFrontendState();
+                    document.querySelectorAll('#dashSidebar .sidebar-nav-item').forEach(item => {
+                        item.classList.toggle('active', item.dataset.tab === 'membership');
+                    });
+                    const contentArea = document.getElementById('dashContentArea');
+                    contentArea.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+                    renderFrontMembershipCards(contentArea);
+                    return;
+                }
                 originalRenderDashboardTab(tabName);
                 if (tabName === 'messages') {
                     App.updateUnreadBadge();

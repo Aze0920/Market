@@ -709,20 +709,19 @@ async function loadMembershipTab(area) {
                     Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
                 ];
                 const footerHtml = isCurrentLevel
-                    ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-check-circle"></i> 当前会员</span>'
+                    ? '<span class="membership-status-text">当前会员</span>'
                     : isLowerLevel
-                        ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 当前会员比此会员等级高，禁止升级</span>'
+                        ? '<span class="membership-status-text text-muted">当前会员比此会员等级高，禁止升级</span>'
                         : level.can_upgrade === false
-                            ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 暂不支持开通</span>'
-                            : `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>
-                                <i class="bi bi-rocket-takeoff"></i> ${cost === 0 ? '免费开通' : '立即开通'}
-                            </button>`;
+                            ? '<span class="membership-status-text text-muted">暂不支持开通</span>'
+                            : `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>${cost === 0 ? '免费开通' : '立即开通'}</button>`;
 
                 return `
                     <div class="membership-card ${isCurrentLevel ? 'current' : ''}" style="--card-gradient: ${Security.escapeAttr(levelGradient)};">
                         <div class="card-header">
                             <i class="bi ${Security.escapeAttr(levelIcon)}"></i>
                             <h5>${Security.escapeHtml(levelName)}</h5>
+                            <small>${Security.escapeHtml(level.description || levelName + '会员')}</small>
                             ${isCurrentLevel ? '<span class="current-badge">当前会员</span>' : ''}
                         </div>
                         <div class="card-body">
