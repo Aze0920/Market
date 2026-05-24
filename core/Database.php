@@ -800,22 +800,35 @@ class Database {
             $userId = $updates['id'];
         }
 
-        $allowedFields = ['balance', 'email', 'membership_level', 'last_login'];
+        $allowedFields = ['username', 'balance', 'email', 'role', 'membership_level', 'last_login'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
                 unset($updates[$key]);
                 continue;
             }
+            if ($key === 'username') {
+                $updates[$key] = trim((string)$value);
+                if ($updates[$key] === '' || strlen($updates[$key]) > 50) unset($updates[$key]);
+            }
+            if ($key === 'role') {
+                $updates[$key] = $value === 'admin' ? 'admin' : 'user';
+            }
             if ($key === 'balance') {
                 $updates[$key] = max(0, floatval($value));
             }
-            if ($key === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            if ($key === 'email' && $value !== '' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
                 unset($updates[$key]);
             }
         }
 
         if (empty($updates)) {
             return false;
+        }
+
+        foreach ($this->data['users'] as $existing) {
+            if (isset($updates['username']) && $existing['id'] !== $userId && strcasecmp($existing['username'] ?? '', $updates['username']) === 0) {
+                return false;
+            }
         }
 
         foreach ($this->data['users'] as &$u) {
@@ -825,6 +838,20 @@ class Database {
             }
         }
         return false;
+    }
+
+    public function deleteUser($userId) {
+        foreach ($this->data['users'] as $user) {
+            if (($user['id'] ?? '') === $userId && (($user['username'] ?? '') === 'admin' || ($user['role'] ?? '') === 'admin')) {
+                return false;
+            }
+        }
+        $before = count($this->data['users']);
+        $this->data['users'] = array_values(array_filter($this->data['users'], fn($u) => ($u['id'] ?? '') !== $userId));
+        if (count($this->data['users']) === $before) {
+            return false;
+        }
+        return $this->deleteRecord('users', $userId);
     }
 
     public function getCardCode($code) {

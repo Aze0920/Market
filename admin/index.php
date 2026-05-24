@@ -318,10 +318,78 @@ function renderOverview() {
         </div>`;
 }
 function stat(icon, bg, color, value, label) { return `<div class="col-md-6 col-xl-3"><div class="stat-card"><div class="stat-icon" style="background:${bg};color:${color}"><i class="bi ${icon}"></i></div><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div></div>`; }
-function renderUsers() { setTitle('用户管理'); document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>全部用户</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button></div>${userTable(Admin.cache.users || [])}</div>`; }
-function userTable(users) {
+function renderUsers() {
+    setTitle('用户管理');
+    document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>全部用户</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button></div>${userTable(Admin.cache.users || [], true)}</div>`;
+}
+function userTable(users, withActions = false) {
     if (!users.length) return '<div class="text-muted py-4 text-center">暂无用户</div>';
-    return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th></tr></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td>${money(u.balance)}</td><td>${dateText(u.created_at)}</td></tr>`).join('')}</tbody></table></div>`;
+    const actionHead = withActions ? '<th>操作</th>' : '';
+    const actionCol = u => withActions ? `<td><button class="btn btn-sm btn-outline-primary me-1" onclick="openUserEditor('${escapeHtml(u.id)}')">编辑</button><button class="btn btn-sm btn-outline-danger" onclick="deleteUserAdmin('${escapeHtml(u.id)}')" ${u.username === 'admin' ? 'disabled title="admin 禁止删除"' : ''}>删除</button></td>` : '';
+    return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td>${money(u.balance)}</td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
+}
+function membershipOptionsForUser(selected) {
+    const levels = Object.values(Admin.cache.membershipLevels || {});
+    const list = levels.length ? levels : [{ name: 'Free' }, { name: 'VIP' }, { name: 'PRO' }, { name: 'Infinite' }];
+    return list.map(level => `<option value="${escapeHtml(level.name)}" ${level.name === selected ? 'selected' : ''}>${escapeHtml(level.name)}</option>`).join('');
+}
+function openUserEditor(id) {
+    const user = (Admin.cache.users || []).find(u => u.id === id);
+    if (!user) return showToast('用户不存在', 'error');
+    const modalId = 'userEditorModal';
+    document.getElementById(modalId)?.remove();
+    const isAdminRoot = user.username === 'admin';
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = modalId;
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header"><h5 class="modal-title">编辑用户</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input type="hidden" id="editUserId" value="${escapeHtml(user.id)}">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">用户名</label><input id="editUsername" class="form-control" value="${escapeHtml(user.username)}" ${isAdminRoot ? 'readonly' : ''}></div>
+                        <div class="col-md-6"><label class="form-label">邮箱</label><input id="editEmail" class="form-control" value="${escapeHtml(user.email || '')}"></div>
+                        <div class="col-md-6"><label class="form-label">角色</label><select id="editRole" class="form-select" ${isAdminRoot ? 'disabled' : ''}><option value="user" ${user.role !== 'admin' ? 'selected' : ''}>用户</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option></select></div>
+                        <div class="col-md-6"><label class="form-label">会员等级</label><select id="editMembership" class="form-select">${membershipOptionsForUser(user.membership_level || 'Free')}</select></div>
+                        <div class="col-md-12"><label class="form-label">余额</label><input id="editBalance" type="number" step="0.01" min="0" class="form-control" value="${Number(user.balance || 0)}"></div>
+                    </div>
+                    ${isAdminRoot ? '<div class="alert alert-warning py-2 small mt-3 mb-0">admin 账号禁止删除，用户名和管理员角色已锁定。</div>' : ''}
+                </div>
+                <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="saveUserAdmin()">保存</button></div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+async function saveUserAdmin() {
+    const roleEl = document.getElementById('editRole');
+    const payload = {
+        id: document.getElementById('editUserId').value,
+        username: document.getElementById('editUsername').value.trim(),
+        email: document.getElementById('editEmail').value.trim(),
+        role: roleEl?.value || 'admin',
+        membership_level: document.getElementById('editMembership').value,
+        balance: document.getElementById('editBalance').value
+    };
+    const res = await request('admin.php?action=update_user', 'POST', payload);
+    if (!res.success) return showToast(res.message || '保存失败', 'error');
+    showToast('用户信息已保存', 'success');
+    bootstrap.Modal.getInstance(document.getElementById('userEditorModal'))?.hide();
+    await loadAdminData();
+    renderUsers();
+}
+async function deleteUserAdmin(id) {
+    const user = (Admin.cache.users || []).find(u => u.id === id);
+    if (!user) return showToast('用户不存在', 'error');
+    if (user.username === 'admin') return showToast('admin 管理员禁止删除', 'error');
+    if (!confirm('确定删除用户 ' + user.username + ' 吗？')) return;
+    const res = await request('admin.php?action=delete_user', 'POST', { id });
+    if (!res.success) return showToast(res.message || '删除失败', 'error');
+    showToast('用户已删除', 'success');
+    await loadAdminData();
+    renderUsers();
 }
 function renderProducts() { setTitle('商品管理'); const products = Admin.cache.products || []; document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>全部商品</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div><div class="table-responsive"><table class="table"><thead><tr><th>标题</th><th>卖家</th><th>分类</th><th>价格</th><th>库存</th><th>销量</th></tr></thead><tbody>${products.map(p => `<tr><td><strong>${escapeHtml(p.title)}</strong></td><td>${escapeHtml(p.seller_name || '-')}</td><td>${escapeHtml(p.category || '-')}</td><td>${money(p.price)}</td><td>${p.stock || 0}</td><td>${p.sales || 0}</td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无商品</td></tr>'}</tbody></table></div></div>`; }
 function renderOrders() { setTitle('订单记录'); const orders = Admin.cache.payOrders || []; document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>支付订单</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div><div class="table-responsive"><table class="table"><thead><tr><th>交易号</th><th>用户ID</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th></tr></thead><tbody>${orders.map(o => `<tr><td><code>${escapeHtml(o.trade_no || o.id)}</code></td><td>${escapeHtml(o.user_id || '-')}</td><td>${money(o.amount)}</td><td>${money(o.actual_amount)}</td><td>${statusBadge(o.status)}</td><td>${dateText(o.created_at)}</td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无订单</td></tr>'}</tbody></table></div></div>`; }

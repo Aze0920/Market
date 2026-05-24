@@ -736,7 +736,7 @@ async function loadMembershipTab(area) {
         ...(Number(myLevel.publish_fee_per_account || 0) > 0 ? [{ icon: 'bi-cash-stack', text: `发布费 ¥${myLevel.publish_fee_per_account}/账号` }] : [{ icon: 'bi-check-circle', text: '发布商品免费' }])
     ];
 
-    const upgradeLevels = levelList.filter(level => level.can_upgrade !== false);
+    const upgradeLevels = levelList;
 
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
@@ -796,7 +796,7 @@ async function loadMembershipTab(area) {
                         </div>
                         <div class="card-footer">
                             ${isCurrentLevel ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-check-circle"></i> 当前等级</span>' :
-                                isUpgraded ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 已升级</span>' :
+                                (isUpgraded || level.can_upgrade === false) ? '<span class="btn btn-outline-secondary w-100 disabled"><i class="bi bi-lock"></i> 已升级</span>' :
                                     `<button class="btn btn-primary w-100" onclick="upgradeMembership('${Security.escapeAttr(levelName)}')" ${!canAfford ? 'disabled' : ''}>
                                         <i class="bi bi-rocket-takeoff"></i> ${cost === 0 ? '免费开通' : '立即开通'}
                                     </button>`}

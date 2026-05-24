@@ -33,6 +33,21 @@ function adminSafeUser($user) {
     return $user;
 }
 
+function adminUserPayload() {
+    $id = trim($_POST['id'] ?? '');
+    if ($id === '') {
+        adminJsonResponse(['success' => false, 'message' => '缺少用户ID'], 400);
+    }
+    return [
+        'id' => $id,
+        'username' => trim($_POST['username'] ?? ''),
+        'email' => trim($_POST['email'] ?? ''),
+        'role' => ($_POST['role'] ?? 'user') === 'admin' ? 'admin' : 'user',
+        'membership_level' => trim($_POST['membership_level'] ?? 'Free'),
+        'balance' => floatval($_POST['balance'] ?? 0),
+    ];
+}
+
 function adminLogFilePath($type, $date = '') {
     $allowed = ['api', 'php_error', 'security'];
     if (!in_array($type, $allowed, true)) {
@@ -463,6 +478,37 @@ switch ($action) {
         $users = array_map('adminSafeUser', $db->getTable('users'));
         usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         adminJsonResponse(['success' => true, 'users' => array_values($users)]);
+
+    case 'update_user':
+        $payload = adminUserPayload();
+        $target = $db->getUserById($payload['id']);
+        if (!$target) {
+            adminJsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        if (($target['username'] ?? '') === 'admin') {
+            $payload['role'] = 'admin';
+            $payload['username'] = 'admin';
+        }
+        $updates = $payload;
+        unset($updates['id']);
+        if (!$db->updateUser($payload['id'], $updates)) {
+            adminJsonResponse(['success' => false, 'message' => '保存失败：用户名可能重复或字段格式错误'], 400);
+        }
+        adminJsonResponse(['success' => true, 'message' => '用户信息已更新']);
+
+    case 'delete_user':
+        $id = trim($_POST['id'] ?? '');
+        $target = $db->getUserById($id);
+        if (!$target) {
+            adminJsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        if (($target['username'] ?? '') === 'admin' || ($target['role'] ?? '') === 'admin') {
+            adminJsonResponse(['success' => false, 'message' => 'admin 管理员禁止删除'], 400);
+        }
+        if (!$db->deleteUser($id)) {
+            adminJsonResponse(['success' => false, 'message' => '删除失败'], 400);
+        }
+        adminJsonResponse(['success' => true, 'message' => '用户已删除']);
 
     case 'stats':
         $users = $db->getTable('users');
