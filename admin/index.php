@@ -432,13 +432,33 @@ function renderUpdates() {
 }
 function updateStatusHtml(status) {
     const hasUpdate = !!status.has_update;
+    const gitDiag = status.git_diagnostics || {};
+    const gitCandidates = Array.isArray(gitDiag.candidates) ? gitDiag.candidates : [];
+    const diagHtml = `
+        <div class="mt-3 border rounded-4 p-3 bg-light">
+            <div class="fw-bold mb-2">Git 诊断</div>
+            <div class="small text-muted mb-2">实际使用：<code>${escapeHtml(status.git_bin || '未找到')}</code></div>
+            <div class="small text-muted mb-2">proc_open：<code>${gitDiag.proc_open_available ? '可用' : '不可用'}</code></div>
+            <div class="small text-muted mb-2">disable_functions：<code>${escapeHtml(gitDiag.disabled_functions || '-')}</code></div>
+            <div class="small text-muted mb-2">PATH：<code>${escapeHtml(gitDiag.path || '-')}</code></div>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+                <thead><tr><th>检测路径</th><th>文件存在</th><th>返回码</th><th>输出</th></tr></thead>
+                <tbody>${gitCandidates.map(item => `
+                    <tr>
+                        <td><code>${escapeHtml(item.path || '')}</code></td>
+                        <td>${item.exists === null ? 'PATH' : (item.exists ? '是' : '否')}</td>
+                        <td>${item.code === null || item.code === undefined ? '-' : escapeHtml(String(item.code))}</td>
+                        <td><code>${escapeHtml(item.output || '-')}</code></td>
+                    </tr>`).join('') || '<tr><td colspan="4" class="text-muted">暂无诊断</td></tr>'}</tbody>
+            </table></div>
+        </div>`;
     return `
         <div class="row g-3">
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">远程提交</div><code>${escapeHtml((status.remote_commit || '').slice(0, 12) || '-')}</code></div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">本地提交</div><code>${escapeHtml((status.local_commit || '').slice(0, 12) || '-')}</code></div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">Git 状态</div>${status.git_available ? '<span class="badge-soft success">可用</span>' : '<span class="badge-soft danger">不可用</span>'}</div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">更新状态</div>${hasUpdate ? '<span class="badge-soft warning">发现更新</span>' : '<span class="badge-soft success">已是最新</span>'}</div></div>
-        </div>`;
+        </div>${diagHtml}`;
 }
 async function checkUpdateStatus() {
     const box = document.getElementById('updateStatusBox');

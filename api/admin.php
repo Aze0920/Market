@@ -96,7 +96,14 @@ function adminUpdaterConfig() {
     ];
 }
 
-function adminFindGitBinary() {
+function adminFindGitBinary($withDebug = false) {
+    $diagnostics = [
+        'php_os' => PHP_OS,
+        'disabled_functions' => ini_get('disable_functions') ?: '',
+        'proc_open_available' => function_exists('proc_open'),
+        'path' => getenv('PATH') ?: '',
+        'candidates' => [],
+    ];
     $candidates = [
         'git',
         'C:\\Program Files\\Git\\cmd\\git.exe',
@@ -107,14 +114,21 @@ function adminFindGitBinary() {
     ];
     foreach ($candidates as $git) {
         if (!$git) continue;
-        if ($git !== 'git' && !is_file($git)) continue;
+        $item = ['path' => $git, 'exists' => $git === 'git' ? null : is_file($git), 'code' => null, 'output' => ''];
+        if ($git !== 'git' && !$item['exists']) {
+            $diagnostics['candidates'][] = $item;
+            continue;
+        }
         $cmd = ($git === 'git' ? 'git' : escapeshellarg($git)) . ' --version';
         $res = adminRunCommandRaw($cmd);
+        $item['code'] = $res['code'];
+        $item['output'] = $res['output'];
+        $diagnostics['candidates'][] = $item;
         if ($res['code'] === 0) {
-            return $git;
+            return $withDebug ? ['git_bin' => $git, 'diagnostics' => $diagnostics] : $git;
         }
     }
-    return '';
+    return $withDebug ? ['git_bin' => '', 'diagnostics' => $diagnostics] : '';
 }
 
 function adminGitCommand($args, $config = null) {
@@ -174,7 +188,9 @@ function adminEnsureUpdateRepo($config) {
 }
 
 function adminUpdateStatus() {
+    $gitCheck = adminFindGitBinary(true);
     $config = adminUpdaterConfig();
+    $config['git_bin'] = $gitCheck['git_bin'];
     $status = [
         'repo_url' => $config['repo_url'],
         'branch' => $config['branch'],
@@ -183,6 +199,7 @@ function adminUpdateStatus() {
         'work_repo_exists' => is_dir($config['work_dir'] . DIRECTORY_SEPARATOR . '.git'),
         'git_available' => !empty($config['git_bin']),
         'git_bin' => $config['git_bin'],
+        'git_diagnostics' => $gitCheck['diagnostics'],
     ];
     if ($status['work_repo_exists']) {
         $local = adminRunCommand(adminGitCommand('rev-parse HEAD', $config), $config['work_dir']);
