@@ -40,12 +40,17 @@ function productImageHtml(image, className = '') {
     return Security.escapeHtml(value || '📦');
 }
 
-async function loadProducts() {
+async function loadProducts(options = {}) {
     const grid = document.getElementById('productGrid');
     const emptyState = document.getElementById('emptyProductState');
+    if (!grid || !emptyState) return;
 
-    const search = document.getElementById('searchInput')?.value?.trim() || '';
-    const category = document.getElementById('categoryFilter')?.value || 'all';
+    const forceAll = !!options.forceAll;
+    const search = forceAll ? '' : (document.getElementById('searchInput')?.value?.trim() || '');
+    const category = forceAll ? 'all' : (document.getElementById('categoryFilter')?.value || 'all');
+
+    grid.innerHTML = '<div class="col-12"><div class="loading"><div class="spinner"></div></div></div>';
+    emptyState.classList.add('hidden');
 
     const result = await API.getProducts({ search, category });
 
@@ -84,7 +89,7 @@ async function loadProducts() {
 }
 
 function filterProducts() {
-    loadProducts();
+    loadProducts({ forceAll: false });
 }
 
 async function openProductDetail(id) {

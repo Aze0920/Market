@@ -111,6 +111,11 @@ keynest_require_installed(false);
         .log-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
         .log-viewer { background: #0f172a; color: #dbeafe; border-radius: 18px; padding: 16px; min-height: 220px; max-height: min(52vh, 520px); overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: Consolas, Monaco, "Courier New", monospace; font-size: 12px; line-height: 1.65; }
         .log-viewer.logs-page-viewer { height: clamp(320px, calc(100vh - 420px), 520px); min-height: 320px; max-height: calc(100vh - 320px); }
+        .complaint-card-admin { border: 1px solid var(--border); border-radius: 18px; padding: 16px; background: #fff; box-shadow: 0 10px 28px rgba(15,23,42,.05); margin-bottom: 14px; }
+        .complaint-reason-admin { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 14px; padding: 12px; white-space: pre-wrap; word-break: break-word; color: #334155; }
+        .complaint-grid-admin { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+        .complaint-meta-admin { background: #f8fafc; border-radius: 14px; padding: 12px; }
+        @media (max-width: 1100px) { .complaint-grid-admin { grid-template-columns: 1fr; } }
         .logs-panel { margin-bottom: 28px; }
         .log-meta { color: var(--muted); font-size: .86rem; }
         @media (max-width: 980px) { .admin-shell { grid-template-columns: 1fr; } .sidebar { position: relative; height: auto; } .content { padding: 20px; } .topbar { align-items: flex-start; flex-direction: column; } .log-viewer.logs-page-viewer { height: 420px; max-height: 55vh; } }
@@ -152,6 +157,7 @@ keynest_require_installed(false);
         <button class="side-link" data-page="users" onclick="switchAdminPage('users')"><i class="bi bi-people-fill"></i>用户管理</button>
         <button class="side-link" data-page="products" onclick="switchAdminPage('products')"><i class="bi bi-box-seam-fill"></i>商品管理</button>
         <button class="side-link" data-page="orders" onclick="switchAdminPage('orders')"><i class="bi bi-receipt-cutoff"></i>订单记录</button>
+        <button class="side-link" data-page="complaints" onclick="switchAdminPage('complaints')"><i class="bi bi-exclamation-octagon-fill"></i>投诉管理</button>
         <button class="side-link" data-page="finance" onclick="switchAdminPage('finance')"><i class="bi bi-wallet2"></i>充值提现</button>
         <button class="side-link" data-page="cards" onclick="switchAdminPage('cards')"><i class="bi bi-credit-card-2-front-fill"></i>卡密管理</button>
         <button class="side-link" data-page="membership" onclick="switchAdminPage('membership')"><i class="bi bi-gem"></i>会员等级</button>
@@ -238,7 +244,7 @@ function showAdmin() {
     document.getElementById('adminAvatar').textContent = Admin.user.username.charAt(0).toUpperCase();
 }
 function restoreAdminState() {
-    const validPages = ['overview', 'users', 'products', 'orders', 'finance', 'cards', 'settings', 'membership', 'updates', 'logs'];
+    const validPages = ['overview', 'users', 'products', 'orders', 'complaints', 'finance', 'cards', 'settings', 'membership', 'updates', 'logs'];
     const validSettingsTabs = ['basic', 'payment', 'login', 'email', 'captcha', 'announcement'];
     const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
     const storedPage = localStorage.getItem('keynest_admin_page');
@@ -301,14 +307,15 @@ async function adminLogout() {
     showLogin('已退出登录');
 }
 async function loadAdminData() {
-    const [users, products, payOrders, requests, cards, payConfigs, sysConfig] = await Promise.all([
+    const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints] = await Promise.all([
         request('admin.php?action=users'),
         request('product.php?action=list&stock_min=0'),
         request('payment.php?action=get_orders'),
         request('finance.php?action=all_requests'),
         request('card.php?action=list'),
         request('payment.php?action=get_configs'),
-        request('finance.php?action=get_system_config')
+        request('finance.php?action=get_system_config'),
+        request('admin.php?action=complaints')
     ]);
     Admin.cache = {
         users: users.users || [],
@@ -317,6 +324,7 @@ async function loadAdminData() {
         requests: requests.requests || [],
         cards: cards.cards || [],
         payConfigs: payConfigs.configs || [],
+        complaints: complaints.complaints || [],
         membershipLevels: {},
         sysConfig: sysConfig.config || {}
     };
@@ -331,19 +339,20 @@ function switchAdminPage(page, settingsTab = null) {
 }
 function setTitle(title) { document.getElementById('pageTitle').textContent = title; }
 function renderPage() {
-    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, orders: renderOrders, finance: renderFinance, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
+    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
     updateAdminNavActive(Admin.page === 'settings' && Admin.settingsTab === 'payment' ? 'payment' : null);
     (renderers[Admin.page] || renderOverview)();
 }
 function renderOverview() {
     setTitle('后台总览');
-    const users = Admin.cache.users || [], products = Admin.cache.products || [], orders = Admin.cache.payOrders || [], requests = Admin.cache.requests || [], cards = Admin.cache.cards || [];
+    const users = Admin.cache.users || [], products = Admin.cache.products || [], orders = Admin.cache.payOrders || [], requests = Admin.cache.requests || [], cards = Admin.cache.cards || [], complaints = Admin.cache.complaints || [];
     const pending = requests.filter(r => r.status === 'pending').length;
     document.getElementById('adminContent').innerHTML = `
         <div class="row g-3 mb-4">
             ${stat('bi-people-fill', '#dbeafe', '#1d4ed8', users.length, '用户总数')}
             ${stat('bi-box-seam-fill', '#ede9fe', '#6d28d9', products.length, '商品总数')}
             ${stat('bi-cash-stack', '#dcfce7', '#15803d', orders.length, '支付订单')}
+            ${stat('bi-exclamation-octagon-fill', '#fee2e2', '#b91c1c', complaints.filter(o => (o.complaint?.status || '') === 'open').length, '进行中投诉')}
             ${stat('bi-hourglass-split', '#fef3c7', '#b45309', pending, '待处理申请')}
         </div>
         <div class="row g-4">
@@ -571,6 +580,82 @@ function orderTypeLabel(type, payType) {
     };
     return map[type] || payType || type || '-';
 }
+function complaintStatusBadge(status) {
+    const map = { open: ['warning', '处理中'], processing: ['info', '跟进中'], resolved: ['success', '已解决'], rejected: ['danger', '已驳回'], withdrawn: ['info', '已撤诉'] };
+    const item = map[status] || ['info', status || '-'];
+    return `<span class="badge-soft ${item[0]}">${item[1]}</span>`;
+}
+function renderComplaints() {
+    setTitle('投诉管理');
+    const status = document.getElementById('complaintStatusFilter')?.value || 'all';
+    const keyword = (document.getElementById('complaintSearchInput')?.value || '').trim().toLowerCase();
+    let complaints = Admin.cache.complaints || [];
+    if (status !== 'all') complaints = complaints.filter(o => (o.complaint?.status || '') === status);
+    if (keyword) {
+        complaints = complaints.filter(o => [o.id, o.product_title, o.buyer_name, o.seller_name, o.complaint?.reason].some(v => String(v || '').toLowerCase().includes(keyword)));
+    }
+    const openCount = (Admin.cache.complaints || []).filter(o => (o.complaint?.status || '') === 'open').length;
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <div><h5>投诉管理</h5><div class="small text-muted mt-1">共 ${Admin.cache.complaints?.length || 0} 条，进行中 ${openCount} 条</div></div>
+                <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-md-4"><input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="renderComplaints()"></div>
+                <div class="col-md-3">
+                    <select id="complaintStatusFilter" class="form-select" onchange="renderComplaints()">
+                        ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','已解决'],['rejected','已驳回'],['withdrawn','已撤诉']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            ${complaints.length ? complaints.map(renderComplaintAdminCard).join('') : '<div class="text-muted text-center py-5">暂无投诉记录</div>'}
+        </div>`;
+}
+function renderComplaintAdminCard(order) {
+    const complaint = order.complaint || {};
+    return `
+        <div class="complaint-card-admin">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                <div>
+                    <div class="fw-bold fs-6">${escapeHtml(order.product_title || '-')}</div>
+                    <div class="text-muted small">订单ID：${escapeHtml(order.id || '-')} · 投诉时间：${dateText(complaint.created_at)}</div>
+                </div>
+                ${complaintStatusBadge(complaint.status)}
+            </div>
+            <div class="complaint-grid-admin mb-3">
+                <div class="complaint-meta-admin"><div class="small text-muted">买家</div><strong>${escapeHtml(order.buyer_name || '-')}</strong><div class="small text-muted">${escapeHtml(order.buyer_id || '')}</div></div>
+                <div class="complaint-meta-admin"><div class="small text-muted">卖家</div><strong>${escapeHtml(order.seller_name || '-')}</strong><div class="small text-muted">${escapeHtml(order.seller_id || '')}</div></div>
+                <div class="complaint-meta-admin"><div class="small text-muted">订单金额 / 冻结</div><strong>${money(order.price)}</strong><div class="small text-danger">冻结 ${money(order.frozen_amount || 0)}</div></div>
+            </div>
+            <div class="mb-3"><div class="small text-muted mb-1">投诉原因</div><div class="complaint-reason-admin">${escapeHtml(complaint.reason || '-')}</div></div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><div class="small text-muted mb-1">卖家回复</div><div class="complaint-reason-admin">${escapeHtml(complaint.seller_reply || '暂无')}</div></div>
+                <div class="col-md-6"><div class="small text-muted mb-1">管理员回复</div><textarea id="adminComplaintReply-${escapeHtml(order.id)}" class="form-control" rows="4" maxlength="800" placeholder="填写管理员处理意见">${escapeHtml(complaint.admin_reply || '')}</textarea></div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 justify-content-end">
+                <button class="btn btn-sm btn-outline-primary" onclick="saveAdminComplaintReply('${escapeHtml(order.id)}')">保存回复</button>
+                ${['open','processing','resolved','rejected','withdrawn'].map(s => `<button class="btn btn-sm ${complaint.status === s ? 'btn-primary' : 'btn-outline-secondary'}" onclick="updateAdminComplaintStatus('${escapeHtml(order.id)}','${s}')">${complaintStatusText(s)}</button>`).join('')}
+            </div>
+        </div>`;
+}
+function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '已解决', rejected: '已驳回', withdrawn: '已撤诉' })[status] || status; }
+async function saveAdminComplaintReply(orderId) {
+    const reply = document.getElementById('adminComplaintReply-' + orderId)?.value?.trim() || '';
+    const res = await request('admin.php?action=reply_complaint', 'POST', { order_id: orderId, reply });
+    if (!res.success) return showToast(res.message || '保存失败', 'error');
+    showToast('管理员回复已保存', 'success');
+    await loadAdminData();
+    renderComplaints();
+}
+async function updateAdminComplaintStatus(orderId, status) {
+    const res = await request('admin.php?action=update_complaint_status', 'POST', { order_id: orderId, status });
+    if (!res.success) return showToast(res.message || '状态更新失败', 'error');
+    showToast('投诉状态已更新', 'success');
+    await loadAdminData();
+    renderComplaints();
+}
+
 function renderOrders() {
     setTitle('订单记录');
     const orders = Admin.cache.payOrders || [];

@@ -487,6 +487,27 @@ function adminApplyUpdate() {
     return ['success' => true, 'message' => '更新完成', 'status' => adminUpdateStatus(), 'output' => $output];
 }
 
+function adminSafeComplaintOrder($order) {
+    if (isset($order['complaint']) && is_array($order['complaint'])) {
+        unset($order['complaint']['password_hash']);
+        unset($order['complaint']['email']);
+    }
+    return $order;
+}
+
+function adminComplaintOrders() {
+    global $db;
+    $orders = $db->getOrders();
+    $items = [];
+    foreach ($orders as $order) {
+        if (!empty($order['complaint']) && is_array($order['complaint'])) {
+            $items[] = adminSafeComplaintOrder($order);
+        }
+    }
+    usort($items, fn($a, $b) => (($b['complaint']['updated_at'] ?? $b['complaint']['created_at'] ?? 0) - ($a['complaint']['updated_at'] ?? $a['complaint']['created_at'] ?? 0)));
+    return array_values($items);
+}
+
 adminRequireAdmin();
 
 function adminTestEmailPayload() {
@@ -592,6 +613,54 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => $missing > 0 ? '所选商品不存在或已被删除' : '删除失败'], 400);
         }
         adminJsonResponse(['success' => true, 'message' => '已删除 ' . $deleted . ' 个商品', 'deleted' => $deleted, 'missing' => $missing]);
+
+    case 'complaints':
+        adminJsonResponse(['success' => true, 'complaints' => adminComplaintOrders()]);
+
+    case 'get_complaint':
+        $id = trim($_GET['order_id'] ?? $_POST['order_id'] ?? '');
+        $order = $db->getOrderById($id);
+        if (!$order || empty($order['complaint'])) {
+            adminJsonResponse(['success' => false, 'message' => '投诉不存在'], 404);
+        }
+        adminJsonResponse(['success' => true, 'order' => adminSafeComplaintOrder($order)]);
+
+    case 'reply_complaint':
+        $id = trim($_POST['order_id'] ?? '');
+        $reply = trim((string)($_POST['reply'] ?? ''));
+        $order = $db->getOrderById($id);
+        if (!$order || empty($order['complaint'])) {
+            adminJsonResponse(['success' => false, 'message' => '投诉不存在'], 404);
+        }
+        if ($reply === '' || mb_strlen($reply) > 800) {
+            adminJsonResponse(['success' => false, 'message' => '请填写回复内容，最多800字'], 400);
+        }
+        $adminUser = $db->getUserById($_SESSION['user_id'] ?? '');
+        $order['complaint']['admin_reply'] = htmlspecialchars($reply, ENT_QUOTES, 'UTF-8');
+        $order['complaint']['admin_replied_by'] = $adminUser['username'] ?? 'admin';
+        $order['complaint']['admin_replied_at'] = time();
+        $order['complaint']['updated_at'] = time();
+        $db->updateOrder($order);
+        adminJsonResponse(['success' => true, 'message' => '管理员回复已保存']);
+
+    case 'update_complaint_status':
+        $id = trim($_POST['order_id'] ?? '');
+        $status = trim($_POST['status'] ?? '');
+        $allowed = ['open', 'processing', 'resolved', 'rejected', 'withdrawn'];
+        $order = $db->getOrderById($id);
+        if (!$order || empty($order['complaint'])) {
+            adminJsonResponse(['success' => false, 'message' => '投诉不存在'], 404);
+        }
+        if (!in_array($status, $allowed, true)) {
+            adminJsonResponse(['success' => false, 'message' => '投诉状态无效'], 400);
+        }
+        $adminUser = $db->getUserById($_SESSION['user_id'] ?? '');
+        $order['complaint']['status'] = $status;
+        $order['complaint']['admin_status_by'] = $adminUser['username'] ?? 'admin';
+        $order['complaint']['admin_status_at'] = time();
+        $order['complaint']['updated_at'] = time();
+        $db->updateOrder($order);
+        adminJsonResponse(['success' => true, 'message' => '投诉状态已更新']);
 
     case 'stats':
         $users = $db->getTable('users');

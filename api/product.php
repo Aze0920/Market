@@ -147,13 +147,32 @@ switch ($action) {
             'search' => sanitizeString($_GET['search'] ?? '')
         ];
         $products = $db->getProducts($filters);
+        $levels = $db->getMembershipLevels();
+        $sellerCache = [];
         foreach ($products as &$p) {
+            $sellerId = $p['seller_id'] ?? '';
+            if ($sellerId !== '' && !array_key_exists($sellerId, $sellerCache)) {
+                $sellerCache[$sellerId] = $db->getUserById($sellerId);
+            }
+            $seller = $sellerCache[$sellerId] ?? null;
+            $levelName = $seller['membership_level'] ?? 'Free';
+            $level = $levels[$levelName] ?? ($levels['Free'] ?? ['priority' => 0]);
+            $p['seller_membership_level'] = $levelName;
+            $p['seller_membership_priority'] = intval($level['priority'] ?? 0);
             $stats = productRatingStats($db->getComments($p['id']));
             $p['rating_good'] = $stats['good'];
             $p['rating_bad'] = $stats['bad'];
             $p['rating_total'] = $stats['total'];
             unset($p['account_list'], $p['pickup_password']);
         }
+        unset($p);
+        usort($products, function($a, $b) {
+            $priorityDiff = intval($b['seller_membership_priority'] ?? 0) <=> intval($a['seller_membership_priority'] ?? 0);
+            if ($priorityDiff !== 0) return $priorityDiff;
+            $timeDiff = intval($b['updated_at'] ?? $b['created_at'] ?? 0) <=> intval($a['updated_at'] ?? $a['created_at'] ?? 0);
+            if ($timeDiff !== 0) return $timeDiff;
+            return intval($b['sales'] ?? 0) <=> intval($a['sales'] ?? 0);
+        });
         jsonResponse(['success' => true, 'products' => $products]);
 
     case 'get':

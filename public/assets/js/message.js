@@ -37,9 +37,9 @@ async function renderContactList() {
         ${contacts.length === 0 ?
             '<p class="text-muted small px-2">暂无联系人</p>' :
             contacts.map(c => `
-                <div class="sidebar-nav-item" onclick="selectContact('${c.username}')">
-                    <span>${c.username}</span>
-                    ${c.unread > 0 ? `<span class="badge badge-danger ms-auto">${c.unread}</span>` : ''}
+                <div class="sidebar-nav-item ${App.currentChatPartner === c.username ? 'active' : ''}" data-username="${Security.escapeAttr(c.username)}" onclick="selectContact('${Security.escapeAttr(c.username)}')">
+                    <span>${Security.escapeHtml(c.username)}</span>
+                    ${c.unread > 0 ? `<span class="badge badge-danger ms-auto">${Security.escapeHtml(c.unread)}</span>` : ''}
                 </div>
             `).join('')
         }
@@ -54,10 +54,10 @@ async function selectContact(username) {
 
     document.getElementById('chatMessages').innerHTML = messages.map(m => `
         <div class="chat-bubble ${m.from === App.currentUser.username ? 'sent' : 'received'}">
-            ${m.content}
+            ${Security.escapeHtml(m.content)}
             <span class="chat-time">${Utils.formatDate(m.timestamp)}</span>
         </div>
-    `).join('');
+    `).join('') || '<div class="empty-state py-4"><p>暂无消息，开始聊天吧</p></div>';
 
     document.getElementById('chatInputArea').classList.remove('hidden');
     document.getElementById('newChatArea').classList.add('hidden');
@@ -66,9 +66,12 @@ async function selectContact(username) {
     const chatContainer = document.getElementById('chatMessages');
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
-    await API.getConversation(username); // 标记已读
+    await API.getConversation(username);
     App.updateUnreadBadge();
-    renderContactList();
+    await renderContactList();
+    document.querySelectorAll('#contactList .sidebar-nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.username === App.currentChatPartner);
+    });
 }
 
 async function sendMessage() {

@@ -204,21 +204,31 @@ function getInitialFrontendState() {
     const tab = hash.get('tab') || localStorage.getItem('keynest_front_tab') || 'overview';
     return {
         page: ['home', 'dashboard'].includes(page) ? page : 'home',
-        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'messages'].includes(tab) ? tab : 'overview'
+        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
     };
 }
 
-function showHome() {
+function resetMarketFilters() {
+    const searchInput = document.getElementById('searchInput');
+    const categoryFilter = document.getElementById('categoryFilter');
+    if (searchInput) searchInput.value = '';
+    if (categoryFilter) categoryFilter.value = 'all';
+}
+
+function showHome(options = {}) {
+    const opts = typeof options === 'object' && options !== null ? options : {};
     App.currentPage = 'home';
     persistFrontendState();
     document.getElementById('homePage').classList.remove('hidden');
     document.getElementById('dashboardPage').classList.add('hidden');
 
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    const marketLink = document.querySelector('.nav-link[href="#market"]');
+    const navLinks = Array.from(document.querySelectorAll('.nav-link'));
+    const marketLink = navLinks.find(link => link.textContent.includes('市场'));
     if (marketLink) marketLink.classList.add('active');
 
-    loadProducts();
+    if (opts.resetFilters !== false) resetMarketFilters();
+    loadProducts({ forceAll: opts.resetFilters !== false });
 }
 
 function showDashboard(tabName = null) {
@@ -351,6 +361,7 @@ function renderDashboard(tabName = null) {
     const hasActiveTab = !!document.querySelector(`#dashSidebar .sidebar-nav-item[data-tab="${activeTab}"]`);
     renderDashboardTab(hasActiveTab ? activeTab : 'overview');
 }
+window.__keynestFullRenderDashboard = renderDashboard;
 
 async function loadOverviewTab(area) {
     const result = await API.getOverview();
@@ -1241,6 +1252,7 @@ async function loadReviewsTab(area) {
 async function loadMessagesTab(area) {
     const result = await API.getContacts();
     const contacts = result.success ? result.contacts : [];
+    const selectedPartner = App.currentChatPartner;
 
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-chat-dots me-2"></i>私信</h5>
@@ -1256,9 +1268,9 @@ async function loadMessagesTab(area) {
                         ${contacts.length === 0 ?
                             '<p class="text-muted small px-2">暂无联系人</p>' :
                             contacts.map(c => `
-                                <div class="sidebar-nav-item" onclick="selectContactTab('${c.username}')">
-                                    <span>${c.username}</span>
-                                    ${c.unread > 0 ? `<span class="badge badge-danger ms-auto">${c.unread}</span>` : ''}
+                                <div class="sidebar-nav-item ${App.currentChatPartner === c.username ? 'active' : ''}" data-username="${Security.escapeAttr(c.username)}" onclick="selectContactTab('${Security.escapeAttr(c.username)}')">
+                                    <span>${Security.escapeHtml(c.username)}</span>
+                                    ${c.unread > 0 ? `<span class="badge badge-danger ms-auto">${Security.escapeHtml(c.unread)}</span>` : ''}
                                 </div>
                             `).join('')
                         }
@@ -1273,10 +1285,18 @@ async function loadMessagesTab(area) {
             </div>
         </div>
     `;
+    if (selectedPartner) {
+        selectContactTab(selectedPartner, { skipReadRefresh: true });
+    }
 }
 
-async function selectContactTab(username) {
+async function selectContactTab(username, options = {}) {
     App.currentChatPartner = username;
+
+    document.querySelectorAll('#contactListTab .sidebar-nav-item').forEach(item => {
+        const name = item.dataset.username || item.textContent.trim();
+        item.classList.toggle('active', name === username);
+    });
 
     const result = await API.getConversation(username);
     const messages = result.success ? result.messages : [];
@@ -1284,16 +1304,17 @@ async function selectContactTab(username) {
     const chatArea = document.getElementById('tabChatArea');
     chatArea.innerHTML = `
         <div class="d-flex flex-column h-100">
-            <div class="p-2 border-bottom bg-light">
-                <strong>${username}</strong>
+            <div class="p-2 border-bottom bg-light d-flex justify-content-between align-items-center">
+                <strong>${Security.escapeHtml(username)}</strong>
+                <button class="btn btn-sm btn-outline" onclick="refreshCurrentConversation()"><i class="bi bi-arrow-clockwise"></i></button>
             </div>
             <div class="chat-container flex-grow-1" id="tabChatMessages">
                 ${messages.map(m => `
                     <div class="chat-bubble ${m.from === App.currentUser.username ? 'sent' : 'received'}">
-                        ${m.content}
+                        ${Security.escapeHtml(m.content)}
                         <span class="chat-time">${Utils.formatDate(m.timestamp)}</span>
                     </div>
-                `).join('')}
+                `).join('') || '<div class="empty-state py-4"><p>暂无消息，开始聊天吧</p></div>'}
             </div>
             <div class="chat-input-area">
                 <input type="text" class="form-control" id="tabChatInput" placeholder="输入消息..."
@@ -1308,9 +1329,36 @@ async function selectContactTab(username) {
     const chatContainer = document.getElementById('tabChatMessages');
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
-    await API.getConversation(username);
-    App.updateUnreadBadge();
-    renderDashboardTab('messages');
+    if (!options.skipReadRefresh) {
+        await API.getConversation(username);
+        App.updateUnreadBadge();
+        refreshContactListTab({ keepSelection: true });
+    }
+}
+
+async function refreshContactListTab(options = {}) {
+    const result = await API.getContacts();
+    const contacts = result.success ? result.contacts : [];
+    const list = document.getElementById('contactListTab');
+    if (!list) return;
+    list.innerHTML = `
+        <p class="text-muted small px-2">联系人</p>
+        ${contacts.length === 0 ? '<p class="text-muted small px-2">暂无联系人</p>' : contacts.map(c => `
+            <div class="sidebar-nav-item ${App.currentChatPartner === c.username ? 'active' : ''}" data-username="${Security.escapeAttr(c.username)}" onclick="selectContactTab('${Security.escapeAttr(c.username)}')">
+                <span>${Security.escapeHtml(c.username)}</span>
+                ${c.unread > 0 ? `<span class="badge badge-danger ms-auto">${Security.escapeHtml(c.unread)}</span>` : ''}
+            </div>
+        `).join('')}
+    `;
+    if (options.keepSelection && App.currentChatPartner) {
+        const active = Array.from(list.querySelectorAll('.sidebar-nav-item')).find(item => item.dataset.username === App.currentChatPartner);
+        if (active) active.classList.add('active');
+    }
+}
+
+async function refreshCurrentConversation() {
+    if (!App.currentChatPartner) return;
+    await selectContactTab(App.currentChatPartner, { skipReadRefresh: true });
 }
 
 async function sendMessageTab() {
@@ -1338,7 +1386,7 @@ function searchUserForChatTab() {
         }
         resultsDiv.innerHTML = result.users.map(u =>
             `<span class="badge badge-primary me-1" style="cursor:pointer;" 
-                   onclick="selectContactTab('${u.username}')">${u.username} <i class="bi bi-chat-dots"></i></span>`
+                   onclick="selectContactTab('${Security.escapeAttr(u.username)}');document.getElementById('tabSearchUser').value='';document.getElementById('tabUserSearchResults').innerHTML='';">${Security.escapeHtml(u.username)} <i class="bi bi-chat-dots"></i></span>`
         ).join('');
     });
 }
