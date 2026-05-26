@@ -1,5 +1,5 @@
 <?php
-require_once dirname(__DIR__) . '/config/install.php';
+require_once dirname(__DIR__, 2) . '/config/install.php';
 keynest_require_installed(false);
 ?>
 <!doctype html>
