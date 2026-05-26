@@ -335,6 +335,7 @@ switch ($action) {
             'email_provider',
             'resend_from_email',
             'resend_from_name',
+            'email_template_html',
             'captcha_provider',
             'captcha_site_key',
             'captcha_extra_config',
@@ -379,7 +380,7 @@ switch ($action) {
                     $config[$field] = $normalizedItems;
                     continue;
                 }
-                $config[$field] = in_array($field, ['announcement_content', 'captcha_extra_config', 'announcement_items'], true)
+                $config[$field] = in_array($field, ['announcement_content', 'captcha_extra_config', 'announcement_items', 'email_template_html'], true)
                     ? $value
                     : sanitizeString($value);
             }

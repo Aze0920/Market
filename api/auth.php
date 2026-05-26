@@ -96,7 +96,15 @@ function sendRegisterEmailCode($email) {
     $_SESSION[$lastSentKey] = time();
     $siteName = $config['site_name'] ?? 'KeyNest';
     $subject = $siteName . ' 注册邮箱验证码';
-    $html = '<div style="font-family:Arial,sans-serif;line-height:1.8"><h2>' . htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') . ' 注册验证码</h2><p>你的验证码是：</p><div style="font-size:28px;font-weight:bold;letter-spacing:4px">' . $code . '</div><p>验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请忽略本邮件。</p></div>';
+    $html = KeyNestMailer::renderTemplate($config, [
+        'site_name' => $siteName,
+        'title' => '注册邮箱验证码',
+        'message' => '你正在注册 ' . $siteName . ' 账号，请在页面中输入下面的验证码。',
+        'code' => $code,
+        'ttl' => $ttl,
+        'footer' => '验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请忽略本邮件。',
+        'time' => date('Y-m-d H:i:s')
+    ]);
     $result = KeyNestMailer::send($email, $subject, $html, $config);
     if (empty($result['success'])) {
         unset($_SESSION['register_email_code'][$email]);

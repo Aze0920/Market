@@ -763,11 +763,22 @@ switch ($action) {
         adminRequireAdmin();
         $to = adminTestEmailPayload();
         $config = $db->getSystemConfig();
-        $subject = 'KeyNest 邮箱发送测试';
-        $html = '<div style="font-family:Arial,sans-serif;line-height:1.8"><h2>KeyNest 邮箱测试</h2><p>如果你收到这封邮件，说明邮箱发送配置已经成功。</p><p>发送时间：' . date('Y-m-d H:i:s') . '</p></div>';
+        $siteName = $config['site_name'] ?? 'KeyNest';
+        $code = (string)random_int(100000, 999999);
+        $subject = $siteName . ' 邮箱验证码测试';
+        $html = KeyNestMailer::renderTemplate($config, [
+            'site_name' => $siteName,
+            'title' => '邮箱验证码测试',
+            'message' => '如果你收到这封邮件，说明邮箱发送配置已经成功。',
+            'code' => $code,
+            'ttl' => max(1, min(60, intval($config['email_code_ttl'] ?? 10))),
+            'footer' => '这是一封后台测试邮件，不会用于真实注册验证。',
+            'time' => date('Y-m-d H:i:s')
+        ]);
         $result = KeyNestMailer::send($to, $subject, $html, $config);
         if (!empty($result['success'])) {
-            $result['message'] = '测试邮件已发送';
+            $result['message'] = ($result['message'] ?? '测试邮件已发送') . '；测试验证码：' . $code;
+            $result['test_code'] = $code;
         }
         adminJsonResponse($result);
 
