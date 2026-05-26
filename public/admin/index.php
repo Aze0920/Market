@@ -38,7 +38,14 @@ keynest_require_installed(false);
         .content { padding: 28px; overflow-x: hidden; }
         .topbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 24px; }
         .topbar h1 { font-weight: 800; letter-spacing: -.04em; margin: 0; }
-        .user-pill { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #fff; border: 1px solid var(--border); border-radius: 999px; box-shadow: 0 10px 30px rgba(15,23,42,.06); }
+        .admin-profile-wrap { position: relative; }
+        .user-pill { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #fff; border: 1px solid var(--border); border-radius: 999px; box-shadow: 0 10px 30px rgba(15,23,42,.06); cursor: pointer; transition: .18s ease; }
+        .user-pill:hover, .user-pill.active { border-color: #c7d2fe; box-shadow: 0 14px 34px rgba(79,70,229,.12); }
+        .profile-dropdown { position: absolute; top: calc(100% + 12px); right: 0; width: min(420px, calc(100vw - 40px)); background: #fff; border: 1px solid var(--border); border-radius: 24px; padding: 18px; box-shadow: 0 28px 80px rgba(15,23,42,.18); z-index: 2000; }
+        .profile-dropdown::before { content: ''; position: absolute; top: -7px; right: 28px; width: 14px; height: 14px; background: #fff; border-left: 1px solid var(--border); border-top: 1px solid var(--border); transform: rotate(45deg); }
+        .profile-dropdown-head { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+        .profile-status-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; color: #475569; }
+        .profile-status-row strong { color: #111827; }
         .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary2)); font-weight: 800; }
         .stat-card { background: #fff; border: 1px solid var(--border); border-radius: 22px; padding: 22px; box-shadow: 0 16px 40px rgba(15,23,42,.06); height: 100%; }
         .stat-icon { width: 46px; height: 46px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 14px; font-size: 1.25rem; }
@@ -174,9 +181,13 @@ keynest_require_installed(false);
                 <h1 id="pageTitle">后台总览</h1>
                 <div class="text-muted mt-1">集中管理用户、商品、订单、财务和系统配置。</div>
             </div>
-            <div class="user-pill">
-                <div class="avatar" id="adminAvatar">A</div>
-                <div><div class="fw-bold" id="adminName">admin</div><div class="small text-muted">超级管理员</div></div>
+            <div class="admin-profile-wrap">
+                <button type="button" class="user-pill" id="adminProfileToggle" onclick="toggleAdminProfileDropdown()">
+                    <div class="avatar" id="adminAvatar">A</div>
+                    <div><div class="fw-bold" id="adminName">admin</div><div class="small text-muted">个人中心</div></div>
+                    <i class="bi bi-chevron-down text-muted"></i>
+                </button>
+                <div class="profile-dropdown hidden" id="adminProfileDropdown"></div>
             </div>
         </div>
         <div id="adminContent"></div>
@@ -248,8 +259,13 @@ function showLogin(message = '') {
 function showAdmin() {
     document.getElementById('loginView').classList.add('hidden');
     document.getElementById('adminView').classList.remove('hidden');
+    refreshAdminProfileUI();
+}
+function refreshAdminProfileUI() {
+    if (!Admin.user) return;
     document.getElementById('adminName').textContent = Admin.user.username;
     document.getElementById('adminAvatar').textContent = Admin.user.username.charAt(0).toUpperCase();
+    renderAdminProfileDropdown();
 }
 function restoreAdminState() {
     const validPages = ['overview', 'users', 'products', 'orders', 'complaints', 'finance', 'cards', 'settings', 'membership', 'updates', 'logs'];
@@ -312,8 +328,85 @@ async function adminLogin() {
 async function adminLogout() {
     await request('auth.php?action=logout', 'POST');
     Admin.user = null;
+    closeAdminProfileDropdown();
     showLogin('已退出登录');
 }
+function renderAdminProfileDropdown() {
+    const box = document.getElementById('adminProfileDropdown');
+    if (!box || !Admin.user) return;
+    const qqBound = !!Admin.user.qq_openid;
+    box.innerHTML = `
+        <div class="profile-dropdown-head">
+            <div class="avatar" style="width:48px;height:48px;font-size:1.2rem;">${escapeHtml((Admin.user.username || 'A').charAt(0).toUpperCase())}</div>
+            <div class="flex-grow-1">
+                <div class="fw-bold">${escapeHtml(Admin.user.username || '-')}</div>
+                <div class="small text-muted">${escapeHtml(Admin.user.email || '未设置邮箱')}</div>
+            </div>
+            <span class="badge-soft info">管理员</span>
+        </div>
+        <div class="row g-3">
+            <div class="col-12">
+                <label class="form-label">用户名</label>
+                <input id="adminProfileUsername" class="form-control" value="${escapeHtml(Admin.user.username || '')}" placeholder="2-30个字符，支持中文">
+            </div>
+            <div class="col-12">
+                <label class="form-label">邮箱</label>
+                <input id="adminProfileEmail" type="email" class="form-control" value="${escapeHtml(Admin.user.email || '')}" placeholder="your@email.com">
+            </div>
+            <div class="col-12">
+                <button class="btn btn-primary w-100" onclick="saveAdminProfileInfo()"><i class="bi bi-check2-circle me-1"></i>保存个人资料</button>
+            </div>
+        </div>
+        <div class="profile-status-row mt-2">
+            <span><i class="bi bi-tencent-qq me-1"></i>QQ 绑定</span>
+            <strong class="${qqBound ? 'text-success' : 'text-muted'}">${qqBound ? escapeHtml(Admin.user.qq_nickname || '已绑定') : '未绑定'}</strong>
+        </div>
+        <div class="d-grid gap-2">
+            ${qqBound ? '<button class="btn btn-outline-danger" onclick="unbindAdminQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑 QQ</button>' : '<button class="btn btn-outline-primary" onclick="bindAdminQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定 QQ，启用快捷登录</button>'}
+            <button class="btn btn-outline-secondary" onclick="switchAdminPage('settings', 'login'); closeAdminProfileDropdown()"><i class="bi bi-sliders me-1"></i>配置 QQ 登录参数</button>
+            <button class="btn btn-light" onclick="adminLogout()"><i class="bi bi-box-arrow-right me-1"></i>退出登录</button>
+        </div>
+        <div class="small text-muted mt-3">QQ 快捷登录必须先把当前账号绑定 QQ，否则无法识别登录到哪个账号。</div>
+    `;
+}
+function toggleAdminProfileDropdown() {
+    renderAdminProfileDropdown();
+    const box = document.getElementById('adminProfileDropdown');
+    const btn = document.getElementById('adminProfileToggle');
+    if (!box) return;
+    box.classList.toggle('hidden');
+    btn?.classList.toggle('active', !box.classList.contains('hidden'));
+}
+function closeAdminProfileDropdown() {
+    document.getElementById('adminProfileDropdown')?.classList.add('hidden');
+    document.getElementById('adminProfileToggle')?.classList.remove('active');
+}
+async function saveAdminProfileInfo() {
+    const username = document.getElementById('adminProfileUsername')?.value.trim() || '';
+    const email = document.getElementById('adminProfileEmail')?.value.trim() || '';
+    if (!username || !email) return showToast('请填写用户名和邮箱', 'error');
+    const res = await request('auth.php?action=update_profile', 'POST', { username, email });
+    if (!res.success) return showToast(res.message || '保存失败', 'error');
+    Admin.user = res.user || Admin.user;
+    showToast(res.message || '个人资料已保存', 'success');
+    refreshAdminProfileUI();
+    await loadAdminData();
+}
+function bindAdminQQAccount() {
+    location.href = '/api/oauth.php?provider=qq&mode=bind';
+}
+async function unbindAdminQQAccount() {
+    if (!confirm('确定要解绑 QQ 吗？解绑后不能使用该 QQ 快捷登录此账号。')) return;
+    const res = await request('auth.php?action=unbind_qq', 'POST');
+    if (!res.success) return showToast(res.message || '解绑失败', 'error');
+    Admin.user = res.user || Admin.user;
+    showToast(res.message || 'QQ 已解绑', 'success');
+    refreshAdminProfileUI();
+}
+document.addEventListener('click', e => {
+    const wrap = document.querySelector('.admin-profile-wrap');
+    if (wrap && !wrap.contains(e.target)) closeAdminProfileDropdown();
+});
 async function loadAdminData() {
     const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints] = await Promise.all([
         request('admin.php?action=users'),

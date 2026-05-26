@@ -166,6 +166,7 @@ function openRegisterModal() {
     if (codeInput) codeInput.value = '';
     const group = document.getElementById('regEmailCodeGroup');
     if (group) group.classList.add('hidden');
+    setRegisterError('');
     refreshRegisterEmailVerifyState();
     const modal = new bootstrap.Modal(document.getElementById('registerModal'));
     modal.show();
@@ -270,6 +271,22 @@ async function handleLogin() {
     }
 }
 
+function setRegisterError(message, type = 'danger') {
+    const box = document.getElementById('registerResultBox');
+    if (!box) return;
+    if (!message) {
+        box.className = 'alert py-2 small hidden';
+        box.textContent = '';
+        return;
+    }
+    box.className = 'alert alert-' + type + ' py-2 small';
+    box.textContent = message;
+}
+
+function showRegisterError(message) {
+    setRegisterError(message || '注册失败，请检查填写内容', 'danger');
+}
+
 async function handleRegister() {
     const username = document.getElementById('regUsername').value.trim();
     const email = document.getElementById('regEmail').value.trim();
@@ -279,58 +296,77 @@ async function handleRegister() {
 
     // 客户端验证
     if (!username || !email || !password) {
+        showRegisterError('请填写所有字段');
         Toast.warning('请填写所有字段');
         return;
     }
     
     // 使用Security工具进行验证
-    if (!Security.validateLength(username, 3, 20)) {
-        Toast.warning('用户名需3-20个字符');
+    if (!Security.validateLength(username, 2, 30)) {
+        showRegisterError('用户名需2-30个字符');
+        Toast.warning('用户名需2-30个字符');
         return;
     }
     
     if (!Security.validateUsername(username)) {
-        Toast.warning('用户名只能包含字母、数字和下划线');
+        showRegisterError('用户名只能包含中文、字母、数字和下划线');
+        Toast.warning('用户名只能包含中文、字母、数字和下划线');
         return;
     }
     
     if (!Security.validateEmail(email)) {
+        showRegisterError('请输入有效的邮箱地址');
         Toast.warning('请输入有效的邮箱地址');
         return;
     }
     
     if (!Security.validatePassword(password)) {
+        showRegisterError('密码至少6位');
         Toast.warning('密码至少6位');
         return;
     }
     
     if (password !== passwordConfirm) {
+        showRegisterError('两次密码不一致');
         Toast.warning('两次密码不一致');
         return;
     }
 
     // 显示加载状态
-    const submitBtn = document.querySelector('#registerModal .btn-primary');
-    const originalText = submitBtn.textContent;
-    submitBtn.disabled = true;
-    submitBtn.textContent = '注册中...';
+    const submitBtn = document.getElementById('registerSubmitBtn');
+    const originalText = submitBtn ? submitBtn.innerHTML : '注册';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>注册中...';
+    }
 
     try {
         const result = await API.register(username, email, password, passwordConfirm, emailCode);
 
         if (!result.success) {
-            Toast.error(result.message);
+            const message = result.message || '注册失败，请检查验证码、用户名或邮箱';
+            showRegisterError(message);
+            Toast.error(message);
             return;
         }
 
         App.setUser(result.user);
-        bootstrap.Modal.getInstance(document.getElementById('registerModal')).hide();
-        Toast.success('注册成功！');
-        showHome();
-        App.updateUnreadBadge();
+        setRegisterError('注册成功，正在进入市场...', 'success');
+        Toast.success('注册成功，欢迎加入！');
+        setTimeout(() => {
+            bootstrap.Modal.getInstance(document.getElementById('registerModal'))?.hide();
+            showHome();
+            App.updateUnreadBadge();
+        }, 350);
+    } catch (error) {
+        const message = error && error.message ? error.message : '注册请求失败，请稍后重试';
+        showRegisterError(message);
+        Toast.error(message);
     } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = originalText;
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
     }
 }
 

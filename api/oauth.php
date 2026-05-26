@@ -15,7 +15,13 @@ function oauthJson($data, $code = 200) {
 
 function oauthRedirect($message, $success = false) {
     $flag = $success ? 'success' : 'error';
-    $url = '../#page=dashboard&tab=profile&oauth_' . $flag . '=' . rawurlencode($message);
+    $return = $_SESSION['oauth_qq_return'] ?? 'front';
+    unset($_SESSION['oauth_qq_return']);
+    if ($return === 'admin') {
+        $url = '../admin/#page=overview&oauth_' . $flag . '=' . rawurlencode($message);
+    } else {
+        $url = '../#page=dashboard&tab=profile&oauth_' . $flag . '=' . rawurlencode($message);
+    }
     header('Location: ' . $url);
     exit;
 }
@@ -73,6 +79,7 @@ if (empty($_GET['code'])) {
     $state = bin2hex(random_bytes(16));
     $_SESSION['oauth_qq_state'] = $state;
     $_SESSION['oauth_qq_mode'] = $mode === 'bind' ? 'bind' : 'login';
+    $_SESSION['oauth_qq_return'] = strpos($_SERVER['HTTP_REFERER'] ?? '', '/admin') !== false ? 'admin' : 'front';
     $params = http_build_query([
         'response_type' => 'code',
         'client_id' => $config['oauth_qq_app_id'],

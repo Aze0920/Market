@@ -350,6 +350,40 @@ switch ($action) {
         
         jsonResponse(['success' => true, 'logged_in' => true, 'user' => safeUser($user)]);
 
+    case 'update_profile':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        $username = sanitizeUsername($_POST['username'] ?? '');
+        $email = sanitizeEmail($_POST['email'] ?? '');
+        if (mb_strlen($username, 'UTF-8') < 2 || mb_strlen($username, 'UTF-8') > 30) {
+            jsonResponse(['success' => false, 'message' => '用户名需2-30个字符'], 400);
+        }
+        if (!preg_match('/^[\p{L}\p{N}_\x{4e00}-\x{9fa5}]+$/u', $username)) {
+            jsonResponse(['success' => false, 'message' => '用户名只能包含中文、字母、数字和下划线'], 400);
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            jsonResponse(['success' => false, 'message' => '请输入有效的邮箱地址'], 400);
+        }
+        foreach ($db->getTable('users') as $u) {
+            if (($u['id'] ?? '') === $userId) continue;
+            if (isset($u['username']) && mb_strtolower($u['username'], 'UTF-8') === mb_strtolower($username, 'UTF-8')) {
+                jsonResponse(['success' => false, 'message' => '用户名已存在'], 400);
+            }
+            if (isset($u['email']) && strtolower($u['email']) === strtolower($email)) {
+                jsonResponse(['success' => false, 'message' => '该邮箱已被使用'], 400);
+            }
+        }
+        $ok = $db->updateUser($userId, ['username' => $username, 'email' => $email]);
+        if (!$ok) {
+            jsonResponse(['success' => false, 'message' => '资料修改失败'], 500);
+        }
+        $_SESSION['username'] = $username;
+        $updatedUser = $db->getUserById($userId);
+        jsonResponse(['success' => true, 'message' => '个人资料已保存', 'user' => safeUser($updatedUser)]);
+
     case 'send_profile_email_code':
         $userId = requireAuth();
         $user = $db->getUserById($userId);

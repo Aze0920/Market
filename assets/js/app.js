@@ -1326,6 +1326,21 @@ async function loadProfileTab(area) {
             </div>
             <div class="col-lg-7">
                 <div class="profile-card-soft h-100">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-person-lines-fill me-2 text-primary"></i>个人资料</h6>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">用户名</label>
+                            <input class="form-control" id="profileUsername" value="${Security.escapeAttr(user.username || '')}" placeholder="2-30个字符，支持中文">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">邮箱</label>
+                            <input class="form-control" id="profileEmail" type="email" value="${Security.escapeAttr(user.email || '')}" placeholder="your@email.com">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-primary" onclick="saveProfileInfo()"><i class="bi bi-check2-circle me-1"></i>保存个人资料</button>
+                        </div>
+                    </div>
+                    <hr class="my-4">
                     <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-2 text-primary"></i>修改密码</h6>
                     <div class="alert alert-light border small mb-3">验证码会发送到当前账号邮箱：<strong>${Security.escapeHtml(maskedEmail)}</strong></div>
                     <div class="row g-3">
@@ -1381,6 +1396,16 @@ async function sendProfileEmailCode() {
         if (profileEmailCountdown <= 0) clearInterval(profileEmailTimer);
         updateProfileEmailButton();
     }, 1000);
+}
+async function saveProfileInfo() {
+    const username = document.getElementById('profileUsername')?.value.trim() || '';
+    const email = document.getElementById('profileEmail')?.value.trim() || '';
+    if (!username || !email) return Toast.warning('请填写用户名和邮箱');
+    const result = await API.updateProfile(username, email);
+    if (!result.success) return Toast.error(result.message || '保存失败');
+    Toast.success(result.message || '个人资料已保存');
+    if (result.user) App.setUser(result.user);
+    renderDashboardTab('profile');
 }
 async function changeProfilePassword() {
     const code = document.getElementById('profileEmailCode')?.value.trim() || '';
@@ -1668,22 +1693,23 @@ async function submitWithdraw() {
 }
 
 async function openSystemConfigModal() {
-    if (App.currentUser.role !== 'admin') {
+    if (!App.currentUser || App.currentUser.role !== 'admin') {
         Toast.warning('需要管理员权限');
         return;
     }
-    
-    const result = await API.getSystemConfig();
-    if (result.success) {
-        const config = result.config;
-        document.getElementById('configEnableWithdraw').checked = config.enable_withdraw ?? true;
-        document.getElementById('configMinWithdraw').value = config.min_withdraw_amount || 10;
-        document.getElementById('configWithdrawFee').value = (config.withdraw_fee_rate || 0.01) * 100;
-        document.getElementById('configWechatQrcode').value = config.admin_wechat_qrcode || '';
-        document.getElementById('configAlipayQrcode').value = config.admin_alipay_qrcode || '';
+    const modalEl = document.getElementById('systemConfigModal');
+    const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+    if (modal) modal.hide();
+    App.currentPage = 'dashboard';
+    App.currentTab = 'profile';
+    persistFrontendState();
+    document.getElementById('homePage')?.classList.add('hidden');
+    document.getElementById('dashboardPage')?.classList.remove('hidden');
+    if (document.getElementById('dashContentArea')) {
+        renderDashboardTab('profile');
+    } else {
+        showDashboard('profile');
     }
-    
-    new bootstrap.Modal(document.getElementById('systemConfigModal')).show();
 }
 
 async function saveSystemConfig(options = {}) {
@@ -1707,7 +1733,7 @@ async function saveSystemConfig(options = {}) {
             renderDashboardTab('profile');
         } else {
             bootstrap.Modal.getInstance(document.getElementById('systemConfigModal'))?.hide();
-            renderDashboardTab('balance');
+            renderDashboardTab('profile');
         }
     } else {
         Toast.error(result.message);

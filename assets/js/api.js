@@ -90,6 +90,10 @@ const API = {
         return this.request('auth.php?action=get_current_user');
     },
 
+    updateProfile(username, email) {
+        return this.request('auth.php?action=update_profile', 'POST', { username, email });
+    },
+
     sendProfileEmailCode() {
         return this.request('auth.php?action=send_profile_email_code', 'POST');
     },
