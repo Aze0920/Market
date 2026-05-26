@@ -290,6 +290,7 @@ switch ($action) {
         requireAdmin();
         
         $config = [];
+        $currentConfig = $db->getSystemConfig();
         if (isset($_POST['enable_withdraw'])) {
             $config['enable_withdraw'] = (bool)$_POST['enable_withdraw'];
         }
@@ -394,6 +395,20 @@ switch ($action) {
         }
         if (isset($_POST['captcha_secret_key']) && $_POST['captcha_secret_key'] !== '') {
             $config['captcha_secret_key'] = sanitizeString($_POST['captcha_secret_key']);
+        }
+        $oauthChecks = [
+            'oauth_qq' => ['enabled' => 'oauth_qq_enabled', 'required' => ['oauth_qq_app_id', 'oauth_qq_app_key', 'oauth_qq_redirect_uri'], 'label' => 'QQ 登录'],
+            'oauth_wechat' => ['enabled' => 'oauth_wechat_enabled', 'required' => ['oauth_wechat_app_id', 'oauth_wechat_app_secret', 'oauth_wechat_redirect_uri'], 'label' => '微信登录'],
+            'oauth_caihong' => ['enabled' => 'oauth_caihong_enabled', 'required' => ['oauth_caihong_api_url', 'oauth_caihong_app_id', 'oauth_caihong_key', 'oauth_caihong_redirect_uri'], 'label' => '彩虹聚合登录']
+        ];
+        foreach ($oauthChecks as $check) {
+            if (!array_key_exists($check['enabled'], $config) || !$config[$check['enabled']]) continue;
+            foreach ($check['required'] as $field) {
+                $value = $config[$field] ?? $currentConfig[$field] ?? '';
+                if (trim((string)$value) === '') {
+                    jsonResponse(['success' => false, 'message' => $check['label'] . '参数不完整，请填写后再启用'], 400);
+                }
+            }
         }
         if (isset($_POST['smtp_port'])) {
             $config['smtp_port'] = max(1, min(65535, intval($_POST['smtp_port'])));
