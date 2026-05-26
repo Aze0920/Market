@@ -215,11 +215,19 @@ async function request(endpoint, method = 'GET', data = null) {
         const res = await fetch(apiBase + endpoint, options);
         const text = await res.text();
         let json = {};
-        try { json = text ? JSON.parse(text) : {}; } catch (e) { return { success: false, message: '服务器返回异常内容' }; }
-        if (!res.ok) return { success: false, message: json.message || ('请求失败：' + res.status), status: res.status, ...json };
+        try {
+            json = text ? JSON.parse(text) : {};
+        } catch (e) {
+            const preview = text ? text.slice(0, 1000) : '空响应';
+            return { success: false, message: `服务器返回异常内容（HTTP ${res.status}）：${preview}` };
+        }
+        if (!res.ok) {
+            const detail = json.output ? '\n' + json.output : '';
+            return { success: false, message: (json.message || ('请求失败：' + res.status)) + detail, status: res.status, ...json };
+        }
         return json;
     } catch (e) {
-        return { success: false, message: '网络错误，请检查服务器是否正常' };
+        return { success: false, message: '网络错误，请检查服务器是否正常：' + (e.message || e) };
     }
 }
 async function bootstrapAdmin() {

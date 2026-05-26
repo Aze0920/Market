@@ -746,10 +746,18 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'message' => '会员等级已删除', 'levels' => $db->getMembershipLevels()]);
 
     case 'update_status':
-        adminJsonResponse(['success' => true, 'status' => adminUpdateStatus()]);
+        try {
+            adminJsonResponse(['success' => true, 'status' => adminUpdateStatus()]);
+        } catch (Throwable $e) {
+            adminJsonResponse(['success' => false, 'message' => '更新检测失败：' . $e->getMessage(), 'output' => $e->getFile() . ':' . $e->getLine()], 500);
+        }
 
     case 'run_update':
-        adminJsonResponse(adminApplyUpdate());
+        try {
+            adminJsonResponse(adminApplyUpdate());
+        } catch (Throwable $e) {
+            adminJsonResponse(['success' => false, 'message' => '自动更新失败：' . $e->getMessage(), 'output' => $e->getFile() . ':' . $e->getLine()], 500);
+        }
 
     case 'test_email':
         adminRequireAdmin();
