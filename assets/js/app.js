@@ -336,9 +336,6 @@ function renderDashboard(tabName = null) {
             <div class="sidebar-nav-item" data-tab="paymentmanage">
                 <i class="bi bi-cash-stack"></i><span>支付接口</span>
             </div>
-            <div class="sidebar-nav-item" onclick="openSystemConfigModal()">
-                <i class="bi bi-gear"></i><span>系统设置</span>
-            </div>
         `;
     }
     sidebarHtml += `
@@ -1259,6 +1256,52 @@ async function loadProfileTab(area) {
     const user = App.currentUser || {};
     const maskedEmail = user.email ? user.email.replace(/^(.{2}).*(@.*)$/, '$1****$2') : '未绑定邮箱';
     const qqBound = !!user.qq_openid;
+    const isAdmin = user.role === 'admin';
+    let adminConfigHtml = '';
+    if (isAdmin) {
+        const configResult = await API.getSystemConfig();
+        const config = configResult.success ? (configResult.config || {}) : {};
+        adminConfigHtml = `
+            <div class="col-12">
+                <div class="profile-card-soft">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <h6 class="fw-bold mb-1"><i class="bi bi-sliders me-2 text-primary"></i>提现与收款设置</h6>
+                            <div class="text-muted small">嵌入式管理，不再使用弹窗</div>
+                        </div>
+                        <span class="badge badge-primary">管理员</span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="configEnableWithdraw" ${config.enable_withdraw !== false && config.enable_withdraw !== '0' ? 'checked' : ''}>
+                                <label class="form-check-label" for="configEnableWithdraw">启用提现功能</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">最低提现金额</label>
+                            <input type="number" class="form-control" id="configMinWithdraw" step="0.01" min="1" value="${Security.escapeAttr(config.min_withdraw_amount || 10)}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">提现手续费率(%)</label>
+                            <input type="number" class="form-control" id="configWithdrawFee" step="0.1" min="0" max="100" value="${Security.escapeAttr(Number(config.withdraw_fee_rate ?? 0.01) * 100)}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">管理员微信收款码 URL</label>
+                            <input type="text" class="form-control" id="configWechatQrcode" value="${Security.escapeAttr(config.admin_wechat_qrcode || '')}" placeholder="https://example.com/wechat.png">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">管理员支付宝收款码 URL</label>
+                            <input type="text" class="form-control" id="configAlipayQrcode" value="${Security.escapeAttr(config.admin_alipay_qrcode || '')}" placeholder="https://example.com/alipay.png">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-primary" onclick="saveSystemConfig({ embedded: true })"><i class="bi bi-check2-circle me-1"></i>保存设置</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-person-circle me-2 text-primary"></i>个人中心</h5>
         <div class="row g-4">
@@ -1307,6 +1350,7 @@ async function loadProfileTab(area) {
                     </div>
                 </div>
             </div>
+            ${adminConfigHtml}
         </div>
     `;
 }
@@ -1642,7 +1686,7 @@ async function openSystemConfigModal() {
     new bootstrap.Modal(document.getElementById('systemConfigModal')).show();
 }
 
-async function saveSystemConfig() {
+async function saveSystemConfig(options = {}) {
     const enableWithdraw = document.getElementById('configEnableWithdraw').checked;
     const minWithdraw = parseFloat(document.getElementById('configMinWithdraw').value) || 10;
     const withdrawFee = parseFloat(document.getElementById('configWithdrawFee').value) / 100 || 0.01;
@@ -1659,8 +1703,12 @@ async function saveSystemConfig() {
     
     if (result.success) {
         Toast.success('设置已保存');
-        bootstrap.Modal.getInstance(document.getElementById('systemConfigModal'))?.hide();
-        renderDashboardTab('balance');
+        if (options && options.embedded) {
+            renderDashboardTab('profile');
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('systemConfigModal'))?.hide();
+            renderDashboardTab('balance');
+        }
     } else {
         Toast.error(result.message);
     }
