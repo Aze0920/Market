@@ -841,7 +841,7 @@ class Database {
             $userId = $updates['id'];
         }
 
-        $allowedFields = ['username', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance'];
+        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
                 unset($updates[$key]);
@@ -859,6 +859,12 @@ class Database {
             }
             if ($key === 'email' && $value !== '' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
                 unset($updates[$key]);
+            }
+            if (in_array($key, ['qq_openid', 'qq_nickname'], true)) {
+                $updates[$key] = trim((string)$value);
+            }
+            if ($key === 'qq_bound_at') {
+                $updates[$key] = intval($value);
             }
         }
 

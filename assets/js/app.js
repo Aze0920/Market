@@ -66,10 +66,10 @@ window.App = {
         const publishLink = document.getElementById('navSellLink');
 
         if (this.currentUser) {
-            guestArea.classList.add('hidden');
-            userArea.classList.remove('hidden');
-            dashboardLink.classList.remove('hidden');
-            publishLink.classList.remove('hidden');
+            if (guestArea) guestArea.classList.add('hidden');
+            if (userArea) userArea.classList.remove('hidden');
+            if (dashboardLink) dashboardLink.classList.remove('hidden');
+            if (publishLink) publishLink.classList.remove('hidden');
 
             document.getElementById('navUsername').textContent = Security.escapeHtml(this.currentUser.username);
             document.getElementById('navAvatar').textContent = Security.escapeHtml(this.currentUser.username.charAt(0).toUpperCase());
@@ -79,10 +79,10 @@ window.App = {
                 navAdminBtn.classList.toggle('hidden', this.currentUser.role !== 'admin');
             }
         } else {
-            guestArea.classList.remove('hidden');
-            userArea.classList.add('hidden');
-            dashboardLink.classList.add('hidden');
-            publishLink.classList.add('hidden');
+            if (guestArea) guestArea.classList.remove('hidden');
+            if (userArea) userArea.classList.add('hidden');
+            if (dashboardLink) dashboardLink.classList.add('hidden');
+            if (publishLink) publishLink.classList.add('hidden');
             const navAdminBtn = document.getElementById('navAdminBtn');
             if (navAdminBtn) {
                 navAdminBtn.classList.add('hidden');
@@ -204,7 +204,7 @@ function getInitialFrontendState() {
     const tab = hash.get('tab') || localStorage.getItem('keynest_front_tab') || 'overview';
     return {
         page: ['home', 'dashboard'].includes(page) ? page : 'home',
-        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
+        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'profile', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
     };
 }
 
@@ -286,6 +286,9 @@ function renderDashboardTab(tabName) {
         case 'paymentmanage':
             loadPaymentManageTab(contentArea);
             break;
+        case 'profile':
+            loadProfileTab(contentArea);
+            break;
         case 'messages':
             loadMessagesTab(contentArea);
             break;
@@ -339,9 +342,10 @@ function renderDashboard(tabName = null) {
         `;
     }
     sidebarHtml += `
-        <div class="sidebar-nav-item" data-tab="messages">
-            <i class="bi bi-chat-dots"></i><span>私信</span>
+        <div class="sidebar-nav-item" data-tab="profile">
+            <i class="bi bi-person-circle"></i><span>个人中心</span>
         </div>
+        <div class="sidebar-nav-item" data-tab="messages">
         <div class="sidebar-nav-item" data-tab="reviews">
             <i class="bi bi-star-half"></i><span>评价管理</span>
         </div>
@@ -1247,6 +1251,113 @@ async function loadReviewsTab(area) {
             </div>
         `}
     `;
+}
+
+async function loadProfileTab(area) {
+    const user = App.currentUser || {};
+    const maskedEmail = user.email ? user.email.replace(/^(.{2}).*(@.*)$/, '$1****$2') : '未绑定邮箱';
+    const qqBound = !!user.qq_openid;
+    area.innerHTML = `
+        <h5 class="fw-bold mb-4"><i class="bi bi-person-circle me-2 text-primary"></i>个人中心</h5>
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="profile-card-soft h-100">
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <div class="avatar" style="width:58px;height:58px;font-size:1.35rem;">${Security.escapeHtml((user.username || 'U').charAt(0).toUpperCase())}</div>
+                        <div>
+                            <h5 class="fw-bold mb-1">${Security.escapeHtml(user.username || '-')}</h5>
+                            <div class="text-muted small">${Security.escapeHtml(maskedEmail)}</div>
+                        </div>
+                    </div>
+                    <div class="profile-info-row"><span>会员等级</span><strong>${Security.escapeHtml(user.membership_level || 'Free')}</strong></div>
+                    <div class="profile-info-row"><span>账户余额</span><strong>¥ ${Number(user.balance || 0).toFixed(2)}</strong></div>
+                    <div class="profile-info-row"><span>QQ 绑定</span><strong class="${qqBound ? 'text-success' : 'text-muted'}">${qqBound ? Security.escapeHtml(user.qq_nickname || '已绑定') : '未绑定'}</strong></div>
+                    <div class="mt-4 d-grid gap-2">
+                        ${qqBound ? `<button class="btn btn-outline-danger" onclick="unbindQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑 QQ</button>` : `<button class="btn btn-primary" onclick="bindQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定 QQ</button>`}
+                        <button class="btn btn-outline-primary" onclick="window.location.href='api/oauth.php?provider=qq'"><i class="bi bi-tencent-qq me-1"></i>QQ 一键登录测试</button>
+                    </div>
+                    <div class="text-muted small mt-3">QQ 一键登录需要先绑定当前账号，未绑定的 QQ 会提示先绑定。</div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="profile-card-soft h-100">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-2 text-primary"></i>修改密码</h6>
+                    <div class="alert alert-light border small mb-3">验证码会发送到当前账号邮箱：<strong>${Security.escapeHtml(maskedEmail)}</strong></div>
+                    <div class="row g-3">
+                        <div class="col-md-7">
+                            <label class="form-label">邮箱验证码</label>
+                            <input class="form-control" id="profileEmailCode" maxlength="6" placeholder="请输入 6 位验证码">
+                        </div>
+                        <div class="col-md-5 d-flex align-items-end">
+                            <button class="btn btn-outline-primary w-100" id="sendProfileEmailCodeBtn" onclick="sendProfileEmailCode()">发送验证码</button>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">新密码</label>
+                            <input class="form-control" id="profileNewPassword" type="password" placeholder="至少6位，包含字母和数字">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">确认新密码</label>
+                            <input class="form-control" id="profileConfirmPassword" type="password" placeholder="再次输入新密码">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-primary" onclick="changeProfilePassword()"><i class="bi bi-check2-circle me-1"></i>确认修改密码</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+let profileEmailCountdown = 0;
+let profileEmailTimer = null;
+function updateProfileEmailButton() {
+    const btn = document.getElementById('sendProfileEmailCodeBtn');
+    if (!btn) return;
+    if (profileEmailCountdown > 0) {
+        btn.disabled = true;
+        btn.textContent = profileEmailCountdown + '秒后重发';
+    } else {
+        btn.disabled = false;
+        btn.textContent = '发送验证码';
+    }
+}
+async function sendProfileEmailCode() {
+    if (profileEmailCountdown > 0) return;
+    const result = await API.sendProfileEmailCode();
+    if (!result.success) return Toast.error(result.message || '验证码发送失败');
+    Toast.success(result.message || '验证码已发送');
+    profileEmailCountdown = 60;
+    updateProfileEmailButton();
+    clearInterval(profileEmailTimer);
+    profileEmailTimer = setInterval(() => {
+        profileEmailCountdown -= 1;
+        if (profileEmailCountdown <= 0) clearInterval(profileEmailTimer);
+        updateProfileEmailButton();
+    }, 1000);
+}
+async function changeProfilePassword() {
+    const code = document.getElementById('profileEmailCode')?.value.trim() || '';
+    const pwd = document.getElementById('profileNewPassword')?.value || '';
+    const confirm = document.getElementById('profileConfirmPassword')?.value || '';
+    if (!code || !pwd || !confirm) return Toast.warning('请填写验证码和新密码');
+    const result = await API.changePassword(code, pwd, confirm);
+    if (!result.success) return Toast.error(result.message || '修改失败');
+    Toast.success(result.message || '密码修改成功');
+    document.getElementById('profileEmailCode').value = '';
+    document.getElementById('profileNewPassword').value = '';
+    document.getElementById('profileConfirmPassword').value = '';
+}
+function bindQQAccount() {
+    window.location.href = 'api/oauth.php?provider=qq&mode=bind';
+}
+async function unbindQQAccount() {
+    if (!confirm('确定要解绑 QQ 吗？解绑后不能使用该 QQ 一键登录此账号。')) return;
+    const result = await API.unbindQQ();
+    if (!result.success) return Toast.error(result.message || '解绑失败');
+    Toast.success(result.message || 'QQ 已解绑');
+    if (result.user) App.setUser(result.user);
+    renderDashboardTab('profile');
 }
 
 async function loadMessagesTab(area) {

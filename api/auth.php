@@ -113,6 +113,65 @@ function sendRegisterEmailCode($email) {
     jsonResponse(['success' => true, 'message' => '验证码已发送，请查收邮箱']);
 }
 
+function sendProfileEmailCode($user) {
+    global $db;
+    $config = $db->getSystemConfig();
+    $email = strtolower(trim($user['email'] ?? ''));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        jsonResponse(['success' => false, 'message' => '当前账号未绑定有效邮箱，无法发送验证码'], 400);
+    }
+    $lastSentKey = 'profile_email_last_sent_' . md5($user['id'] . '|' . $email);
+    if (!empty($_SESSION[$lastSentKey]) && time() - $_SESSION[$lastSentKey] < 60) {
+        jsonResponse(['success' => false, 'message' => '发送过于频繁，请稍后再试'], 429);
+    }
+    $code = (string)random_int(100000, 999999);
+    $ttl = max(1, min(60, intval($config['email_code_ttl'] ?? 10)));
+    $_SESSION['profile_email_code'][$user['id']] = ['code' => $code, 'expires_at' => time() + $ttl * 60, 'email' => $email];
+    $_SESSION[$lastSentKey] = time();
+    $siteName = $config['site_name'] ?? 'KeyNest';
+    $subject = $siteName . ' 修改密码验证码';
+    $html = KeyNestMailer::renderTemplate($config, [
+        'site_name' => $siteName,
+        'title' => '修改密码验证码',
+        'message' => '你正在修改 ' . $siteName . ' 账号密码，请在页面中输入下面的验证码。',
+        'code' => $code,
+        'ttl' => $ttl,
+        'footer' => '验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请立即检查账号安全。',
+        'time' => date('Y-m-d H:i:s')
+    ]);
+    $result = KeyNestMailer::send($email, $subject, $html, $config);
+    if (empty($result['success'])) {
+        unset($_SESSION['profile_email_code'][$user['id']]);
+        jsonResponse(['success' => false, 'message' => $result['message'] ?? '邮件发送失败'], 500);
+    }
+    jsonResponse(['success' => true, 'message' => '验证码已发送到当前绑定邮箱']);
+}
+
+function verifyProfileEmailCode($user, $code) {
+    $record = $_SESSION['profile_email_code'][$user['id']] ?? null;
+    $email = strtolower(trim($user['email'] ?? ''));
+    if (!$record || empty($record['code']) || empty($record['expires_at'])) {
+        jsonResponse(['success' => false, 'message' => '请先获取邮箱验证码'], 400);
+    }
+    if (($record['email'] ?? '') !== $email) {
+        unset($_SESSION['profile_email_code'][$user['id']]);
+        jsonResponse(['success' => false, 'message' => '邮箱已变化，请重新获取验证码'], 400);
+    }
+    if (time() > $record['expires_at']) {
+        unset($_SESSION['profile_email_code'][$user['id']]);
+        jsonResponse(['success' => false, 'message' => '邮箱验证码已过期，请重新获取'], 400);
+    }
+    if (!hash_equals((string)$record['code'], trim($code))) {
+        jsonResponse(['success' => false, 'message' => '邮箱验证码错误'], 400);
+    }
+    unset($_SESSION['profile_email_code'][$user['id']]);
+}
+
+function safeUser($user) {
+    unset($user['password']);
+    return $user;
+}
+
 function requireAuth() {
     if (!isset($_SESSION['user_id'])) {
         jsonResponse(['success' => false, 'message' => '请先登录'], 401);
@@ -166,8 +225,7 @@ switch ($action) {
         $_SESSION['login_time'] = time();
         $_SESSION['ip'] = $_SERVER['REMOTE_ADDR'] ?? '';
 
-        unset($user['password']);
-        jsonResponse(['success' => true, 'message' => '登录成功', 'user' => $user]);
+        jsonResponse(['success' => true, 'message' => '登录成功', 'user' => safeUser($user)]);
 
     case 'send_email_code':
         $email = sanitizeEmail($_POST['email'] ?? '');
@@ -288,8 +346,49 @@ switch ($action) {
             $_SESSION['last_activity'] = time();
         }
         
-        unset($user['password']);
-        jsonResponse(['success' => true, 'logged_in' => true, 'user' => $user]);
+        jsonResponse(['success' => true, 'logged_in' => true, 'user' => safeUser($user)]);
+
+    case 'send_profile_email_code':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        sendProfileEmailCode($user);
+
+    case 'change_password':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        $code = trim($_POST['email_code'] ?? '');
+        $newPassword = $_POST['new_password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+        if (!$code || !$newPassword || !$confirmPassword) {
+            jsonResponse(['success' => false, 'message' => '请填写验证码和新密码'], 400);
+        }
+        if ($newPassword !== $confirmPassword) {
+            jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
+        }
+        if (strlen($newPassword) < 6 || !preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{6,}$/', $newPassword)) {
+            jsonResponse(['success' => false, 'message' => '密码至少6位，且需包含字母和数字'], 400);
+        }
+        verifyProfileEmailCode($user, $code);
+        $ok = $db->updateUser($userId, ['password' => password_hash($newPassword, PASSWORD_DEFAULT)]);
+        if (!$ok) {
+            jsonResponse(['success' => false, 'message' => '密码修改失败'], 500);
+        }
+        jsonResponse(['success' => true, 'message' => '密码修改成功，请牢记新密码']);
+
+    case 'unbind_qq':
+        $userId = requireAuth();
+        $ok = $db->updateUser($userId, ['qq_openid' => '', 'qq_nickname' => '', 'qq_bound_at' => 0]);
+        if (!$ok) {
+            jsonResponse(['success' => false, 'message' => '解绑失败'], 500);
+        }
+        $user = $db->getUserById($userId);
+        jsonResponse(['success' => true, 'message' => 'QQ 已解绑', 'user' => safeUser($user)]);
 
     case 'search_users':
         requireAuth();

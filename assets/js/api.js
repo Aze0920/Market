@@ -90,6 +90,22 @@ const API = {
         return this.request('auth.php?action=get_current_user');
     },
 
+    sendProfileEmailCode() {
+        return this.request('auth.php?action=send_profile_email_code', 'POST');
+    },
+
+    changePassword(emailCode, newPassword, confirmPassword) {
+        return this.request('auth.php?action=change_password', 'POST', {
+            email_code: emailCode,
+            new_password: newPassword,
+            confirm_password: confirmPassword
+        });
+    },
+
+    unbindQQ() {
+        return this.request('auth.php?action=unbind_qq', 'POST');
+    },
+
     searchUsers(query) {
         return this.request('auth.php?action=search_users&query=' + encodeURIComponent(query));
     },
