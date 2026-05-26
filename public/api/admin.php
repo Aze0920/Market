@@ -358,10 +358,16 @@ function adminCopyFileFromRepo($config, $relative) {
         return false;
     }
     $dir = dirname($dst);
-    if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
+    if (!is_dir($dir) && !mkdir($dir, 0755, true)) {
+        return false;
     }
-    return copy($src, $dst);
+    if (is_file($dst) && !is_writable($dst)) {
+        return false;
+    }
+    if (!is_file($dst) && !is_writable($dir)) {
+        return false;
+    }
+    return @copy($src, $dst);
 }
 
 function adminDeleteSiteFile($config, $relative) {
@@ -403,6 +409,7 @@ function adminChangedFiles($config, $fromCommit, $toCommit) {
 function adminApplyChangedFiles($config, $files) {
     $changed = [];
     $skipped = [];
+    $failed = [];
     foreach ($files as $file) {
         $status = strtoupper($file['status'] ?? '');
         $path = $file['path'] ?? '';
@@ -417,11 +424,11 @@ function adminApplyChangedFiles($config, $files) {
             if (adminCopyFileFromRepo($config, $path)) {
                 $changed[] = '更新 ' . $path;
             } else {
-                $skipped[] = '跳过 ' . $path;
+                $failed[] = '更新失败 ' . $path . '（目标文件或目录无写入权限）';
             }
         }
     }
-    return ['changed' => $changed, 'skipped' => $skipped];
+    return ['changed' => $changed, 'skipped' => $skipped, 'failed' => $failed];
 }
 
 function adminRequireDatabaseConfig($config) {
@@ -474,6 +481,22 @@ function adminApplyUpdate() {
         adminJsonResponse(['success' => false, 'message' => '计算变更文件失败', 'output' => $diff['output']], 500);
     }
     $applied = adminApplyChangedFiles($config, $diff['files']);
+    if (!empty($applied['failed'])) {
+        $output = implode("\n", array_filter([
+            $fetch['output'],
+            $reset['output'],
+            '变更文件：' . count($diff['files']) . ' 个',
+            implode("\n", $applied['changed']),
+            implode("\n", $applied['skipped']),
+            implode("\n", $applied['failed']),
+        ]));
+        adminJsonResponse([
+            'success' => false,
+            'message' => '更新未完成：部分文件没有写入权限，请在宝塔把网站目录和文件所有者改为 PHP 运行用户（通常是 www）后重试。',
+            'output' => $output,
+            'status' => adminUpdateStatus()
+        ], 500);
+    }
     adminEnsureInstallLock($config);
     adminSaveUpdaterVersion($config, $targetCommitHash);
     $output = implode("\n", array_filter([
@@ -483,6 +506,7 @@ function adminApplyUpdate() {
         '已记录版本：' . substr($targetCommitHash, 0, 12),
         implode("\n", $applied['changed']),
         implode("\n", $applied['skipped']),
+        implode("\n", $applied['failed'] ?? []),
     ]));
     return ['success' => true, 'message' => '更新完成', 'status' => adminUpdateStatus(), 'output' => $output];
 }

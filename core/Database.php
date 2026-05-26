@@ -1135,5 +1135,3 @@ class Database {
         return false;
     }
 }
-
-}
