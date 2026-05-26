@@ -681,6 +681,151 @@ a:hover {
     padding: 1rem 1.5rem;
 }
 
+.auth-modal .modal-dialog {
+    max-width: 860px;
+}
+
+.auth-modal-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+    overflow: hidden;
+    min-height: 560px;
+}
+
+.auth-form-pane {
+    background: #fff;
+}
+
+.auth-form-pane .modal-body {
+    padding: 1rem 2rem 2rem;
+}
+
+.auth-form-pane .modal-header {
+    padding: 1.5rem 2rem 0;
+}
+
+.auth-form-pane .form-control {
+    min-height: 46px;
+    border-radius: 14px;
+}
+
+.auth-main-btn {
+    min-height: 46px;
+    justify-content: center;
+    border-radius: 14px;
+}
+
+.auth-art-pane {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    color: #fff;
+    background: radial-gradient(circle at 20% 20%, rgba(255,255,255,.34), transparent 28%), linear-gradient(135deg, #7c3aed 0%, #6366f1 48%, #06b6d4 100%);
+}
+
+.auth-art-pane::before,
+.auth-art-pane::after {
+    content: '';
+    position: absolute;
+    border-radius: 999px;
+    background: rgba(255,255,255,.18);
+}
+
+.auth-art-pane::before {
+    width: 180px;
+    height: 180px;
+    top: -56px;
+    right: -46px;
+}
+
+.auth-art-pane::after {
+    width: 120px;
+    height: 120px;
+    bottom: -42px;
+    left: 28px;
+}
+
+.catgirl-card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 280px;
+    padding: 2rem 1.35rem;
+    border: 1px solid rgba(255,255,255,.28);
+    border-radius: 28px;
+    background: rgba(255,255,255,.16);
+    box-shadow: 0 24px 70px rgba(15,23,42,.24);
+    text-align: center;
+    backdrop-filter: blur(14px);
+}
+
+.catgirl-ears {
+    display: flex;
+    justify-content: space-between;
+    width: 128px;
+    margin: 0 auto -10px;
+}
+
+.catgirl-ears span {
+    width: 44px;
+    height: 48px;
+    background: rgba(255,255,255,.88);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.catgirl-ears span:first-child {
+    transform: rotate(-18deg);
+}
+
+.catgirl-ears span:last-child {
+    transform: rotate(18deg);
+}
+
+.catgirl-face {
+    width: 128px;
+    height: 128px;
+    margin: 0 auto 1.2rem;
+    border-radius: 42% 42% 48% 48%;
+    background: linear-gradient(180deg, #fff7ed, #ffffff);
+    box-shadow: inset 0 -10px 0 rgba(99,102,241,.08), 0 18px 42px rgba(15,23,42,.18);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    justify-items: center;
+    padding: 34px 28px 18px;
+    color: #4f46e5;
+}
+
+.catgirl-eye {
+    width: 15px;
+    height: 24px;
+    border-radius: 999px;
+    background: #4f46e5;
+    box-shadow: 0 0 0 5px rgba(99,102,241,.08);
+}
+
+.catgirl-mouth {
+    grid-column: 1 / -1;
+    color: #ec4899;
+    font-weight: 900;
+    font-size: 1.45rem;
+    line-height: 1;
+}
+
+.catgirl-card h4 {
+    font-weight: 900;
+    margin-bottom: .5rem;
+}
+
+.catgirl-card p {
+    margin: 0;
+    color: rgba(255,255,255,.82);
+    line-height: 1.8;
+    font-size: .92rem;
+}
+
 .btn-close {
     opacity: 0.5;
 }
@@ -1174,6 +1319,21 @@ a:hover {
 
     .modal-dialog {
         margin: 0.5rem;
+    }
+
+    .auth-modal-content {
+        grid-template-columns: 1fr;
+        min-height: auto;
+    }
+
+    .auth-art-pane {
+        display: none;
+    }
+
+    .auth-form-pane .modal-body,
+    .auth-form-pane .modal-header {
+        padding-left: 1.25rem;
+        padding-right: 1.25rem;
     }
 
     .stat-card {

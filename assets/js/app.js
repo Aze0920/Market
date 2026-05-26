@@ -29,7 +29,7 @@ window.Security = {
     },
     
     validateUsername: function(username) {
-        return /^[a-zA-Z0-9_]{3,20}$/.test(username);
+        return /^[\p{L}\p{N}_\u4e00-\u9fa5]{2,30}$/u.test(username || '');
     },
     
     validateEmail: function(email) {

@@ -39,7 +39,9 @@ function checkLoginRateLimit($username) {
 }
 
 function sanitizeUsername($username) {
-    return preg_replace('/[^a-zA-Z0-9_]/', '', $username);
+    $username = trim((string)$username);
+    $username = preg_replace('/[\x00-\x1F\x7F<>"\'`\\\\]/u', '', $username);
+    return mb_substr($username, 0, 30, 'UTF-8');
 }
 
 function sanitizeEmail($email) {
@@ -241,11 +243,11 @@ switch ($action) {
         if (empty($username) || empty($email) || empty($password)) {
             jsonResponse(['success' => false, 'message' => '请填写所有字段'], 400);
         }
-        if (strlen($username) < 3 || strlen($username) > 20) {
-            jsonResponse(['success' => false, 'message' => '用户名需3-20个字符'], 400);
+        if (mb_strlen($username, 'UTF-8') < 2 || mb_strlen($username, 'UTF-8') > 30) {
+            jsonResponse(['success' => false, 'message' => '用户名需2-30个字符'], 400);
         }
-        if (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
-            jsonResponse(['success' => false, 'message' => '用户名只能包含字母、数字和下划线'], 400);
+        if (!preg_match('/^[\p{L}\p{N}_\x{4e00}-\x{9fa5}]+$/u', $username)) {
+            jsonResponse(['success' => false, 'message' => '用户名只能包含中文、字母、数字和下划线'], 400);
         }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             jsonResponse(['success' => false, 'message' => '请输入有效的邮箱地址'], 400);
