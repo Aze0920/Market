@@ -346,6 +346,8 @@ function renderDashboard(tabName = null) {
             <i class="bi bi-person-circle"></i><span>个人中心</span>
         </div>
         <div class="sidebar-nav-item" data-tab="messages">
+            <i class="bi bi-chat-dots"></i><span>私信</span>
+        </div>
         <div class="sidebar-nav-item" data-tab="reviews">
             <i class="bi bi-star-half"></i><span>评价管理</span>
         </div>
