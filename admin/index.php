@@ -183,7 +183,7 @@ keynest_require_installed(false);
             </div>
             <div class="admin-profile-wrap">
                 <button type="button" class="user-pill" id="adminProfileToggle" onclick="toggleAdminProfileDropdown()">
-                    <div class="avatar" id="adminAvatar">A</div>
+                <div class="avatar" id="adminAvatar">A</div>
                     <div><div class="fw-bold" id="adminName">admin</div><div class="small text-muted">个人中心</div></div>
                     <i class="bi bi-chevron-down text-muted"></i>
                 </button>

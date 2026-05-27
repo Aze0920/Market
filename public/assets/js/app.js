@@ -1318,8 +1318,8 @@ async function loadProfileTab(area) {
                     <div class="profile-info-row"><span>账户余额</span><strong>¥ ${Number(user.balance || 0).toFixed(2)}</strong></div>
                     <div class="profile-info-row"><span>QQ 绑定</span><strong class="${qqBound ? 'text-success' : 'text-muted'}">${qqBound ? Security.escapeHtml(user.qq_nickname || '已绑定') : '未绑定'}</strong></div>
                     <div class="mt-4 d-grid gap-2">
-                        ${qqBound ? `<button class="btn btn-outline-danger" onclick="unbindQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑 QQ</button>` : `<button class="btn btn-primary" onclick="bindQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定 QQ</button>`}
-                        <button class="btn btn-outline-primary" onclick="window.location.href='api/oauth.php?provider=qq'"><i class="bi bi-tencent-qq me-1"></i>QQ 一键登录测试</button>
+                        ${qqBound ? `<button class="btn btn-outline-danger" onclick="unbindQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑第三方账号</button>` : `<button class="btn btn-primary" onclick="bindQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定第三方账号</button>`}
+                        <button class="btn btn-outline-primary" onclick="startOAuthLogin('qq')"><i class="bi bi-tencent-qq me-1"></i>QQ 一键登录测试</button>
                     </div>
                     <div class="text-muted small mt-3">QQ 一键登录需要先绑定当前账号，未绑定的 QQ 会提示先绑定。</div>
                 </div>
@@ -1420,7 +1420,7 @@ async function changeProfilePassword() {
     document.getElementById('profileConfirmPassword').value = '';
 }
 function bindQQAccount() {
-    window.location.href = 'api/oauth.php?provider=qq&mode=bind';
+    startOAuthLogin('qq', 'bind');
 }
 async function unbindQQAccount() {
     if (!confirm('确定要解绑 QQ 吗？解绑后不能使用该 QQ 一键登录此账号。')) return;

@@ -230,6 +230,11 @@ function switchToLogin() {
     setTimeout(() => openLoginModal(), 200);
 }
 
+function startOAuthLogin(provider = 'qq', mode = '') {
+    const url = 'api/oauth.php?provider=' + encodeURIComponent(provider) + (mode ? '&mode=' + encodeURIComponent(mode) : '');
+    window.location.href = url;
+}
+
 async function handleLogin() {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value.trim();
@@ -259,10 +264,14 @@ async function handleLogin() {
         }
 
         App.setUser(result.user);
-        bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
+        bootstrap.Modal.getInstance(document.getElementById('loginModal'))?.hide();
         Toast.success(`欢迎回来，${result.user.username}！`);
         showHome();
         App.updateUnreadBadge();
+    } catch (error) {
+        const message = error && error.message ? error.message : '登录请求失败，请稍后重试';
+        setLoginError(message);
+        Toast.error(message);
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;
