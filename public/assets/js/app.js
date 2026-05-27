@@ -1427,7 +1427,7 @@ function hasConfiguredPaymentMethods() {
 function paymentMethodNeedsEmailCode(key) {
     const methods = getUserPaymentMethods();
     const item = methods[key] || {};
-    return !!(item.account || item.qrcode) && !profileSecurityUnlocked;
+    return !!(item.account || item.qrcode) && profilePaymentInitiallyConfigured && !profileSecurityUnlocked;
 }
 
 function paymentMethodVerifyHtml(key, item) {
@@ -1441,7 +1441,7 @@ function paymentMethodVerifyHtml(key, item) {
 
 function renderPaymentMethodUploadCard(key, item) {
     const hasQr = !!item.qrcode;
-    const isLocked = hasQr && !profileSecurityUnlocked;
+    const isLocked = hasQr && profilePaymentInitiallyConfigured && !profileSecurityUnlocked;
     const imageUrl = hasQr ? `${item.qrcode}${item.qrcode.includes('?') ? '&' : '?'}v=${Date.now()}` : '';
     const uploadAttrs = isLocked
         ? 'aria-disabled="true" onclick="event.preventDefault(); Toast.info(\'请输入邮箱验证码，验证成功后即可重新配置收款码。\')"'
@@ -1478,6 +1478,7 @@ async function loadProfileTab(area) {
     let adminConfigHtml = '';
     profileSecurityUnlocked = false;
     profileEmailVerifyPending = false;
+    profilePaymentInitiallyConfigured = Object.values(paymentMethods).some(item => !!(item.account || item.qrcode));
     if (isAdmin) {
         const configResult = await API.getSystemConfig();
         const config = configResult.success ? (configResult.config || {}) : {};
@@ -1598,7 +1599,7 @@ async function loadProfileTab(area) {
                             <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-2 text-primary"></i>收款方式</h6>
                             <div class="text-muted small">提现会直接使用这里配置的微信或支付宝收款信息</div>
                         </div>
-                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" ${Object.values(paymentMethods).some(item => !!(item.account || item.qrcode)) ? 'disabled title="请先输入6位邮箱验证码完成验证"' : ''}><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
+                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" ${profilePaymentInitiallyConfigured ? 'disabled title="请先输入6位邮箱验证码完成验证"' : ''}><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
                     </div>
                     <div id="paymentMethodsNotice" class="payment-methods-notice hidden mb-3"></div>
                     <div class="payment-receive-grid">
@@ -1643,6 +1644,7 @@ async function handleAvatarSelect(event) {
 
 let profileSecurityUnlocked = false;
 let profileEmailVerifyPending = false;
+let profilePaymentInitiallyConfigured = false;
 function setProfileSecurityUnlocked(unlocked) {
     profileSecurityUnlocked = !!unlocked;
     ['profileNewPassword', 'profileConfirmPassword'].forEach(id => {
@@ -1656,7 +1658,7 @@ function setProfileSecurityUnlocked(unlocked) {
     if (passwordBtn) passwordBtn.disabled = !profileSecurityUnlocked;
     const paymentBtn = document.getElementById('savePaymentMethodsBtn');
     if (paymentBtn) {
-        const needsVerify = hasConfiguredPaymentMethods();
+        const needsVerify = profilePaymentInitiallyConfigured;
         paymentBtn.disabled = needsVerify && !profileSecurityUnlocked;
         paymentBtn.title = needsVerify && !profileSecurityUnlocked ? '请先输入6位邮箱验证码完成验证' : '';
     }
@@ -1854,11 +1856,11 @@ function showPaymentMethodsNotice(message, type = 'info') {
 }
 
 async function savePaymentMethods() {
-    if (hasConfiguredPaymentMethods() && !profileSecurityUnlocked) return Toast.warning('请先输入6位邮箱验证码完成验证后再保存收款方式');
+    if (profilePaymentInitiallyConfigured && !profileSecurityUnlocked) return Toast.warning('请先输入6位邮箱验证码完成验证后再保存收款方式');
     const methods = getUserPaymentMethods();
     const currentMethods = getUserPaymentMethods();
     Object.keys(methods).forEach(key => {
-        const locked = !!(currentMethods[key]?.qrcode || currentMethods[key]?.account) && !profileSecurityUnlocked;
+        const locked = !!(currentMethods[key]?.qrcode || currentMethods[key]?.account) && profilePaymentInitiallyConfigured && !profileSecurityUnlocked;
         const account = locked ? (currentMethods[key]?.account || '') : (document.getElementById('paymentAccount_' + key)?.value.trim() || '');
         const qrcode = locked ? (currentMethods[key]?.qrcode || '') : (document.getElementById('paymentQr_' + key)?.value.trim() || '');
         methods[key].account = account;
