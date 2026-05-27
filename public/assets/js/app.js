@@ -1593,7 +1593,7 @@ async function loadProfileTab(area) {
                             <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-2 text-primary"></i>收款方式</h6>
                             <div class="text-muted small">提现会直接使用这里配置的微信或支付宝收款信息</div>
                         </div>
-                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
+                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" disabled title="请先输入6位邮箱验证码完成验证"><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
                     </div>
                     <div id="paymentMethodsNotice" class="payment-methods-notice hidden mb-3"></div>
                     <div class="payment-receive-grid">
@@ -1649,6 +1649,11 @@ function setProfileSecurityUnlocked(unlocked) {
     });
     const passwordBtn = document.getElementById('changeProfilePasswordBtn');
     if (passwordBtn) passwordBtn.disabled = !profileSecurityUnlocked;
+    const paymentBtn = document.getElementById('savePaymentMethodsBtn');
+    if (paymentBtn) {
+        paymentBtn.disabled = !profileSecurityUnlocked;
+        paymentBtn.title = profileSecurityUnlocked ? '' : '请先输入6位邮箱验证码完成验证';
+    }
     document.querySelectorAll('[id^="paymentAccount_"]').forEach(input => {
         const method = input.id.replace('paymentAccount_', '');
         const hasConfigured = !!(getUserPaymentMethods()[method]?.account || getUserPaymentMethods()[method]?.qrcode);
@@ -1672,6 +1677,7 @@ function handleProfileEmailCodeInput() {
         if (profileSecurityUnlocked) setProfileSecurityUnlocked(false);
         return;
     }
+    Toast.info('正在验证邮箱验证码...');
     verifyProfileEmailCodeAndUnlock(code);
 }
 
@@ -1685,7 +1691,8 @@ async function verifyProfileEmailCodeAndUnlock(code) {
     if (input) input.classList.remove('is-validating');
     if (!result.success) {
         setProfileSecurityUnlocked(false);
-        return Toast.error(result.message || '验证码校验失败');
+        Toast.error(result.message || '验证码校验失败，请重新输入');
+        return;
     }
     setProfileSecurityUnlocked(true);
     document.querySelectorAll('.payment-receive-card').forEach(card => {
@@ -1841,6 +1848,7 @@ function showPaymentMethodsNotice(message, type = 'info') {
 }
 
 async function savePaymentMethods() {
+    if (!profileSecurityUnlocked) return Toast.warning('请先输入6位邮箱验证码完成验证后再保存收款方式');
     const methods = getUserPaymentMethods();
     const currentMethods = getUserPaymentMethods();
     Object.keys(methods).forEach(key => {
@@ -1850,6 +1858,11 @@ async function savePaymentMethods() {
         methods[key].account = account;
         methods[key].qrcode = qrcode;
     });
+    for (const [key, item] of Object.entries(methods)) {
+        if (!item.account || !item.qrcode) {
+            return Toast.warning(`${item.label || key}需要同时填写收款账号并上传收款码图片后才能保存`);
+        }
+    }
     const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
     const btn = document.getElementById('savePaymentMethodsBtn');
     const oldHtml = btn?.innerHTML;

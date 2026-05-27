@@ -684,6 +684,12 @@ switch ($action) {
             $isLocked = ($oldAccount !== '' || $oldQrcode !== '') && !$securityUnlocked;
             $account = $isLocked ? $oldAccount : safeTrimString($item['account'] ?? '', 100);
             $qrcode = $isLocked ? $oldQrcode : safeTrimString($item['qrcode'] ?? '', 300);
+            if (($account === '') !== ($qrcode === '')) {
+                jsonResponse(['success' => false, 'message' => $label . '需同时填写收款账号并上传收款码'], 400);
+            }
+            if ($account === '' && $qrcode === '') {
+                jsonResponse(['success' => false, 'message' => $label . '收款账号和收款码不能为空'], 400);
+            }
             if (strlen($account) > 100) {
                 jsonResponse(['success' => false, 'message' => $label . '收款账号过长'], 400);
             }
@@ -726,6 +732,9 @@ switch ($action) {
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         if (!isset($allowed[$method])) {
             jsonResponse(['success' => false, 'message' => '收款方式不正确'], 400);
+        }
+        if ($incomingAccount === '') {
+            jsonResponse(['success' => false, 'message' => $allowed[$method] . '收款账号不能为空，请先填写账号/昵称'], 400);
         }
         if (strlen($incomingAccount) > 100) {
             jsonResponse(['success' => false, 'message' => $allowed[$method] . '收款账号过长'], 400);
