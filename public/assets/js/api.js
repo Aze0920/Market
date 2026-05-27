@@ -311,8 +311,13 @@ const API = {
         return this.request('finance.php?action=deposit', 'POST', { amount });
     },
 
-    requestWithdraw(amount) {
-        return this.request('finance.php?action=withdraw', 'POST', { amount });
+    requestWithdraw(amount, paymentMethod = '', paymentAccount = '', qrcodeUrl = '') {
+        return this.request('finance.php?action=withdraw', 'POST', {
+            amount,
+            payment_method: paymentMethod,
+            payment_account: paymentAccount,
+            qrcode_url: qrcodeUrl
+        });
     },
 
     getMyRequests() {
@@ -323,12 +328,12 @@ const API = {
         return this.request('finance.php?action=all_requests');
     },
 
-    approveRequest(id) {
-        return this.request('finance.php?action=approve', 'POST', { id });
+    approveRequest(id, adminNote = '') {
+        return this.request('finance.php?action=approve', 'POST', { id, admin_note: adminNote });
     },
 
-    rejectRequest(id) {
-        return this.request('finance.php?action=reject', 'POST', { id });
+    rejectRequest(id, adminNote = '') {
+        return this.request('finance.php?action=reject', 'POST', { id, admin_note: adminNote });
     },
 
     // 卡密

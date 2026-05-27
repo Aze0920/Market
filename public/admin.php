@@ -549,6 +549,14 @@ function openUserEditor(id) {
                             <i class="bi bi-arrow-counterclockwise me-1"></i>重新配置收款方式
                         </button>
                     </div>
+                    <div class="alert alert-light border py-2 small mt-3 mb-0">
+                        <label class="form-label fw-semibold mb-1"><i class="bi bi-key me-1 text-primary"></i>重置登录密码</label>
+                        <div class="input-group input-group-sm">
+                            <input id="editNewPassword" type="password" class="form-control" autocomplete="new-password" placeholder="输入新密码，留空则不修改">
+                            <button class="btn btn-outline-secondary" type="button" onclick="toggleEditUserPassword()"><i class="bi bi-eye"></i></button>
+                        </div>
+                        <div class="form-text">仅填写时才会重置，至少 6 位。</div>
+                    </div>
                 </div>
                 <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="saveUserAdmin()">保存</button></div>
             </div>
@@ -558,6 +566,11 @@ function openUserEditor(id) {
 }
 async function saveUserAdmin() {
     const roleEl = document.getElementById('editRole');
+    const newPassword = document.getElementById('editNewPassword')?.value || '';
+    if (newPassword && newPassword.length < 6) {
+        showToast('新密码至少 6 位', 'error');
+        return;
+    }
     const payload = {
         id: document.getElementById('editUserId').value,
         username: document.getElementById('editUsername').value.trim(),
@@ -566,12 +579,18 @@ async function saveUserAdmin() {
         membership_level: document.getElementById('editMembership').value,
         balance: document.getElementById('editBalance').value
     };
+    if (newPassword) payload.new_password = newPassword;
     const res = await request('admin.php?action=update_user', 'POST', payload);
     if (!res.success) return showToast(res.message || '保存失败', 'error');
-    showToast('用户信息已保存', 'success');
+    showToast(res.message || '用户信息已保存', 'success');
     bootstrap.Modal.getInstance(document.getElementById('userEditorModal'))?.hide();
     await loadAdminData();
     renderUsers();
+}
+function toggleEditUserPassword() {
+    const input = document.getElementById('editNewPassword');
+    if (!input) return;
+    input.type = input.type === 'password' ? 'text' : 'password';
 }
 async function resetUserPaymentMethodsAdmin(id) {
     const user = (Admin.cache.users || []).find(u => u.id === id);
@@ -889,9 +908,13 @@ async function updatePaymentOrderStatus(id, status) { const res = await request(
 async function deletePaymentOrderAdmin(id) { if (!confirm('确定删除这条订单吗？')) return; const res = await request('payment.php?action=delete_order', 'POST', { id }); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast('订单已删除', 'success'); await loadAdminData(); renderOrders(); }
 async function deleteUnpaidOrdersAdmin() { if (!confirm('确定删除所有未支付订单吗？包含待处理、失败、已取消订单。')) return; const res = await request('payment.php?action=delete_unpaid_orders', 'POST'); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast(res.message || '已删除未支付订单', 'success'); await loadAdminData(); renderOrders(); }
 async function deleteAllOrdersAdmin() { if (!confirm('确定删除全部支付订单吗？此操作不可恢复。')) return; const res = await request('payment.php?action=delete_all_orders', 'POST'); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast(res.message || '已删除全部订单', 'success'); await loadAdminData(); renderOrders(); }
-function renderFinance() { setTitle('充值提现'); document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>申请列表</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div>${requestTable(Admin.cache.requests || [])}</div>`; }
-function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</strong><div class="small text-muted">${money(r.amount)} · ${dateText(r.created_at)}</div></div>${statusBadge(r.status)}</div>`).join(''); }
-function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户邮箱</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td>${r.status === 'pending' ? `<button class="btn btn-sm btn-success me-1" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : '-'}</td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
+function withdrawMethodText(method) {
+    const map = { alipay: '支付宝', wechat: '微信', bank: '银行卡' };
+    return map[method] || method || '-';
+}
+function renderFinance() { setTitle('充值提现'); document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><div><h5>申请列表</h5><div class="small text-muted mt-1">提现申请会显示收款方式、账号和收款码，避免后台看不到处理信息。</div></div><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div>${requestTable(Admin.cache.requests || [])}</div>`; }
+function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</strong><div class="small text-muted">${r.id && r.id.startsWith('wd_') ? '提现' : '充值'} · ${money(r.amount)} · ${dateText(r.created_at)}</div>${r.payment_account ? `<div class="small text-muted">${escapeHtml(withdrawMethodText(r.payment_method))}：${escapeHtml(r.payment_account)}</div>` : ''}</div>${statusBadge(r.status)}</div>`).join(''); }
+function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户邮箱</th><th>类型</th><th>金额</th><th>收款信息</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}${r.actual_amount ? `<div class="small text-muted">实到 ${money(r.actual_amount)}</div>` : ''}${r.fee ? `<div class="small text-muted">手续费 ${money(r.fee)}</div>` : ''}</td><td>${r.id && r.id.startsWith('wd_') ? `<div>${escapeHtml(withdrawMethodText(r.payment_method))}</div><div class="small text-muted">${escapeHtml(r.payment_account || '-')}</div>${r.qrcode_url ? `<a class="small" href="${escapeHtml(r.qrcode_url)}" target="_blank" rel="noopener">查看收款码</a>` : '<div class="small text-danger">无收款码</div>'}` : '-'}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td>${r.status === 'pending' ? `<button class="btn btn-sm btn-success me-1" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : '-'}</td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
 async function handleRequest(id, action) { const res = await request(`finance.php?action=${action}`, 'POST', { id }); if (!res.success) return showToast(res.message || '操作失败', 'error'); showToast(res.message || '操作成功', 'success'); await loadAdminData(); }
 function renderCards() {
     setTitle('卡密管理');
@@ -1522,7 +1545,7 @@ async function saveEmailSettings() { await saveSystemConfigFields({ register_ema
 async function testEmailSettings() { const email = fieldValue('testEmailTo'); if (!email) return showToast('请输入测试收件邮箱', 'warning'); const saveRes = await request('finance.php?action=update_system_config', 'POST', { register_email_verify_enabled: checkedValue('emailVerifyEnabled'), email_provider: fieldValue('emailProvider'), resend_api_key: fieldValue('resendApiKey'), resend_from_email: fieldValue('resendFromEmail'), resend_from_name: fieldValue('resendFromName'), email_code_ttl: fieldValue('emailCodeTtl'), email_template_html: fieldValue('emailTemplateHtml'), smtp_host: fieldValue('smtpHost'), smtp_port: fieldValue('smtpPort'), smtp_username: fieldValue('smtpUsername'), smtp_password: fieldValue('smtpPassword'), smtp_secure: fieldValue('smtpSecure') }); if (!saveRes.success) return showToast(saveRes.message || '保存邮箱设置失败', 'error'); const res = await request('admin.php?action=test_email', 'POST', { email }); if (!res.success) return showToast(res.message || '测试发送失败', 'error'); showToast(res.message || '测试验证码邮件已发送', 'success'); }
 function renderReservedCaptchaSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">当前已实际接入 Cloudflare Turnstile：发送邮箱验证码每次都会强制验证；登录/注册是否验证请到“登录注册”页签分别开启。其他服务商仅保存参数，暂不启用前端校验。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用全站人机验证能力</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select" onchange="updateCaptchaProviderLink()"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3（仅保存参数）</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3（仅保存参数）</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码（仅保存参数）</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码（仅保存参数）</option></select></div><div class="col-md-8"><label class="form-label">服务商官网</label><div id="captchaProviderLink" class="config-help py-2"></div></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">已接入 Cloudflare Turnstile 和极验行为验证 v3：发送邮箱验证码每次都会强制验证；登录/注册是否验证请到“登录注册”页签分别开启。极验请填写 Captcha ID 到 Site Key，Private Key 到 Secret Key；扩展配置可填 JSON，例如 {&quot;product&quot;:&quot;bind&quot;,&quot;lang&quot;:&quot;zh-cn&quot;}。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用全站人机验证能力</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select" onchange="updateCaptchaProviderLink()"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3（仅保存参数）</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码（仅保存参数）</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码（仅保存参数）</option></select></div><div class="col-md-8"><label class="form-label">服务商官网</label><div id="captchaProviderLink" class="config-help py-2"></div></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;
     updateCaptchaProviderLink();
 }
 function captchaProviderInfo(provider) {

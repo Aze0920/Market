@@ -2239,6 +2239,7 @@ async function submitWithdraw() {
     const paymentMethod = document.getElementById('withdrawPaymentMethod').value;
     const paymentAccount = document.getElementById('withdrawAccount').value.trim();
     const qrcodeUrl = document.getElementById('withdrawQrcode').value.trim();
+    const btn = document.getElementById('submitWithdrawBtn');
     
     if (!amount || amount < minWithdrawAmount) {
         Toast.warning('提现金额不能低于 ¥' + minWithdrawAmount);
@@ -2246,7 +2247,7 @@ async function submitWithdraw() {
     }
     
     if (!paymentMethod || !paymentAccount || !qrcodeUrl) {
-        Toast.warning('请先在个人中心上传收款方式');
+        Toast.warning('请先在个人中心完整上传收款账号和收款码');
         return;
     }
     
@@ -2255,15 +2256,30 @@ async function submitWithdraw() {
         return;
     }
     
-    const result = await API.requestWithdraw(amount, paymentMethod, paymentAccount, qrcodeUrl);
-    if (result.success) {
-        Toast.success(result.message);
-        bootstrap.Modal.getInstance(document.getElementById('withdrawModal'))?.hide();
-        App.currentUser.balance -= amount;
-        App.updateNavUI();
-        renderDashboardTab('balance');
-    } else {
-        Toast.error(result.message);
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>提交中...';
+    }
+    try {
+        const result = await API.requestWithdraw(amount, paymentMethod, paymentAccount, qrcodeUrl);
+        if (result.success) {
+            Toast.success(result.message || '提现申请已提交');
+            bootstrap.Modal.getInstance(document.getElementById('withdrawModal'))?.hide();
+            if (result.request) {
+                App.currentUser.balance = Math.max(0, Number(App.currentUser.balance || 0) - amount);
+            }
+            App.updateNavUI();
+            renderDashboardTab('balance');
+        } else {
+            Toast.error(result.message || '提现申请提交失败');
+        }
+    } catch (e) {
+        Toast.error('提现申请提交失败，请检查网络或稍后重试');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '提交申请';
+        }
     }
 }
 

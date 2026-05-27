@@ -12,7 +12,7 @@ $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 function jsonResponse($data, $code = 200) {
     http_response_code($code);
-    echo json_encode($data);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 
@@ -40,7 +40,8 @@ function getCurrentUser() {
 }
 
 function sanitizeString($str) {
-    return htmlspecialchars(trim($str), ENT_QUOTES, 'UTF-8');
+    if (is_array($str) || is_object($str)) return '';
+    return htmlspecialchars(trim((string)$str), ENT_QUOTES, 'UTF-8');
 }
 
 function validateId($id) {
@@ -119,8 +120,18 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '余额不足'], 400);
         }
         
+        $paymentMethodMap = ['支付宝' => 'alipay', '微信' => 'wechat', '银行卡' => 'bank'];
+        $paymentMethod = $paymentMethodMap[$paymentMethod] ?? $paymentMethod;
         if (empty($paymentMethod) || empty($paymentAccount)) {
             jsonResponse(['success' => false, 'message' => '请选择收款方式并填写收款账号'], 400);
+        }
+
+        if (!in_array($paymentMethod, ['alipay', 'wechat', 'bank'], true)) {
+            jsonResponse(['success' => false, 'message' => '收款方式不正确，请重新选择'], 400);
+        }
+
+        if (empty($qrcodeUrl)) {
+            jsonResponse(['success' => false, 'message' => '请先上传收款码后再申请提现'], 400);
         }
 
         if (strlen($paymentAccount) > 100) {
@@ -141,10 +152,38 @@ switch ($action) {
         ];
 
         $result = $db->createWithdrawRequest($request);
+        if (!$result || empty($result['id'])) {
+            if (function_exists('apiLogRequest')) {
+                apiLogRequest('withdraw_create_failed', [
+                    'user_id' => $userId,
+                    'amount' => $amount,
+                    'payment_method' => $paymentMethod,
+                    'has_account' => $paymentAccount !== '',
+                    'has_qrcode' => $qrcodeUrl !== ''
+                ], 'ERROR');
+            }
+            jsonResponse(['success' => false, 'message' => '提现申请创建失败，请检查收款方式配置'], 500);
+        }
         
-        $db->updateUser($userId, [
+        $balanceUpdated = $db->updateUser($userId, [
             'balance' => $user['balance'] - $amount
         ]);
+        if (!$balanceUpdated) {
+            $db->updateWithdrawRequest($result['id'], [
+                'status' => 'rejected',
+                'admin_note' => '系统自动回滚：余额扣减失败',
+                'processed_by' => 'system',
+                'processed_at' => time()
+            ]);
+            if (function_exists('apiLogRequest')) {
+                apiLogRequest('withdraw_balance_update_failed', [
+                    'request_id' => $result['id'],
+                    'user_id' => $userId,
+                    'amount' => $amount
+                ], 'ERROR');
+            }
+            jsonResponse(['success' => false, 'message' => '提现申请失败：余额扣减失败，请稍后重试'], 500);
+        }
 
         jsonResponse([
             'success' => true, 
