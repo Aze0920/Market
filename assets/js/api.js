@@ -101,7 +101,7 @@ const API = {
         });
     },
 
-    async uploadPaymentQrcode(file, method = '', emailCode = '') {
+    async uploadPaymentQrcode(file, method = '', emailCode = '', account = '') {
         const options = {
             method: 'POST',
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -110,6 +110,7 @@ const API = {
         options.body.append('image', file);
         options.body.append('method', method);
         options.body.append('email_code', emailCode);
+        options.body.append('account', account);
         try {
             const response = await fetch(this.baseUrl + 'auth.php?action=upload_payment_qrcode', options);
             const text = await response.text();

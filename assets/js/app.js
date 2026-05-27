@@ -1536,7 +1536,7 @@ async function uploadPaymentQrFile(method, file) {
     const preview = document.getElementById('paymentQrPreview_' + method);
     const previousHtml = preview?.innerHTML || renderPaymentQrPlaceholder();
     if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>上传中...</span>';
-    const result = await API.uploadPaymentQrcode(file, method, emailCode);
+    const result = await API.uploadPaymentQrcode(file, method, emailCode, document.getElementById('paymentAccount_' + method)?.value.trim() || '');
     document.getElementById('paymentQrInput_' + method).value = '';
     if (!result.success) {
         const message = result.message || '上传失败';
@@ -1566,7 +1566,7 @@ async function savePaymentMethods() {
     Object.keys(methods).forEach(key => {
         const account = document.getElementById('paymentAccount_' + key)?.value.trim() || '';
         const qrcode = document.getElementById('paymentQr_' + key)?.value.trim() || '';
-        if ((currentMethods[key]?.account || currentMethods[key]?.qrcode) && (account !== currentMethods[key].account || qrcode !== currentMethods[key].qrcode)) {
+        if ((currentMethods[key]?.account || currentMethods[key]?.qrcode) && ((currentMethods[key]?.account && account !== currentMethods[key].account) || (currentMethods[key]?.qrcode && qrcode !== currentMethods[key].qrcode))) {
             changedKeys.push(key);
         }
         methods[key].account = account;

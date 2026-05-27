@@ -412,7 +412,7 @@ switch ($action) {
             if ($qrcode !== '' && !preg_match('/^(https?:\/\/|\/uploads\/payment_qrcodes\/)[^\s<>"\']+\.(png|jpe?g|gif|webp)(\?[^\s<>"\']*)?$/i', $qrcode)) {
                 jsonResponse(['success' => false, 'message' => $label . '收款码地址格式不正确'], 400);
             }
-            if (($oldAccount !== '' || $oldQrcode !== '') && ($account !== $oldAccount || $qrcode !== $oldQrcode)) {
+            if (($oldAccount !== '' || $oldQrcode !== '') && (($oldAccount !== '' && $account !== $oldAccount) || ($oldQrcode !== '' && $qrcode !== $oldQrcode))) {
                 $requiresEmailCode = true;
             }
             $methods[$key] = [
@@ -439,9 +439,13 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
         }
         $method = trim((string)($_POST['method'] ?? ''));
+        $incomingAccount = trim((string)($_POST['account'] ?? ''));
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         if (!isset($allowed[$method])) {
             jsonResponse(['success' => false, 'message' => '收款方式不正确'], 400);
+        }
+        if (strlen($incomingAccount) > 100) {
+            jsonResponse(['success' => false, 'message' => $allowed[$method] . '收款账号过长'], 400);
         }
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
         $oldItem = is_array($oldMethods[$method] ?? null) ? $oldMethods[$method] : [];
@@ -501,6 +505,9 @@ switch ($action) {
             $oldMethods[$key]['label'] = $label;
         }
         $oldMethods[$method]['qrcode'] = $url;
+        if ($incomingAccount !== '') {
+            $oldMethods[$method]['account'] = sanitizeString($incomingAccount);
+        }
         $oldMethods[$method]['updated_at'] = time();
         $ok = $db->updateUser($userId, ['payment_methods' => $oldMethods]);
         if (!$ok) {
