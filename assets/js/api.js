@@ -174,6 +174,10 @@ const API = {
         return this.request('auth.php?action=send_profile_email_code', 'POST', { captcha_token });
     },
 
+    verifyProfileEmailCode(emailCode) {
+        return this.request('auth.php?action=verify_profile_email_code', 'POST', { email_code: emailCode });
+    },
+
     changePassword(emailCode, newPassword, confirmPassword) {
         return this.request('auth.php?action=change_password', 'POST', {
             email_code: emailCode,

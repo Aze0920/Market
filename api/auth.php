@@ -651,13 +651,19 @@ switch ($action) {
         }
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
+        $code = trim($_POST['email_code'] ?? '');
+        $securityUnlocked = false;
+        if ($code !== '') {
+            verifyProfileEmailCode($user, $code, false);
+            $securityUnlocked = true;
+        }
         $methods = [];
         foreach ($allowed as $key => $label) {
             $item = is_array($decoded[$key] ?? null) ? $decoded[$key] : [];
             $oldItem = is_array($oldMethods[$key] ?? null) ? $oldMethods[$key] : [];
             $oldAccount = trim((string)($oldItem['account'] ?? ''));
             $oldQrcode = trim((string)($oldItem['qrcode'] ?? ''));
-            $isLocked = $oldQrcode !== '';
+            $isLocked = ($oldAccount !== '' || $oldQrcode !== '') && !$securityUnlocked;
             $account = $isLocked ? $oldAccount : trim((string)($item['account'] ?? ''));
             $qrcode = $isLocked ? $oldQrcode : trim((string)($item['qrcode'] ?? ''));
             if (strlen($account) > 100) {
@@ -672,10 +678,6 @@ switch ($action) {
                 'qrcode' => sanitizeString($qrcode),
                 'updated_at' => ($account !== $oldAccount || $qrcode !== $oldQrcode) ? time() : intval($oldItem['updated_at'] ?? 0)
             ];
-        }
-        $code = trim($_POST['email_code'] ?? '');
-        if ($code !== '') {
-            verifyProfileEmailCode($user, $code, false);
         }
         $ok = $db->updateUser($userId, ['payment_methods' => $methods]);
         if (!$ok) {
@@ -705,9 +707,9 @@ switch ($action) {
         }
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
         $oldItem = is_array($oldMethods[$method] ?? null) ? $oldMethods[$method] : [];
-        $hasExistingPaymentInfo = trim((string)($oldItem['qrcode'] ?? '')) !== '';
-        if ($hasExistingPaymentInfo) {
-            jsonResponse(['success' => false, 'message' => '该收款方式已锁定，不能重复上传；如需重配请联系管理员'], 400);
+        $hasExistingPaymentInfo = trim((string)($oldItem['qrcode'] ?? '')) !== '' || trim((string)($oldItem['account'] ?? '')) !== '';
+        if ($hasExistingPaymentInfo && $emailCode === '') {
+            jsonResponse(['success' => false, 'message' => '该收款方式已锁定，请先输入邮箱验证码完成解锁'], 400);
         }
         if (empty($_FILES['image'])) {
             $maxUpload = ini_get('upload_max_filesize') ?: '未知';
@@ -779,6 +781,19 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
         }
         sendProfileEmailCode($user);
+
+    case 'verify_profile_email_code':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        $code = trim($_POST['email_code'] ?? '');
+        if (!preg_match('/^\d{6}$/', $code)) {
+            jsonResponse(['success' => false, 'message' => '请输入6位邮箱验证码'], 400);
+        }
+        verifyProfileEmailCode($user, $code, false);
+        jsonResponse(['success' => true, 'message' => '验证码验证通过，已解锁可修改项']);
 
     case 'change_password':
         $userId = requireAuth();
