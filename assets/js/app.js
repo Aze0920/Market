@@ -1657,7 +1657,10 @@ async function sendProfileEmailCode() {
     }
     let result;
     try {
-        const captchaToken = await runCaptcha('email_code', true);
+        if (typeof window.runCaptcha !== 'function') {
+            throw new Error('人机验证脚本未加载，请强制刷新页面后重试');
+        }
+        const captchaToken = await window.runCaptcha('email_code', true);
         if (btn) btn.textContent = '发送中...';
         result = await API.sendProfileEmailCode(captchaToken);
     } catch (error) {
@@ -1689,6 +1692,7 @@ async function sendProfileEmailCode() {
         updateProfileEmailButton();
     }, 1000);
 }
+window.sendProfileEmailCode = sendProfileEmailCode;
 async function saveProfileInfo() {
     const username = document.getElementById('profileUsername')?.value.trim() || '';
     const email = document.getElementById('profileEmail')?.value.trim() || '';
