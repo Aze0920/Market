@@ -312,6 +312,19 @@ const API = {
         });
     },
 
+    createProductPaymentOrder(paymentConfigId, productId, quantity, payType) {
+        return this.request('payment.php?action=create_product_order', 'POST', {
+            payment_config_id: paymentConfigId,
+            product_id: productId,
+            quantity,
+            pay_type: payType
+        });
+    },
+
+    getPaymentOrderStatus(id) {
+        return this.request('payment.php?action=get_order_status&id=' + encodeURIComponent(id));
+    },
+
     getPaymentOrders() {
         return this.request('payment.php?action=get_orders');
     },

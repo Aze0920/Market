@@ -131,6 +131,102 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
     return $update;
 }
 
+function completeOnlineProductPurchase($order, $payMethod = '') {
+    global $db;
+    if (!empty($order['related_id'])) return null;
+
+    $product = $db->getProductById($order['product_id'] ?? '');
+    $buyer = $db->getUserById($order['user_id'] ?? '');
+    $quantity = max(1, intval($order['quantity'] ?? 1));
+    if (!$product || !$buyer || ($product['stock'] ?? 0) < $quantity || ($product['seller_id'] ?? '') === ($buyer['id'] ?? '')) {
+        return null;
+    }
+
+    $levels = $db->getMembershipLevels();
+    $seller = $db->getUserById($product['seller_id']);
+    $sellerLevelName = $seller ? ($seller['membership_level'] ?? 'Free') : 'Free';
+    $sellerLevel = $levels[$sellerLevelName] ?? $levels['Free'];
+    $feeRate = floatval($sellerLevel['fee_rate'] ?? 0);
+    $price = floatval($product['price']) * $quantity;
+    $sellerAmount = $price * (1 - $feeRate);
+    $fee = $price * $feeRate;
+
+    $deliveryList = [];
+    foreach ($product['account_list'] as $idx => $acc) {
+        if (empty($acc['sold'])) {
+            $delivery = $acc;
+            $delivery['account_index'] = $idx;
+            $deliveryList[] = $delivery;
+            if (count($deliveryList) >= $quantity) break;
+        }
+    }
+    if (count($deliveryList) < $quantity) return null;
+
+    foreach ($deliveryList as $delivery) {
+        $product['account_list'][$delivery['account_index']]['sold'] = true;
+    }
+    $product['stock'] -= $quantity;
+    $product['sales'] += $quantity;
+    $db->updateProduct($product);
+
+    if ($seller) {
+        $db->updateUser($seller['id'], ['balance' => floatval($seller['balance'] ?? 0) + $sellerAmount]);
+    }
+
+    $productOrder = [
+        'id' => 'id_' . time() . '_' . bin2hex(random_bytes(6)),
+        'buyer_id' => $buyer['id'],
+        'buyer_name' => sanitizeString($buyer['username']),
+        'seller_id' => $product['seller_id'],
+        'seller_name' => sanitizeString($product['seller_name']),
+        'product_id' => $product['id'],
+        'product_title' => sanitizeString($product['title']),
+        'price' => $price,
+        'unit_price' => $product['price'],
+        'quantity' => $quantity,
+        'fee' => $fee,
+        'seller_amount' => $sellerAmount,
+        'pay_method' => $payMethod ?: ($order['pay_type'] ?? ''),
+        'purchase_date' => time(),
+        'delivery_info' => [
+            'items' => array_map(function($deliveryInfo) {
+                return [
+                    'email' => $deliveryInfo['email'] ?? '',
+                    'password' => $deliveryInfo['password'] ?? '',
+                    'client_id' => $deliveryInfo['client_id'] ?? 'N/A',
+                    'fresh_token' => $deliveryInfo['fresh_token'] ?? 'N/A',
+                    'content' => $deliveryInfo['content'] ?? '',
+                    'format' => $deliveryInfo['format'] ?? 'pipe'
+                ];
+            }, $deliveryList),
+            'locked' => !empty($product['pickup_password_enabled']),
+            'password_required' => !empty($product['pickup_password_enabled'])
+        ]
+    ];
+    $db->addOrder($productOrder);
+
+    if ($seller) {
+        $db->createPaymentOrder([
+            'trade_no' => 'INC' . date('YmdHis') . rand(1000, 9999),
+            'user_id' => $seller['id'],
+            'payment_config_id' => 'balance',
+            'pay_type' => 'balance_income',
+            'amount' => $sellerAmount,
+            'actual_amount' => $sellerAmount,
+            'fee' => $fee,
+            'status' => 'paid',
+            'type' => 'product_sale_income',
+            'title' => '商品销售收入',
+            'description' => '售出商品：' . $product['title'] . ' × ' . $quantity,
+            'related_id' => $productOrder['id'],
+            'paid_at' => time()
+        ]);
+    }
+
+    $db->updatePaymentOrder($order['id'], ['related_id' => $productOrder['id'], 'fee' => $fee]);
+    return $productOrder;
+}
+
 class YiPay {
     private $config;
 
@@ -351,6 +447,67 @@ switch ($action) {
             'submit_mode' => $paymentData['submit_mode']
         ]);
 
+    case 'create_product_order':
+        $userId = requireAuth();
+        $configId = $_POST['payment_config_id'] ?? '';
+        $productId = $_POST['product_id'] ?? '';
+        $quantity = max(1, min(100, intval($_POST['quantity'] ?? 1)));
+        $payType = sanitizeString($_POST['pay_type'] ?? 'alipay');
+        $user = $db->getUserById($userId);
+
+        if (!validateId($productId)) {
+            jsonResponse(['success' => false, 'message' => '无效的商品ID'], 400);
+        }
+        $product = $db->getProductById($productId);
+        if (!$product) {
+            jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        if (($product['stock'] ?? 0) < $quantity) {
+            jsonResponse(['success' => false, 'message' => '库存不足'], 400);
+        }
+        if (($product['seller_id'] ?? '') === $userId) {
+            jsonResponse(['success' => false, 'message' => '不能购买自己的商品'], 400);
+        }
+
+        $config = $db->getPaymentConfig($configId);
+        if (!$config || empty($config['enabled'])) {
+            jsonResponse(['success' => false, 'message' => '支付方式不可用'], 400);
+        }
+        $allowedMethods = $config['pay_methods'] ?? ['alipay', 'wxpay'];
+        if (!in_array($payType, $allowedMethods, true)) {
+            jsonResponse(['success' => false, 'message' => '该接口不支持当前支付类型'], 400);
+        }
+
+        $amount = floatval($product['price']) * $quantity;
+        $fee = $amount * floatval($config['fee_rate'] ?? 0);
+        $actualAmount = $amount + $fee;
+        $order = $db->createPaymentOrder([
+            'user_id' => $userId,
+            'payment_config_id' => $configId,
+            'pay_type' => $payType,
+            'amount' => $amount,
+            'actual_amount' => $actualAmount,
+            'fee' => $fee,
+            'type' => 'product_online_purchase',
+            'product_id' => $productId,
+            'quantity' => $quantity,
+            'title' => '在线支付商品订单',
+            'description' => '购买商品：' . ($product['title'] ?? '') . ' × ' . $quantity
+        ]);
+
+        $yipay = new YiPay($config);
+        $notifyUrl = baseUrl() . '/api/payment.php?action=notify';
+        $returnUrl = baseUrl() . '/#page=dashboard&tab=orders';
+        $paymentData = $yipay->createOrder($order['trade_no'], $actualAmount, $payType, $notifyUrl, $returnUrl, '购买商品');
+
+        jsonResponse([
+            'success' => true,
+            'order' => $order,
+            'payment_url' => $paymentData['url'],
+            'payment_params' => $paymentData['params'],
+            'submit_mode' => $paymentData['submit_mode']
+        ]);
+
     case 'notify':
         $data = $_GET;
         if (empty($data['out_trade_no']) && !empty($_POST['out_trade_no'])) {
@@ -404,6 +561,8 @@ switch ($action) {
                         $db->updateUser($order['user_id'], ['membership_level' => $targetLevel]);
                     }
                 }
+            } elseif (($order['type'] ?? '') === 'product_online_purchase') {
+                completeOnlineProductPurchase($order, $order['pay_type'] ?? '');
             } else {
                 $db->updateUser($order['user_id'], [
                     'balance' => $user['balance'] + $order['amount']
@@ -413,6 +572,36 @@ switch ($action) {
 
         echo 'success';
         exit;
+
+    case 'get_order_status':
+        $userId = requireAuth();
+        $id = trim((string)($_GET['id'] ?? $_POST['id'] ?? ''));
+        if ($id === '') {
+            jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
+        }
+        expirePendingPaymentOrders();
+        $order = $db->getPaymentOrder($id);
+        if (!$order) {
+            jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
+        }
+        $user = $db->getUserById($userId);
+        if (($order['user_id'] ?? '') !== $userId && (!$user || ($user['role'] ?? '') !== 'admin')) {
+            jsonResponse(['success' => false, 'message' => '无权查看该订单'], 403);
+        }
+        jsonResponse([
+            'success' => true,
+            'order' => [
+                'id' => $order['id'] ?? '',
+                'trade_no' => $order['trade_no'] ?? '',
+                'status' => $order['status'] ?? 'pending',
+                'type' => $order['type'] ?? 'recharge',
+                'pay_type' => $order['pay_type'] ?? '',
+                'amount' => $order['amount'] ?? 0,
+                'actual_amount' => $order['actual_amount'] ?? 0,
+                'paid_at' => $order['paid_at'] ?? null,
+                'created_at' => $order['created_at'] ?? null
+            ]
+        ]);
 
     case 'get_orders':
         requireAdmin();

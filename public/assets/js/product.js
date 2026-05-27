@@ -169,6 +169,28 @@ function updatePurchaseQuantityTotal() {
     total.textContent = `合计：¥${(Number(App.currentDetailProduct.price || 0) * quantity).toFixed(2)}`;
 }
 
+let selectedPurchasePaymentValue = 'balance';
+let purchasePaymentOptions = [];
+
+function purchaseMethodLabel(type) {
+    const labels = { balance: '余额', alipay: '支付宝', wxpay: '微信', qqpay: 'QQ钱包', cashier: '聚合收银台' };
+    return labels[type] || type;
+}
+
+function purchaseMethodIcon(type) {
+    const icons = { balance: 'bi-wallet2', alipay: 'bi-alipay', wxpay: 'bi-wechat', qqpay: 'bi-chat-dots', cashier: 'bi-credit-card-2-front' };
+    return icons[type] || 'bi-credit-card';
+}
+
+function selectPurchasePaymentOption(value) {
+    const option = purchasePaymentOptions.find(item => item.value === value);
+    if (!option || option.disabled) return;
+    selectedPurchasePaymentValue = value;
+    document.querySelectorAll('.purchase-payment-option').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === value);
+    });
+}
+
 async function handleBuyNow() {
     if (!App.currentUser) {
         Toast.warning('请先登录');
@@ -192,10 +214,40 @@ async function handleBuyNow() {
     const quantity = Math.max(1, Math.min(App.currentDetailProduct.stock, parseInt(quantityInput?.value || '1', 10)));
     const totalPrice = App.currentDetailProduct.price * quantity;
 
-    if (App.currentUser.balance < totalPrice) {
-        Toast.error('余额不足，请先充值');
-        return;
+    const balanceEnough = Number(App.currentUser.balance || 0) >= totalPrice;
+    const configsResult = await API.getPaymentConfigs();
+    const onlineOptions = [];
+    if (configsResult.success && Array.isArray(configsResult.configs)) {
+        configsResult.configs
+            .filter(config => config.enabled)
+            .forEach(config => {
+                (config.pay_methods || ['alipay', 'wxpay']).forEach(method => {
+                    const value = `${config.id}|${method}`;
+                    if (!onlineOptions.some(item => item.value === value)) {
+                        onlineOptions.push({
+                            value,
+                            type: method,
+                            configId: config.id,
+                            payType: method,
+                            label: purchaseMethodLabel(method),
+                            desc: config.name || '在线支付',
+                            disabled: false
+                        });
+                    }
+                });
+            });
     }
+    purchasePaymentOptions = [
+        {
+            value: 'balance',
+            type: 'balance',
+            label: '余额',
+            desc: balanceEnough ? `可用 ¥${Number(App.currentUser.balance || 0).toFixed(2)}` : `余额不足 ¥${Number(App.currentUser.balance || 0).toFixed(2)}`,
+            disabled: !balanceEnough
+        },
+        ...onlineOptions
+    ];
+    selectedPurchasePaymentValue = purchasePaymentOptions.find(item => !item.disabled)?.value || '';
 
     const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
     document.getElementById('purchaseBody').innerHTML = `
@@ -211,11 +263,23 @@ async function handleBuyNow() {
                 <p class="text-muted small mb-0">当前余额: ¥${Security.escapeHtml(App.currentUser.balance.toFixed(2))}</p>
             </div>
         </div>
+        <div class="mt-3">
+            <div class="form-label fw-semibold mb-2">选择支付方式</div>
+            <div class="purchase-payment-options">
+                ${purchasePaymentOptions.length ? purchasePaymentOptions.map(option => `
+                    <button type="button" class="purchase-payment-option ${option.value === selectedPurchasePaymentValue ? 'active' : ''} ${option.disabled ? 'disabled' : ''}" data-value="${Security.escapeAttr(option.value)}" onclick="selectPurchasePaymentOption('${Security.escapeAttr(option.value)}')" ${option.disabled ? 'disabled' : ''}>
+                        <i class="bi ${purchaseMethodIcon(option.type)}"></i>
+                        <span>${Security.escapeHtml(option.label)}</span>
+                        <small>${Security.escapeHtml(option.desc || '')}</small>
+                    </button>
+                `).join('') : '<div class="alert alert-warning small mb-0">暂无可用支付方式</div>'}
+            </div>
+        </div>
     `;
 
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary" onclick="confirmPurchase(${quantity})">确认购买</button>
+        <button class="btn btn-primary" onclick="confirmPurchase(${quantity})" ${selectedPurchasePaymentValue ? '' : 'disabled'}>确认购买</button>
     `;
 
     modal.show();
@@ -223,6 +287,31 @@ async function handleBuyNow() {
 
 async function confirmPurchase(quantity = 1) {
     if (!App.currentDetailProduct) return;
+
+    const selectedOption = purchasePaymentOptions.find(item => item.value === selectedPurchasePaymentValue);
+    if (!selectedOption || selectedOption.disabled) {
+        Toast.warning('请选择可用的支付方式');
+        return;
+    }
+
+    if (selectedOption.value !== 'balance') {
+        const result = await API.createProductPaymentOrder(
+            selectedOption.configId,
+            App.currentDetailProduct.id,
+            quantity,
+            selectedOption.payType
+        );
+        if (!result.success) {
+            Toast.error(result.message || '创建支付订单失败');
+            return;
+        }
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        showQrPaymentModal(result, {
+            methodLabel: selectedOption.label,
+            successMessage: '支付成功，商品已发货，页面即将刷新'
+        });
+        return;
+    }
 
     const result = await API.buyProduct(App.currentDetailProduct.id, quantity);
 

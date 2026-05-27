@@ -597,6 +597,8 @@ class Database {
             'title' => $orderData['title'] ?? '',
             'description' => $orderData['description'] ?? '',
             'target_level' => $orderData['target_level'] ?? '',
+            'product_id' => $orderData['product_id'] ?? '',
+            'quantity' => $orderData['quantity'] ?? 0,
             'related_id' => $orderData['related_id'] ?? '',
             'created_at' => time(),
             'paid_at' => $orderData['paid_at'] ?? null

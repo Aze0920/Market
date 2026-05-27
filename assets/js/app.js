@@ -1742,6 +1742,79 @@ async function saveSystemConfig(options = {}) {
 
 let selectedPaymentConfig = null;
 let rechargePaymentOptions = [];
+let currentPaymentLink = '';
+let paymentPollingTimer = null;
+let paymentPollingOrderId = '';
+
+function paymentQrImageUrl(paymentUrl) {
+    return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(paymentUrl);
+}
+
+function openCurrentPaymentLink() {
+    if (currentPaymentLink) window.location.href = currentPaymentLink;
+}
+
+function stopPaymentPolling() {
+    if (paymentPollingTimer) clearInterval(paymentPollingTimer);
+    paymentPollingTimer = null;
+    paymentPollingOrderId = '';
+}
+
+function showQrPaymentModal(paymentResult, options = {}) {
+    const order = paymentResult.order || {};
+    const paymentUrl = paymentResult.payment_url || '';
+    if (!paymentUrl || !order.id) {
+        Toast.error('支付链接生成失败');
+        return;
+    }
+
+    stopPaymentPolling();
+    currentPaymentLink = paymentUrl;
+    paymentPollingOrderId = order.id;
+
+    const payType = options.payType || order.pay_type || '';
+    const amount = Number(order.actual_amount || order.amount || 0);
+    const methodEl = document.getElementById('qrPaymentMethod');
+    const amountEl = document.getElementById('qrPaymentAmount');
+    const imageEl = document.getElementById('qrPaymentImage');
+    const statusEl = document.getElementById('qrPaymentStatus');
+
+    if (methodEl) methodEl.textContent = options.methodLabel || payMethodLabel(payType);
+    if (amountEl) amountEl.textContent = '¥ ' + amount.toFixed(2);
+    if (imageEl) imageEl.src = paymentQrImageUrl(paymentUrl);
+    if (statusEl) statusEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>等待扫码支付，支付成功后会自动刷新';
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('qrPaymentModal')).show();
+    startPaymentPolling(order.id, options);
+}
+
+function startPaymentPolling(orderId, options = {}) {
+    let attempts = 0;
+    paymentPollingTimer = setInterval(async () => {
+        attempts += 1;
+        const result = await API.getPaymentOrderStatus(orderId);
+        if (!result.success || !result.order) return;
+        const status = result.order.status;
+        const statusEl = document.getElementById('qrPaymentStatus');
+        if (status === 'paid') {
+            stopPaymentPolling();
+            if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>' + (options.successMessage || '支付成功，正在刷新...');
+            Toast.success(options.successMessage || '支付成功');
+            setTimeout(() => window.location.reload(), 800);
+            return;
+        }
+        if (['failed', 'cancelled', 'unpaid'].includes(status)) {
+            stopPaymentPolling();
+            if (statusEl) statusEl.innerHTML = '<i class="bi bi-x-circle-fill text-danger me-1"></i>订单已失效，请重新发起支付';
+            Toast.error('订单已失效，请重新发起支付');
+            return;
+        }
+        if (attempts >= 120) {
+            stopPaymentPolling();
+            if (statusEl) statusEl.innerHTML = '长时间未检测到支付，可稍后刷新页面查看结果';
+        }
+    }, 3000);
+}
 
 async function openOnlineRechargeModal() {
     const result = await API.getPaymentConfigs();
@@ -1863,9 +1936,8 @@ async function submitOnlineRecharge() {
     
     const result = await API.createPaymentOrder(selectedOption.config.id, amount, selectedOption.method);
     if (result.success) {
-        window.open(result.payment_url, '_blank');
-        Toast.success('请在新窗口完成支付');
         bootstrap.Modal.getInstance(document.getElementById('onlineRechargeModal'))?.hide();
+        showQrPaymentModal(result, { payType: selectedOption.method, type: 'recharge' });
     } else {
         Toast.error(result.message);
     }
@@ -2144,8 +2216,7 @@ async function upgradeMembership(levelName) {
         const payType = selectedMembershipPayType || (selectedMembershipPaymentConfig.pay_methods || ['alipay'])[0];
         const result = await API.createMembershipPaymentOrder(selectedMembershipPaymentConfig.id, levelName, payType);
         if (result.success) {
-            window.open(result.payment_url, '_blank');
-            Toast.success('请在新窗口完成支付，支付成功后会员将自动升级');
+            showQrPaymentModal(result, { payType, type: 'membership' });
         } else {
             Toast.error(result.message);
         }

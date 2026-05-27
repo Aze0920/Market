@@ -110,6 +110,95 @@ function normalizeProductImage($image) {
     return '';
 }
 
+function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'balance') {
+    global $db;
+    $levels = $db->getMembershipLevels();
+    $seller = $db->getUserById($product['seller_id']);
+    $sellerLevelName = $seller ? ($seller['membership_level'] ?? 'Free') : 'Free';
+    $sellerLevel = $levels[$sellerLevelName] ?? $levels['Free'];
+    $feeRate = floatval($sellerLevel['fee_rate'] ?? 0);
+    $price = floatval($product['price']) * $quantity;
+    $sellerAmount = $price * (1 - $feeRate);
+    $fee = $price * $feeRate;
+
+    $deliveryList = [];
+    foreach ($product['account_list'] as $idx => $acc) {
+        if (empty($acc['sold'])) {
+            $delivery = $acc;
+            $delivery['account_index'] = $idx;
+            $deliveryList[] = $delivery;
+            if (count($deliveryList) >= $quantity) break;
+        }
+    }
+
+    if (count($deliveryList) < $quantity) {
+        return ['success' => false, 'message' => '该商品暂无足够可用账户'];
+    }
+
+    foreach ($deliveryList as $delivery) {
+        $product['account_list'][$delivery['account_index']]['sold'] = true;
+    }
+    $product['stock'] -= $quantity;
+    $product['sales'] += $quantity;
+    $db->updateProduct($product);
+
+    if ($seller) {
+        $db->updateUser($seller['id'], ['balance' => $seller['balance'] + $sellerAmount]);
+    }
+
+    $order = [
+        'id' => genId(),
+        'buyer_id' => $buyer['id'],
+        'buyer_name' => sanitizeString($buyer['username']),
+        'seller_id' => $product['seller_id'],
+        'seller_name' => sanitizeString($product['seller_name']),
+        'product_id' => $product['id'],
+        'product_title' => sanitizeString($product['title']),
+        'price' => $price,
+        'unit_price' => $product['price'],
+        'quantity' => $quantity,
+        'fee' => $fee,
+        'seller_amount' => $sellerAmount,
+        'pay_method' => $payMethod,
+        'purchase_date' => time(),
+        'delivery_info' => [
+            'items' => array_map(function($deliveryInfo) {
+                return [
+                    'email' => $deliveryInfo['email'] ?? '',
+                    'password' => $deliveryInfo['password'] ?? '',
+                    'client_id' => $deliveryInfo['client_id'] ?? 'N/A',
+                    'fresh_token' => $deliveryInfo['fresh_token'] ?? 'N/A',
+                    'content' => $deliveryInfo['content'] ?? '',
+                    'format' => $deliveryInfo['format'] ?? 'pipe'
+                ];
+            }, $deliveryList),
+            'locked' => !empty($product['pickup_password_enabled']),
+            'password_required' => !empty($product['pickup_password_enabled'])
+        ]
+    ];
+    $db->addOrder($order);
+
+    if ($seller) {
+        $db->createPaymentOrder([
+            'trade_no' => 'INC' . date('YmdHis') . rand(1000, 9999),
+            'user_id' => $seller['id'],
+            'payment_config_id' => 'balance',
+            'pay_type' => 'balance_income',
+            'amount' => $sellerAmount,
+            'actual_amount' => $sellerAmount,
+            'fee' => $fee,
+            'status' => 'paid',
+            'type' => 'product_sale_income',
+            'title' => '商品销售收入',
+            'description' => '售出商品：' . $product['title'] . ' × ' . $quantity,
+            'related_id' => $order['id'],
+            'paid_at' => time()
+        ]);
+    }
+
+    return ['success' => true, 'order' => $order, 'price' => $price, 'fee' => $fee];
+}
+
 switch ($action) {
     case 'upload_image':
         requireAuth();
@@ -419,77 +508,19 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '不能购买自己的商品'], 400);
         }
 
-        $levels = $db->getMembershipLevels();
-        $seller = $db->getUserById($product['seller_id']);
-        $sellerLevel = $levels[$seller['membership_level']] ?? $levels['Free'];
-        $feeRate = $sellerLevel['fee_rate'];
-
         $price = $product['price'] * $quantity;
         if ($user['balance'] < $price) {
             jsonResponse(['success' => false, 'message' => '余额不足'], 400);
         }
-        $sellerAmount = $price * (1 - $feeRate);
-        $fee = $price * $feeRate;
 
         $db->updateUser($userId, ['balance' => $user['balance'] - $price]);
-
-        $deliveryList = [];
-        foreach ($product['account_list'] as $idx => $acc) {
-            if (empty($acc['sold'])) {
-                $delivery = $acc;
-                $delivery['account_index'] = $idx;
-                $deliveryList[] = $delivery;
-                if (count($deliveryList) >= $quantity) {
-                    break;
-                }
-            }
+        $purchaseResult = completeProductPurchase($product, $user, $quantity, 'balance');
+        if (empty($purchaseResult['success'])) {
+            $db->updateUser($userId, ['balance' => $user['balance']]);
+            jsonResponse(['success' => false, 'message' => $purchaseResult['message'] ?? '购买失败'], 400);
         }
-
-        if (count($deliveryList) < $quantity) {
-            jsonResponse(['success' => false, 'message' => '该商品暂无足够可用账户'], 400);
-        }
-
-        foreach ($deliveryList as $delivery) {
-            $product['account_list'][$delivery['account_index']]['sold'] = true;
-        }
-        $product['stock'] -= $quantity;
-        $product['sales'] += $quantity;
-        $db->updateProduct($product);
-
-        if ($seller) {
-            $db->updateUser($seller['id'], ['balance' => $seller['balance'] + $sellerAmount]);
-        }
-
-        $order = [
-            'id' => genId(),
-            'buyer_id' => $userId,
-            'buyer_name' => sanitizeString($user['username']),
-            'seller_id' => $product['seller_id'],
-            'seller_name' => sanitizeString($product['seller_name']),
-            'product_id' => $product['id'],
-            'product_title' => sanitizeString($product['title']),
-            'price' => $price,
-            'unit_price' => $product['price'],
-            'quantity' => $quantity,
-            'fee' => $fee,
-            'seller_amount' => $sellerAmount,
-            'purchase_date' => time(),
-            'delivery_info' => [
-                'items' => array_map(function($deliveryInfo) {
-                    return [
-                        'email' => $deliveryInfo['email'] ?? '',
-                        'password' => $deliveryInfo['password'] ?? '',
-                        'client_id' => $deliveryInfo['client_id'] ?? 'N/A',
-                        'fresh_token' => $deliveryInfo['fresh_token'] ?? 'N/A',
-                        'content' => $deliveryInfo['content'] ?? '',
-                        'format' => $deliveryInfo['format'] ?? 'pipe'
-                    ];
-                }, $deliveryList),
-                'locked' => !empty($product['pickup_password_enabled']),
-                'password_required' => !empty($product['pickup_password_enabled'])
-            ]
-        ];
-        $db->addOrder($order);
+        $order = $purchaseResult['order'];
+        $fee = $purchaseResult['fee'];
         $db->createPaymentOrder([
             'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
             'user_id' => $userId,
@@ -502,26 +533,11 @@ switch ($action) {
             'type' => 'product_purchase',
             'title' => '余额支付商品订单',
             'description' => '购买商品：' . $product['title'] . ' × ' . $quantity,
+            'product_id' => $product['id'],
+            'quantity' => $quantity,
             'related_id' => $order['id'],
             'paid_at' => time()
         ]);
-        if ($seller) {
-            $db->createPaymentOrder([
-                'trade_no' => 'INC' . date('YmdHis') . rand(1000, 9999),
-                'user_id' => $seller['id'],
-                'payment_config_id' => 'balance',
-                'pay_type' => 'balance_income',
-                'amount' => $sellerAmount,
-                'actual_amount' => $sellerAmount,
-                'fee' => $fee,
-                'status' => 'paid',
-                'type' => 'product_sale_income',
-                'title' => '商品销售收入',
-                'description' => '售出商品：' . $product['title'] . ' × ' . $quantity,
-                'related_id' => $order['id'],
-                'paid_at' => time()
-            ]);
-        }
 
         jsonResponse(['success' => true, 'message' => '购买成功', 'order' => $order]);
 
