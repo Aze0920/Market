@@ -86,6 +86,16 @@ const API = {
         return this.request('auth.php?action=captcha_config');
     },
 
+    captchaDebug(step, provider = '', message = '') {
+        return this.request('auth.php?action=captcha_debug', 'POST', {
+            step,
+            provider,
+            message,
+            href: location.href,
+            ua: navigator.userAgent
+        });
+    },
+
     logout() {
         return this.request('auth.php?action=logout', 'POST');
     },

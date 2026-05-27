@@ -460,6 +460,18 @@ switch ($action) {
     case 'captcha_config':
         jsonResponse(['success' => true, 'captcha' => captchaClientConfig()]);
 
+    case 'captcha_debug':
+        $payload = [
+            'event' => 'captcha_debug',
+            'step' => substr(trim((string)($_POST['step'] ?? 'unknown')), 0, 80),
+            'provider' => substr(trim((string)($_POST['provider'] ?? '')), 0, 40),
+            'message' => substr(trim((string)($_POST['message'] ?? '')), 0, 300),
+            'href' => substr(trim((string)($_POST['href'] ?? '')), 0, 300),
+            'ua' => substr(trim((string)($_POST['ua'] ?? '')), 0, 200),
+        ];
+        apiLogRequest('info', $payload);
+        jsonResponse(['success' => true]);
+
     case 'update_profile':
         $userId = requireAuth();
         $user = $db->getUserById($userId);

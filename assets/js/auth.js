@@ -141,10 +141,21 @@ let keynestCaptchaConfig = null;
 let keynestCaptchaScriptLoading = null;
 let keynestCaptchaScriptProvider = '';
 
+function captchaDebugLog(step, provider = '', message = '') {
+    try {
+        console.info('[KeyNest Captcha]', step, provider, message || '');
+        if (window.API && typeof API.captchaDebug === 'function') {
+            API.captchaDebug(step, provider, message || '').catch(() => {});
+        }
+    } catch (error) {}
+}
+
 async function getKeynestCaptchaConfig() {
     if (keynestCaptchaConfig) return keynestCaptchaConfig;
+    captchaDebugLog('config_request_start');
     const result = await API.getCaptchaConfig();
     keynestCaptchaConfig = result.success ? (result.captcha || {}) : {};
+    captchaDebugLog('config_request_finish', keynestCaptchaConfig.provider || '', JSON.stringify({ success: !!result.success, enabled: !!keynestCaptchaConfig.enabled, has_site_key: !!keynestCaptchaConfig.site_key }));
     return keynestCaptchaConfig;
 }
 
@@ -165,9 +176,13 @@ function loadTurnstileScript() {
 }
 
 function loadGeetestScript() {
-    if (window.initGeetest) return Promise.resolve();
+    if (window.initGeetest) {
+        captchaDebugLog('geetest_script_already_loaded', 'geetest_v3');
+        return Promise.resolve();
+    }
     if (keynestCaptchaScriptLoading && keynestCaptchaScriptProvider === 'geetest_v3') return keynestCaptchaScriptLoading;
     keynestCaptchaScriptProvider = 'geetest_v3';
+    captchaDebugLog('geetest_script_load_start', 'geetest_v3');
     keynestCaptchaScriptLoading = new Promise((resolve, reject) => {
         const existing = document.querySelector('script[data-keynest-captcha="geetest_v3"]');
         if (existing) existing.remove();
@@ -175,13 +190,18 @@ function loadGeetestScript() {
         script.src = 'https://static.geetest.com/static/tools/gt.js';
         script.async = true;
         script.dataset.keynestCaptcha = 'geetest_v3';
-        const timer = window.setTimeout(() => reject(new Error('极验组件加载超时，请检查网络或浏览器拦截')), 10000);
+        const timer = window.setTimeout(() => {
+            captchaDebugLog('geetest_script_timeout', 'geetest_v3');
+            reject(new Error('极验组件加载超时，请检查网络或浏览器拦截'));
+        }, 10000);
         script.onload = () => {
             window.clearTimeout(timer);
+            captchaDebugLog('geetest_script_load_success', 'geetest_v3');
             resolve();
         };
         script.onerror = () => {
             window.clearTimeout(timer);
+            captchaDebugLog('geetest_script_load_error', 'geetest_v3');
             reject(new Error('极验组件加载失败，请检查网络或浏览器拦截'));
         };
         document.head.appendChild(script);
@@ -237,6 +257,7 @@ async function runTurnstileCaptcha(config) {
 }
 
 async function runGeetestCaptcha(config) {
+    captchaDebugLog('geetest_overlay_create', 'geetest_v3');
     const overlay = createCaptchaOverlay('<div id="keynestCaptchaWidget" class="captcha-widget"><div class="text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>正在加载极验验证...</div></div>');
     const closeOverlay = (error, reject) => {
         overlay.remove();
@@ -251,9 +272,11 @@ async function runGeetestCaptcha(config) {
             return;
         }
         if (typeof window.initGeetest !== 'function') {
+            captchaDebugLog('geetest_init_function_missing', 'geetest_v3');
             closeOverlay(new Error('极验组件未正确加载，请刷新页面重试'), reject);
             return;
         }
+        captchaDebugLog('geetest_init_start', 'geetest_v3', JSON.stringify({ has_site_key: !!config.site_key }));
         const initConfig = {
             gt: config.site_key,
             challenge: String(Date.now()),
@@ -275,17 +298,23 @@ async function runGeetestCaptcha(config) {
             window.initGeetest(initConfig, captchaObj => {
                 let ready = false;
                 const readyTimer = window.setTimeout(() => {
-                    if (!ready) closeOverlay(new Error('极验初始化超时，请检查 Captcha ID 是否正确'), reject);
+                    if (!ready) {
+                        captchaDebugLog('geetest_ready_timeout', 'geetest_v3');
+                        closeOverlay(new Error('极验初始化超时，请检查 Captcha ID 是否正确'), reject);
+                    }
                 }, 10000);
                 captchaObj.onReady(() => {
                     ready = true;
                     window.clearTimeout(readyTimer);
+                    captchaDebugLog('geetest_ready', 'geetest_v3');
                     const widget = document.getElementById('keynestCaptchaWidget');
                     if (widget) widget.innerHTML = '<div class="text-muted small py-2">请在弹出的极验窗口中完成验证</div>';
+                    captchaDebugLog('geetest_verify_call', 'geetest_v3');
                     captchaObj.verify();
                 });
                 captchaObj.onSuccess(() => {
                     window.clearTimeout(readyTimer);
+                    captchaDebugLog('geetest_success', 'geetest_v3');
                     const result = captchaObj.getValidate();
                     if (!result) {
                         closeOverlay(new Error('极验验证结果为空，请重试'), reject);
@@ -300,9 +329,13 @@ async function runGeetestCaptcha(config) {
                 });
                 captchaObj.onError(error => {
                     window.clearTimeout(readyTimer);
+                    captchaDebugLog('geetest_error', 'geetest_v3', JSON.stringify(error || {}));
                     closeOverlay(new Error((error && (error.msg || error.error_code)) || '极验加载失败，请重试'), reject);
                 });
-                captchaObj.onClose(() => closeOverlay(new Error('captcha_cancelled'), reject));
+                captchaObj.onClose(() => {
+                    captchaDebugLog('geetest_close', 'geetest_v3');
+                    closeOverlay(new Error('captcha_cancelled'), reject);
+                });
             });
         } catch (error) {
             closeOverlay(error, reject);
@@ -319,6 +352,7 @@ async function runCaptcha(context = 'default', force = false) {
         throw new Error('人机验证未配置完整，请联系管理员');
     }
     const provider = config.provider || 'turnstile';
+    captchaDebugLog('run_captcha_provider', provider, JSON.stringify({ context, force, shouldRun }));
     if (provider === 'turnstile') return runTurnstileCaptcha(config);
     if (provider === 'geetest_v3') return runGeetestCaptcha(config);
     Toast.error('当前人机验证服务商暂未接入：' + provider);

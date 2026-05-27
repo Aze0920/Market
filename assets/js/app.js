@@ -1649,6 +1649,7 @@ function updateProfileEmailButton() {
 }
 async function sendProfileEmailCode() {
     if (profileEmailCountdown > 0) return;
+    if (window.API && typeof API.captchaDebug === 'function') API.captchaDebug('profile_send_click').catch(() => {});
     const btn = document.getElementById('sendProfileEmailCodeBtn');
     const oldText = btn?.textContent || '发送验证码';
     if (btn) {
