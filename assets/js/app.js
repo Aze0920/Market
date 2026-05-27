@@ -1273,8 +1273,28 @@ function paymentMethodIcon(key) {
     return key === 'wechat' ? 'bi-wechat' : 'bi-alipay';
 }
 
+function paymentMethodNeedsEmailCode(key) {
+    const methods = getUserPaymentMethods();
+    const item = methods[key] || {};
+    return !!(item.account || item.qrcode);
+}
+
+function paymentMethodVerifyHtml(key, item) {
+    if (!item.account && !item.qrcode) return '';
+    return `
+        <div class="payment-verify-box mt-3">
+            <div class="small text-muted mb-2"><i class="bi bi-shield-lock me-1"></i>已配置过，修改账号或收款码需邮箱验证码</div>
+            <div class="input-group">
+                <input class="form-control" id="paymentEmailCode_${Security.escapeAttr(key)}" maxlength="6" placeholder="邮箱验证码">
+                <button class="btn btn-outline-primary" type="button" onclick="sendProfileEmailCode()">发送验证码</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderPaymentMethodUploadCard(key, item) {
     const hasQr = !!item.qrcode;
+    const imageUrl = hasQr ? `${item.qrcode}${item.qrcode.includes('?') ? '&' : '?'}v=${Date.now()}` : '';
     return `
         <div class="payment-receive-card" data-method="${Security.escapeAttr(key)}">
             <div class="payment-receive-head">
@@ -1283,11 +1303,12 @@ function renderPaymentMethodUploadCard(key, item) {
             </div>
             <label class="form-label mt-3">收款账号</label>
             <input class="form-control" id="paymentAccount_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.account || '')}" placeholder="填写${Security.escapeAttr(item.label)}账号/昵称">
+            ${paymentMethodVerifyHtml(key, item)}
             <label class="payment-upload-zone mt-3" for="paymentQrInput_${Security.escapeAttr(key)}" ondragover="handlePaymentQrDragOver(event)" ondragleave="handlePaymentQrDragLeave(event)" ondrop="handlePaymentQrDrop(event, '${Security.escapeAttr(key)}')">
                 <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')">
                 <input type="hidden" id="paymentQr_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.qrcode || '')}">
                 <div class="payment-upload-preview" id="paymentQrPreview_${Security.escapeAttr(key)}">
-                    ${hasQr ? `<img src="${Security.escapeAttr(item.qrcode)}" alt="${Security.escapeAttr(item.label)}收款码">` : '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>'}
+                    ${hasQr ? `<img src="${Security.escapeAttr(imageUrl)}" alt="${Security.escapeAttr(item.label)}收款码">` : '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>'}
                 </div>
             </label>
         </div>
@@ -1488,9 +1509,15 @@ function handlePaymentQrSelect(event, method) {
 
 async function uploadPaymentQrFile(method, file) {
     if (!file.type.startsWith('image/')) return Toast.warning('请选择图片文件');
+    const needsCode = paymentMethodNeedsEmailCode(method);
+    const emailCode = document.getElementById('paymentEmailCode_' + method)?.value.trim() || '';
+    if (needsCode && !emailCode) {
+        document.getElementById('paymentQrInput_' + method).value = '';
+        return Toast.warning('该收款方式已配置过，修改收款码请先填写邮箱验证码');
+    }
     const preview = document.getElementById('paymentQrPreview_' + method);
     if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>上传中...</span>';
-    const result = await API.uploadPaymentQrcode(file);
+    const result = await API.uploadPaymentQrcode(file, method, emailCode);
     if (!result.success) {
         Toast.error(result.message || '上传失败');
         if (preview) preview.innerHTML = '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>';
@@ -1498,17 +1525,27 @@ async function uploadPaymentQrFile(method, file) {
     }
     const input = document.getElementById('paymentQr_' + method);
     if (input) input.value = result.url || '';
-    if (preview) preview.innerHTML = `<img src="${Security.escapeAttr(result.url || '')}" alt="收款码">`;
+    if (preview) preview.innerHTML = `<img src="${Security.escapeAttr((result.url || '') + '?v=' + Date.now())}" alt="收款码">`;
+    if (result.user) App.setUser(result.user);
     Toast.success(result.message || '上传成功');
 }
 
 async function savePaymentMethods() {
     const methods = getUserPaymentMethods();
+    let needsCode = false;
+    const currentMethods = getUserPaymentMethods();
     Object.keys(methods).forEach(key => {
-        methods[key].account = document.getElementById('paymentAccount_' + key)?.value.trim() || '';
-        methods[key].qrcode = document.getElementById('paymentQr_' + key)?.value.trim() || '';
+        const account = document.getElementById('paymentAccount_' + key)?.value.trim() || '';
+        const qrcode = document.getElementById('paymentQr_' + key)?.value.trim() || '';
+        if ((currentMethods[key]?.account || currentMethods[key]?.qrcode) && (account !== currentMethods[key].account || qrcode !== currentMethods[key].qrcode)) {
+            needsCode = true;
+        }
+        methods[key].account = account;
+        methods[key].qrcode = qrcode;
     });
-    const result = await API.savePaymentMethods(methods);
+    const emailCode = needsCode ? (document.querySelector('[id^="paymentEmailCode_"]')?.value.trim() || '') : '';
+    if (needsCode && !emailCode) return Toast.warning('修改已配置的收款方式需要邮箱验证码');
+    const result = await API.savePaymentMethods(methods, emailCode);
     if (!result.success) return Toast.error(result.message || '保存失败');
     Toast.success(result.message || '收款方式已保存');
     if (result.user) App.setUser(result.user);

@@ -208,7 +208,7 @@ function adminRunCommand($command, $cwd = null) {
 }
 
 function adminAppVersion() {
-    return 'V1.1.0';
+    return 'V1.1.1';
 }
 
 function adminUpdaterVersion($config) {

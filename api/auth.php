@@ -134,8 +134,8 @@ function sendProfileEmailCode($user) {
     $subject = $siteName . ' 修改密码验证码';
     $html = KeyNestMailer::renderTemplate($config, [
         'site_name' => $siteName,
-        'title' => '修改密码验证码',
-        'message' => '你正在修改 ' . $siteName . ' 账号密码，请在页面中输入下面的验证码。',
+        'title' => '邮箱安全验证码',
+        'message' => '你正在进行账号安全操作，请在页面中输入下面的验证码。',
         'code' => $code,
         'ttl' => $ttl,
         'footer' => '验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请立即检查账号安全。',
@@ -396,33 +396,59 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '收款方式数据格式不正确'], 400);
         }
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
+        $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
+        $requiresEmailCode = false;
         $methods = [];
         foreach ($allowed as $key => $label) {
             $item = is_array($decoded[$key] ?? null) ? $decoded[$key] : [];
+            $oldItem = is_array($oldMethods[$key] ?? null) ? $oldMethods[$key] : [];
             $account = trim((string)($item['account'] ?? ''));
             $qrcode = trim((string)($item['qrcode'] ?? ''));
+            $oldAccount = trim((string)($oldItem['account'] ?? ''));
+            $oldQrcode = trim((string)($oldItem['qrcode'] ?? ''));
             if (strlen($account) > 100) {
                 jsonResponse(['success' => false, 'message' => $label . '收款账号过长'], 400);
             }
             if ($qrcode !== '' && !preg_match('/^(https?:\/\/|\/uploads\/payment_qrcodes\/)[^\s<>"\']+\.(png|jpe?g|gif|webp)(\?[^\s<>"\']*)?$/i', $qrcode)) {
                 jsonResponse(['success' => false, 'message' => $label . '收款码地址格式不正确'], 400);
             }
+            if (($oldAccount !== '' || $oldQrcode !== '') && ($account !== $oldAccount || $qrcode !== $oldQrcode)) {
+                $requiresEmailCode = true;
+            }
             $methods[$key] = [
                 'label' => $label,
                 'account' => sanitizeString($account),
                 'qrcode' => sanitizeString($qrcode),
-                'updated_at' => time()
+                'updated_at' => ($account !== $oldAccount || $qrcode !== $oldQrcode) ? time() : intval($oldItem['updated_at'] ?? 0)
             ];
+        }
+        if ($requiresEmailCode) {
+            verifyProfileEmailCode($user, trim($_POST['email_code'] ?? ''));
         }
         $ok = $db->updateUser($userId, ['payment_methods' => $methods]);
         if (!$ok) {
             jsonResponse(['success' => false, 'message' => '收款方式保存失败'], 500);
         }
         $updatedUser = $db->getUserById($userId);
-        jsonResponse(['success' => true, 'message' => '收款方式已保存', 'user' => safeUser($updatedUser)]);
+        jsonResponse(['success' => true, 'message' => $requiresEmailCode ? '邮箱验证通过，收款方式已更新' : '收款方式已保存', 'user' => safeUser($updatedUser)]);
 
     case 'upload_payment_qrcode':
-        requireAuth();
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        $method = trim((string)($_POST['method'] ?? ''));
+        $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
+        if (!isset($allowed[$method])) {
+            jsonResponse(['success' => false, 'message' => '收款方式不正确'], 400);
+        }
+        $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
+        $oldItem = is_array($oldMethods[$method] ?? null) ? $oldMethods[$method] : [];
+        $hasExistingPaymentInfo = trim((string)($oldItem['account'] ?? '')) !== '' || trim((string)($oldItem['qrcode'] ?? '')) !== '';
+        if ($hasExistingPaymentInfo) {
+            verifyProfileEmailCode($user, trim($_POST['email_code'] ?? ''));
+        }
         if (empty($_FILES['image']) || !is_uploaded_file($_FILES['image']['tmp_name'])) {
             jsonResponse(['success' => false, 'message' => '请选择要上传的收款码图片'], 400);
         }
@@ -439,7 +465,8 @@ switch ($action) {
         if (!isset($extMap[$mime])) {
             jsonResponse(['success' => false, 'message' => '仅支持 JPG、PNG、GIF、WEBP 图片'], 400);
         }
-        $uploadDir = dirname(__DIR__) . '/uploads/payment_qrcodes';
+        $siteRoot = is_dir(dirname(__DIR__) . '/public') ? dirname(__DIR__) . '/public' : dirname(__DIR__);
+        $uploadDir = $siteRoot . '/uploads/payment_qrcodes';
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
             jsonResponse(['success' => false, 'message' => '上传目录创建失败'], 500);
         }
@@ -448,7 +475,21 @@ switch ($action) {
         if (!move_uploaded_file($file['tmp_name'], $target)) {
             jsonResponse(['success' => false, 'message' => '保存图片失败'], 500);
         }
-        jsonResponse(['success' => true, 'url' => '/uploads/payment_qrcodes/' . $filename, 'message' => '收款码上传成功']);
+        $url = '/uploads/payment_qrcodes/' . $filename;
+        foreach ($allowed as $key => $label) {
+            if (!isset($oldMethods[$key]) || !is_array($oldMethods[$key])) {
+                $oldMethods[$key] = ['label' => $label, 'account' => '', 'qrcode' => '', 'updated_at' => 0];
+            }
+            $oldMethods[$key]['label'] = $label;
+        }
+        $oldMethods[$method]['qrcode'] = $url;
+        $oldMethods[$method]['updated_at'] = time();
+        $ok = $db->updateUser($userId, ['payment_methods' => $oldMethods]);
+        if (!$ok) {
+            jsonResponse(['success' => false, 'message' => '收款码保存失败'], 500);
+        }
+        $updatedUser = $db->getUserById($userId);
+        jsonResponse(['success' => true, 'url' => $url, 'message' => $hasExistingPaymentInfo ? '邮箱验证通过，收款码已更新' : '收款码上传成功，已自动保存', 'user' => safeUser($updatedUser)]);
 
     case 'send_profile_email_code':
         $userId = requireAuth();
