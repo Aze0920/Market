@@ -403,8 +403,9 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">提现金额</label>
-                        <input type="number" class="form-control" id="withdrawAmount" placeholder="输入提现金额" step="0.01" min="1">
+                        <input type="number" class="form-control" id="withdrawAmount" placeholder="输入提现金额" step="0.01" min="1" oninput="updateWithdrawInfo()" onblur="validateWithdrawAmount(true)">
                         <small class="text-muted" id="withdrawFeeNote"></small>
+                        <div class="invalid-feedback d-block" id="withdrawAmountError" style="display:none!important;"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">收款方式</label>

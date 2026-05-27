@@ -2197,6 +2197,7 @@ function applyWithdrawPaymentMethod() {
     if (accountInput) accountInput.value = item?.account || '';
     if (qrcodeInput) qrcodeInput.value = item?.qrcode || '';
     if (help && item) help.textContent = `将使用个人中心已上传的${item.label}收款方式`;
+    applyWithdrawButtonState();
 }
 
 async function openWithdrawModal() {
@@ -2214,11 +2215,49 @@ async function openWithdrawModal() {
     document.getElementById('withdrawPaymentMethod').value = '';
     document.getElementById('withdrawAccount').value = '';
     document.getElementById('withdrawQrcode').value = '';
-    document.getElementById('withdrawFeeNote').textContent = '';
+    document.getElementById('withdrawFeeNote').textContent = `最低 ¥${Number(minWithdrawAmount).toFixed(2)}，手续费 ${(withdrawFeeRate * 100).toFixed(1)}%`;
+    const amountInput = document.getElementById('withdrawAmount');
+    const amountError = document.getElementById('withdrawAmountError');
+    amountInput?.classList.remove('is-invalid');
+    if (amountError) {
+        amountError.textContent = '';
+        amountError.style.setProperty('display', 'none', 'important');
+    }
     selectedWithdrawPaymentMethod = '';
     renderWithdrawPaymentOptions();
+    applyWithdrawButtonState();
     
     new bootstrap.Modal(document.getElementById('withdrawModal')).show();
+}
+
+function applyWithdrawButtonState() {
+    const btn = document.getElementById('submitWithdrawBtn');
+    if (!btn) return;
+    const amount = parseFloat(document.getElementById('withdrawAmount')?.value || '0') || 0;
+    const hasMethod = !!document.getElementById('withdrawPaymentMethod')?.value;
+    const hasAccount = !!document.getElementById('withdrawAccount')?.value?.trim();
+    const hasQrcode = !!document.getElementById('withdrawQrcode')?.value?.trim();
+    btn.disabled = !amount || amount < minWithdrawAmount || amount > Number(App.currentUser?.balance || 0) || !hasMethod || !hasAccount || !hasQrcode;
+}
+
+function validateWithdrawAmount(showToast = false) {
+    const input = document.getElementById('withdrawAmount');
+    const error = document.getElementById('withdrawAmountError');
+    const amount = parseFloat(input?.value || '0') || 0;
+    let message = '';
+    if (input && input.value.trim() !== '' && amount < minWithdrawAmount) {
+        message = `最低提现金额为 ¥${Number(minWithdrawAmount).toFixed(2)}`;
+    } else if (amount > Number(App.currentUser?.balance || 0)) {
+        message = '提现金额不能超过当前可用余额';
+    }
+    if (input) input.classList.toggle('is-invalid', !!message);
+    if (error) {
+        error.textContent = message;
+        error.style.setProperty('display', message ? 'block' : 'none', 'important');
+    }
+    if (message && showToast) Toast.warning(message);
+    applyWithdrawButtonState();
+    return !message;
 }
 
 function updateWithdrawInfo() {
@@ -2227,11 +2266,14 @@ function updateWithdrawInfo() {
     
     if (amount > 0) {
         const fee = amount * withdrawFeeRate;
-        const actualAmount = amount - fee;
-        feeNote.textContent = `手续费 ¥${fee.toFixed(2)}，实到 ¥${actualAmount.toFixed(2)}`;
+        const actualAmount = Math.max(0, amount - fee);
+        feeNote.textContent = amount < minWithdrawAmount
+            ? `最低提现 ¥${Number(minWithdrawAmount).toFixed(2)}，当前输入金额不足`
+            : `手续费 ¥${fee.toFixed(2)}，实到 ¥${actualAmount.toFixed(2)}`;
     } else {
-        feeNote.textContent = `最低 ${minWithdrawAmount}元，手续费 ${(withdrawFeeRate * 100).toFixed(1)}%`;
+        feeNote.textContent = `最低 ¥${Number(minWithdrawAmount).toFixed(2)}，手续费 ${(withdrawFeeRate * 100).toFixed(1)}%`;
     }
+    validateWithdrawAmount(false);
 }
 
 async function submitWithdraw() {
@@ -2241,8 +2283,7 @@ async function submitWithdraw() {
     const qrcodeUrl = document.getElementById('withdrawQrcode').value.trim();
     const btn = document.getElementById('submitWithdrawBtn');
     
-    if (!amount || amount < minWithdrawAmount) {
-        Toast.warning('提现金额不能低于 ¥' + minWithdrawAmount);
+    if (!validateWithdrawAmount(true) || !amount || amount < minWithdrawAmount) {
         return;
     }
     
