@@ -1649,17 +1649,36 @@ function updateProfileEmailButton() {
 }
 async function sendProfileEmailCode() {
     if (profileEmailCountdown > 0) return;
+    const btn = document.getElementById('sendProfileEmailCodeBtn');
+    const oldText = btn?.textContent || '发送验证码';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '验证中...';
+    }
     let result;
     try {
         const captchaToken = await runCaptcha('email_code', true);
+        if (btn) btn.textContent = '发送中...';
         result = await API.sendProfileEmailCode(captchaToken);
     } catch (error) {
-        if (error && error.message !== 'captcha_cancelled') {
-            Toast.error(error.message || '人机验证失败，请重试');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+        if (error && error.message === 'captcha_cancelled') {
+            Toast.warning('已取消人机验证');
+        } else {
+            Toast.error(error?.message || '人机验证失败，请重试');
         }
         return;
     }
-    if (!result.success) return Toast.error(result.message || '验证码发送失败');
+    if (!result.success) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+        return Toast.error(result.message || '验证码发送失败');
+    }
     Toast.success(result.message || '验证码已发送');
     profileEmailCountdown = 60;
     updateProfileEmailButton();

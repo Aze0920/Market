@@ -64,6 +64,7 @@ function captchaClientConfig() {
         'email_code_enabled' => !empty($config['captcha_enabled']),
         'provider' => $config['captcha_provider'] ?? 'turnstile',
         'site_key' => $config['captcha_site_key'] ?? '',
+        'extra_config' => $config['captcha_extra_config'] ?? '',
     ];
 }
 
@@ -76,11 +77,50 @@ function requireCaptcha($context = 'default') {
     $provider = $config['captcha_provider'] ?? 'turnstile';
     $siteKey = trim((string)($config['captcha_site_key'] ?? ''));
     $secretKey = trim((string)($config['captcha_secret_key'] ?? ''));
-    if ($provider !== 'turnstile') {
-        jsonResponse(['success' => false, 'message' => '当前人机验证服务商暂未接入前端校验，请先在后台选择 Cloudflare Turnstile'], 400);
-    }
     if ($siteKey === '' || $secretKey === '') {
         jsonResponse(['success' => false, 'message' => '人机验证未配置完整，请联系管理员配置 Site Key 和 Secret Key'], 400);
+    }
+    if ($provider === 'geetest_v3') {
+        $token = trim((string)($_POST['captcha_token'] ?? ''));
+        $validate = json_decode($token, true);
+        if (!is_array($validate)) {
+            $validate = [
+                'geetest_challenge' => $_POST['geetest_challenge'] ?? '',
+                'geetest_validate' => $_POST['geetest_validate'] ?? '',
+                'geetest_seccode' => $_POST['geetest_seccode'] ?? '',
+            ];
+        }
+        $challenge = trim((string)($validate['geetest_challenge'] ?? ''));
+        $gtValidate = trim((string)($validate['geetest_validate'] ?? ''));
+        $seccode = trim((string)($validate['geetest_seccode'] ?? ''));
+        if ($challenge === '' || $gtValidate === '' || $seccode === '') {
+            jsonResponse(['success' => false, 'message' => '请先完成极验人机验证'], 400);
+        }
+        $payload = http_build_query([
+            'seccode' => $seccode,
+            'sdk' => 'php_' . PHP_VERSION,
+            'challenge' => $challenge,
+            'captchaid' => $siteKey,
+        ]);
+        $options = ['http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
+            'content' => $payload,
+            'timeout' => 8,
+        ]];
+        $url = 'https://api.geetest.com/validate.php';
+        $response = @file_get_contents($url, false, stream_context_create($options));
+        if ($response === false) {
+            jsonResponse(['success' => false, 'message' => '极验服务连接失败，请稍后再试'], 502);
+        }
+        $expected = md5($secretKey . 'geetest' . $challenge);
+        if (trim($response) !== $expected) {
+            jsonResponse(['success' => false, 'message' => '极验验证失败，请重新验证'], 400);
+        }
+        return true;
+    }
+    if ($provider !== 'turnstile') {
+        jsonResponse(['success' => false, 'message' => '当前人机验证服务商暂未接入：' . $provider], 400);
     }
     $token = trim((string)($_POST['captcha_token'] ?? $_POST['cf-turnstile-response'] ?? ''));
     if ($token === '') {

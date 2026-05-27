@@ -139,6 +139,7 @@
 
 let keynestCaptchaConfig = null;
 let keynestCaptchaScriptLoading = null;
+let keynestCaptchaScriptProvider = '';
 
 async function getKeynestCaptchaConfig() {
     if (keynestCaptchaConfig) return keynestCaptchaConfig;
@@ -149,7 +150,8 @@ async function getKeynestCaptchaConfig() {
 
 function loadTurnstileScript() {
     if (window.turnstile) return Promise.resolve();
-    if (keynestCaptchaScriptLoading) return keynestCaptchaScriptLoading;
+    if (keynestCaptchaScriptLoading && keynestCaptchaScriptProvider === 'turnstile') return keynestCaptchaScriptLoading;
+    keynestCaptchaScriptProvider = 'turnstile';
     keynestCaptchaScriptLoading = new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -162,34 +164,47 @@ function loadTurnstileScript() {
     return keynestCaptchaScriptLoading;
 }
 
-async function runCaptcha(context = 'default', force = false) {
-    const config = await getKeynestCaptchaConfig();
-    const shouldRun = force || (context === 'login' && config.login_enabled) || (context === 'register' && config.register_enabled) || (context === 'email_code' && config.email_code_enabled);
-    if (!shouldRun) return '';
-    if (!config.enabled || !config.site_key) {
-        Toast.error('人机验证未配置完整，请联系管理员');
-        throw new Error('captcha_not_configured');
-    }
-    if ((config.provider || 'turnstile') !== 'turnstile') {
-        Toast.error('当前仅支持 Cloudflare Turnstile，请在后台切换服务商');
-        throw new Error('captcha_provider_unsupported');
-    }
+function loadGeetestScript() {
+    if (window.initGeetest) return Promise.resolve();
+    if (keynestCaptchaScriptLoading && keynestCaptchaScriptProvider === 'geetest_v3') return keynestCaptchaScriptLoading;
+    keynestCaptchaScriptProvider = 'geetest_v3';
+    keynestCaptchaScriptLoading = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://static.geetest.com/static/tools/gt.js';
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('极验组件加载失败，请检查网络或浏览器拦截'));
+        document.head.appendChild(script);
+    });
+    return keynestCaptchaScriptLoading;
+}
+
+function captchaOverlayHtml(widgetHtml = '<div id="keynestCaptchaWidget" class="captcha-widget"></div>') {
+    return `
+        <div class="captcha-card">
+            <button type="button" class="captcha-close" aria-label="关闭">&times;</button>
+            <div class="captcha-icon"><i class="bi bi-shield-check"></i></div>
+            <h5>请先完成人机验证</h5>
+            <p>验证通过后会继续当前操作。</p>
+            ${widgetHtml}
+        </div>
+    `;
+}
+
+function createCaptchaOverlay(widgetHtml) {
+    document.getElementById('keynestCaptchaOverlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'keynestCaptchaOverlay';
+    overlay.className = 'captcha-overlay';
+    overlay.innerHTML = captchaOverlayHtml(widgetHtml);
+    document.body.appendChild(overlay);
+    return overlay;
+}
+
+async function runTurnstileCaptcha(config) {
     await loadTurnstileScript();
     return new Promise((resolve, reject) => {
-        document.getElementById('keynestCaptchaOverlay')?.remove();
-        const overlay = document.createElement('div');
-        overlay.id = 'keynestCaptchaOverlay';
-        overlay.className = 'captcha-overlay';
-        overlay.innerHTML = `
-            <div class="captcha-card">
-                <button type="button" class="captcha-close" aria-label="关闭">&times;</button>
-                <div class="captcha-icon"><i class="bi bi-shield-check"></i></div>
-                <h5>请先完成人机验证</h5>
-                <p>验证通过后会继续当前操作。</p>
-                <div id="keynestCaptchaWidget" class="captcha-widget"></div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
+        const overlay = createCaptchaOverlay('<div id="keynestCaptchaWidget" class="captcha-widget"></div>');
         const close = (error) => {
             overlay.remove();
             if (error) reject(error);
@@ -202,13 +217,85 @@ async function runCaptcha(context = 'default', force = false) {
                     overlay.remove();
                     resolve(token);
                 },
-                'error-callback': () => close(new Error('captcha_failed')),
+                'error-callback': () => close(new Error('人机验证失败，请重新验证')),
                 'expired-callback': () => Toast.warning('人机验证已过期，请重新验证')
             });
         } catch (error) {
             close(error);
         }
     });
+}
+
+async function runGeetestCaptcha(config) {
+    await loadGeetestScript();
+    return new Promise((resolve, reject) => {
+        const overlay = createCaptchaOverlay('<div id="keynestCaptchaWidget" class="captcha-widget"><div class="text-muted small py-3">正在加载极验验证...</div></div>');
+        const close = (error) => {
+            overlay.remove();
+            if (error) reject(error);
+        };
+        overlay.querySelector('.captcha-close').onclick = () => close(new Error('captcha_cancelled'));
+        const initConfig = {
+            gt: config.site_key,
+            challenge: String(Date.now()),
+            offline: false,
+            new_captcha: true,
+            product: 'bind',
+            width: '100%',
+            lang: 'zh-cn',
+            https: location.protocol === 'https:'
+        };
+        try {
+            const extra = config.extra_config ? JSON.parse(config.extra_config) : {};
+            Object.assign(initConfig, extra || {});
+        } catch (error) {
+            close(new Error('极验扩展配置不是有效 JSON'));
+            return;
+        }
+        try {
+            window.initGeetest(initConfig, captchaObj => {
+                captchaObj.onReady(() => {
+                    const widget = document.getElementById('keynestCaptchaWidget');
+                    if (widget) widget.innerHTML = '<div class="text-muted small py-2">请在弹出的极验窗口中完成验证</div>';
+                    captchaObj.verify();
+                });
+                captchaObj.onSuccess(() => {
+                    const result = captchaObj.getValidate();
+                    if (!result) {
+                        close(new Error('极验验证结果为空，请重试'));
+                        return;
+                    }
+                    overlay.remove();
+                    resolve(JSON.stringify({
+                        geetest_challenge: result.geetest_challenge || '',
+                        geetest_validate: result.geetest_validate || '',
+                        geetest_seccode: result.geetest_seccode || ''
+                    }));
+                });
+                captchaObj.onError(error => {
+                    close(new Error((error && (error.msg || error.error_code)) || '极验加载失败，请重试'));
+                });
+                captchaObj.onClose(() => close(new Error('captcha_cancelled')));
+            });
+        } catch (error) {
+            close(error);
+        }
+    });
+}
+
+async function runCaptcha(context = 'default', force = false) {
+    const config = await getKeynestCaptchaConfig();
+    const shouldRun = force || (context === 'login' && config.login_enabled) || (context === 'register' && config.register_enabled) || (context === 'email_code' && config.email_code_enabled);
+    if (!shouldRun) return '';
+    if (!config.enabled || !config.site_key) {
+        Toast.error('人机验证未配置完整，请联系管理员');
+        throw new Error('人机验证未配置完整，请联系管理员');
+    }
+    const provider = config.provider || 'turnstile';
+    if (provider === 'turnstile') return runTurnstileCaptcha(config);
+    if (provider === 'geetest_v3') return runGeetestCaptcha(config);
+    Toast.error('当前人机验证服务商暂未接入：' + provider);
+    throw new Error('当前人机验证服务商暂未接入：' + provider);
 }
 
 function setAuthMode(mode) {
