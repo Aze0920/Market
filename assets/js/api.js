@@ -87,7 +87,7 @@ const API = {
     },
 
     getGeetestRegister() {
-        return this.request('auth.php?action=geetest_register');
+        return this.request('auth.php?action=geetest_register&_=' + Date.now());
     },
 
     captchaDebug(step, provider = '', message = '') {

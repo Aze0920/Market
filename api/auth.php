@@ -473,13 +473,20 @@ switch ($action) {
         jsonResponse(['success' => true]);
 
     case 'geetest_register':
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
         $config = $db->getSystemConfig();
         if (empty($config['captcha_enabled']) || ($config['captcha_provider'] ?? '') !== 'geetest_v3') {
             jsonResponse(['success' => false, 'message' => '极验人机验证未启用'], 400);
         }
         $captchaId = trim((string)($config['captcha_site_key'] ?? ''));
+        $secretKey = trim((string)($config['captcha_secret_key'] ?? ''));
         if ($captchaId === '') {
             jsonResponse(['success' => false, 'message' => '极验 Captcha ID 未配置'], 400);
+        }
+        if ($secretKey === '') {
+            jsonResponse(['success' => false, 'message' => '极验 Secret Key 未配置'], 400);
         }
         $query = http_build_query([
             'gt' => $captchaId,
@@ -493,19 +500,26 @@ switch ($action) {
             apiLogRequest('warning', ['event' => 'geetest_register_failed', 'reason' => 'empty_response']);
             jsonResponse(['success' => false, 'message' => '极验初始化失败：无法连接 register.php'], 502);
         }
-        $challenge = trim($response);
-        if (!preg_match('/^[a-z0-9]{32}$/i', $challenge)) {
-            apiLogRequest('warning', ['event' => 'geetest_register_failed', 'reason' => 'invalid_response', 'response' => substr($challenge, 0, 120)]);
+        $rawChallenge = trim($response);
+        if (!preg_match('/^[a-z0-9]{32}$/i', $rawChallenge)) {
+            apiLogRequest('warning', ['event' => 'geetest_register_failed', 'reason' => 'invalid_response', 'response' => substr($rawChallenge, 0, 120)]);
             jsonResponse(['success' => false, 'message' => '极验初始化失败：register.php 返回异常'], 502);
         }
+        $challenge = md5($rawChallenge . $secretKey);
+        $_SESSION['geetest_raw_challenge'] = $rawChallenge;
         $_SESSION['geetest_challenge'] = $challenge;
-        apiLogRequest('info', ['event' => 'geetest_register_success', 'challenge_prefix' => substr($challenge, 0, 8)]);
+        apiLogRequest('info', [
+            'event' => 'geetest_register_success',
+            'raw_challenge_prefix' => substr($rawChallenge, 0, 8),
+            'challenge_prefix' => substr($challenge, 0, 8),
+        ]);
         jsonResponse([
             'success' => true,
             'gt' => $captchaId,
             'challenge' => $challenge,
             'new_captcha' => true,
             'offline' => false,
+            'ts' => time(),
         ]);
 
     case 'update_profile':

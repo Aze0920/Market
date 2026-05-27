@@ -284,7 +284,7 @@ async function runGeetestCaptcha(config) {
             closeOverlay(new Error(registerResult.message || '极验初始化失败'), reject);
             return;
         }
-        captchaDebugLog('geetest_register_request_success', 'geetest_v3', JSON.stringify({ has_challenge: !!registerResult.challenge }));
+        captchaDebugLog('geetest_register_request_success', 'geetest_v3', JSON.stringify({ has_challenge: !!registerResult.challenge, offline: !!registerResult.offline, ts: registerResult.ts || '' }));
         const initConfig = {
             gt: registerResult.gt || config.site_key,
             challenge: registerResult.challenge,
@@ -317,8 +317,13 @@ async function runGeetestCaptcha(config) {
                     captchaDebugLog('geetest_ready', 'geetest_v3');
                     const widget = document.getElementById('keynestCaptchaWidget');
                     if (widget) widget.innerHTML = '<div class="text-muted small py-2">请在弹出的极验窗口中完成验证</div>';
-                    captchaDebugLog('geetest_verify_call', 'geetest_v3');
-                    captchaObj.verify();
+                    captchaDebugLog('geetest_verify_call', 'geetest_v3', JSON.stringify({ gt: initConfig.gt ? 'set' : 'empty', challenge_prefix: String(initConfig.challenge || '').slice(0, 8), product: initConfig.product }));
+                    try {
+                        captchaObj.verify();
+                    } catch (verifyError) {
+                        captchaDebugLog('geetest_verify_throw', 'geetest_v3', verifyError && verifyError.message ? verifyError.message : String(verifyError));
+                        closeOverlay(new Error('极验验证弹窗打开失败，请检查极验配置'), reject);
+                    }
                 });
                 captchaObj.onSuccess(() => {
                     window.clearTimeout(readyTimer);
@@ -341,8 +346,8 @@ async function runGeetestCaptcha(config) {
                     closeOverlay(new Error((error && (error.msg || error.error_code)) || '极验加载失败，请重试'), reject);
                 });
                 captchaObj.onClose(() => {
-                    captchaDebugLog('geetest_close', 'geetest_v3');
-                    closeOverlay(new Error('已关闭极验验证，请完成验证后再发送验证码'), reject);
+                    captchaDebugLog('geetest_close', 'geetest_v3', JSON.stringify({ challenge_prefix: String(initConfig.challenge || '').slice(0, 8) }));
+                    closeOverlay(new Error('极验验证窗口已关闭或初始化失败，请重新点击发送验证码'), reject);
                 });
             });
         } catch (error) {
