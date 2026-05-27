@@ -681,7 +681,14 @@ switch ($action) {
         }
         $ok = $db->updateUser($userId, ['payment_methods' => $methods]);
         if (!$ok) {
-            jsonResponse(['success' => false, 'message' => '收款方式保存失败'], 500);
+            apiLogRequest('error', [
+                'event' => 'save_payment_methods_update_failed',
+                'user_id' => $userId,
+                'method_keys' => array_keys($methods),
+                'security_unlocked' => $securityUnlocked,
+                'has_email_code' => $code !== '',
+            ]);
+            jsonResponse(['success' => false, 'message' => '收款方式保存失败，请检查用户数据或数据库写入状态'], 500);
         }
         $updatedUser = $db->getUserById($userId);
         jsonResponse(['success' => true, 'message' => '收款方式已保存', 'user' => safeUser($updatedUser)]);

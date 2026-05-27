@@ -327,7 +327,13 @@ class Database {
         $now = time();
         $username = $table === 'users' ? ($record['username'] ?? null) : null;
         $createdAt = (int)($record['created_at'] ?? $record['purchase_date'] ?? $now);
-        $json = json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $json = json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($json === false) {
+            $json = json_encode($this->sanitizeRecordForJson($record), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        }
+        if ($json === false) {
+            return false;
+        }
 
         $stmt = $this->pdo->prepare(
             'INSERT INTO kn_records (table_name, record_id, username, data, created_at, updated_at)
@@ -335,6 +341,20 @@ class Database {
              ON DUPLICATE KEY UPDATE username = VALUES(username), data = VALUES(data), updated_at = VALUES(updated_at)'
         );
         return $stmt->execute([$table, $record['id'], $username, $json, $createdAt, $now]);
+    }
+
+    private function sanitizeRecordForJson($value) {
+        if (is_array($value)) {
+            $clean = [];
+            foreach ($value as $k => $v) {
+                $clean[$k] = $this->sanitizeRecordForJson($v);
+            }
+            return $clean;
+        }
+        if (is_string($value)) {
+            return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+        }
+        return $value;
     }
 
     private function deleteRecord($table, $id) {
