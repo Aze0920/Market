@@ -1599,7 +1599,7 @@ async function loadProfileTab(area) {
                             <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-2 text-primary"></i>收款方式</h6>
                             <div class="text-muted small">提现会直接使用这里配置的微信或支付宝收款信息</div>
                         </div>
-                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" ${profilePaymentInitiallyConfigured ? 'disabled title="请先输入6位邮箱验证码完成验证"' : ''}><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
+                        <button class="btn btn-primary ${profilePaymentInitiallyConfigured ? 'disabled' : ''}" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" aria-disabled="${profilePaymentInitiallyConfigured ? 'true' : 'false'}" ${profilePaymentInitiallyConfigured ? 'title="请先输入6位邮箱验证码完成验证"' : ''}><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
                     </div>
                     <div id="paymentMethodsNotice" class="payment-methods-notice hidden mb-3"></div>
                     <div class="payment-receive-grid">
@@ -1659,7 +1659,8 @@ function setProfileSecurityUnlocked(unlocked) {
     const paymentBtn = document.getElementById('savePaymentMethodsBtn');
     if (paymentBtn) {
         const needsVerify = profilePaymentInitiallyConfigured;
-        paymentBtn.disabled = needsVerify && !profileSecurityUnlocked;
+        paymentBtn.classList.toggle('disabled', needsVerify && !profileSecurityUnlocked);
+        paymentBtn.setAttribute('aria-disabled', needsVerify && !profileSecurityUnlocked ? 'true' : 'false');
         paymentBtn.title = needsVerify && !profileSecurityUnlocked ? '请先输入6位邮箱验证码完成验证' : '';
     }
     document.querySelectorAll('[id^="paymentAccount_"]').forEach(input => {
@@ -1798,6 +1799,8 @@ function handlePaymentQrDrop(event, method) {
     event.preventDefault();
     event.currentTarget.classList.remove('dragover');
     if (paymentMethodNeedsEmailCode(method)) return Toast.info('收款码已锁定，不能重复上传');
+    const accountValue = document.getElementById('paymentAccount_' + method)?.value.trim() || '';
+    if (!accountValue) return warnPaymentMethods('请先填写收款账号/昵称，再上传收款码图片');
     const file = event.dataTransfer?.files?.[0];
     if (file) uploadPaymentQrFile(method, file);
 }
@@ -1806,6 +1809,11 @@ function handlePaymentQrSelect(event, method) {
     if (paymentMethodNeedsEmailCode(method)) {
         if (event.target) event.target.value = '';
         return Toast.info('收款码已锁定，不能重复上传');
+    }
+    const accountValue = document.getElementById('paymentAccount_' + method)?.value.trim() || '';
+    if (!accountValue) {
+        if (event.target) event.target.value = '';
+        return warnPaymentMethods('请先填写收款账号/昵称，再上传收款码图片');
     }
     const file = event.target?.files?.[0];
     if (file) uploadPaymentQrFile(method, file);
@@ -1832,11 +1840,12 @@ async function uploadPaymentQrFile(method, file) {
     const preview = document.getElementById('paymentQrPreview_' + method);
     const previousHtml = preview?.innerHTML || renderPaymentQrPlaceholder();
     if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>上传中...</span>';
-    const result = await API.uploadPaymentQrcode(file, method, emailCode, document.getElementById('paymentAccount_' + method)?.value.trim() || '');
+    const result = await API.uploadPaymentQrcode(file, method, emailCode, accountValue);
     document.getElementById('paymentQrInput_' + method).value = '';
     if (!result.success) {
         const message = result.message || '上传失败';
         Toast.error(message);
+        showPaymentMethodsNotice(message, 'error');
         if (preview) preview.innerHTML = renderPaymentQrError(message, previousHtml);
         return;
     }
@@ -1855,8 +1864,15 @@ function showPaymentMethodsNotice(message, type = 'info') {
     box.innerHTML = `<i class="bi ${icon}"></i><span>${Security.escapeHtml(message)}</span>`;
 }
 
+function warnPaymentMethods(message) {
+    showPaymentMethodsNotice(message, 'error');
+    Toast.warning(message);
+}
+
 async function savePaymentMethods() {
-    if (profilePaymentInitiallyConfigured && !profileSecurityUnlocked) return Toast.warning('请先输入6位邮箱验证码完成验证后再保存收款方式');
+    if (profilePaymentInitiallyConfigured && !profileSecurityUnlocked) {
+        return warnPaymentMethods('请先输入6位邮箱验证码完成验证后再保存收款方式');
+    }
     const methods = getUserPaymentMethods();
     const currentMethods = getUserPaymentMethods();
     Object.keys(methods).forEach(key => {
@@ -1868,20 +1884,22 @@ async function savePaymentMethods() {
     });
     for (const [key, item] of Object.entries(methods)) {
         if (!item.account || !item.qrcode) {
-            return Toast.warning(`${item.label || key}需要同时填写收款账号并上传收款码图片后才能保存`);
+            return warnPaymentMethods(`${item.label || key}需要同时填写收款账号并上传收款码图片后才能保存`);
         }
     }
     const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
     const btn = document.getElementById('savePaymentMethodsBtn');
     const oldHtml = btn?.innerHTML;
     if (btn) {
-        btn.disabled = true;
+        btn.classList.add('disabled');
+        btn.setAttribute('aria-disabled', 'true');
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>保存中...';
     }
     showPaymentMethodsNotice('正在保存收款方式...', 'info');
     const result = await API.savePaymentMethods(methods, emailCode);
     if (btn) {
-        btn.disabled = false;
+        btn.classList.remove('disabled');
+        btn.setAttribute('aria-disabled', 'false');
         btn.innerHTML = oldHtml;
     }
     if (!result.success) {
