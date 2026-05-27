@@ -1419,6 +1419,11 @@ function paymentMethodIcon(key) {
     return key === 'wechat' ? 'bi-wechat' : 'bi-alipay';
 }
 
+function hasConfiguredPaymentMethods() {
+    const methods = getUserPaymentMethods();
+    return Object.values(methods).some(item => !!(item.account || item.qrcode));
+}
+
 function paymentMethodNeedsEmailCode(key) {
     const methods = getUserPaymentMethods();
     const item = methods[key] || {};
@@ -1593,7 +1598,7 @@ async function loadProfileTab(area) {
                             <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-2 text-primary"></i>收款方式</h6>
                             <div class="text-muted small">提现会直接使用这里配置的微信或支付宝收款信息</div>
                         </div>
-                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" disabled title="请先输入6位邮箱验证码完成验证"><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
+                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" ${Object.values(paymentMethods).some(item => !!(item.account || item.qrcode)) ? 'disabled title="请先输入6位邮箱验证码完成验证"' : ''}><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
                     </div>
                     <div id="paymentMethodsNotice" class="payment-methods-notice hidden mb-3"></div>
                     <div class="payment-receive-grid">
@@ -1651,8 +1656,9 @@ function setProfileSecurityUnlocked(unlocked) {
     if (passwordBtn) passwordBtn.disabled = !profileSecurityUnlocked;
     const paymentBtn = document.getElementById('savePaymentMethodsBtn');
     if (paymentBtn) {
-        paymentBtn.disabled = !profileSecurityUnlocked;
-        paymentBtn.title = profileSecurityUnlocked ? '' : '请先输入6位邮箱验证码完成验证';
+        const needsVerify = hasConfiguredPaymentMethods();
+        paymentBtn.disabled = needsVerify && !profileSecurityUnlocked;
+        paymentBtn.title = needsVerify && !profileSecurityUnlocked ? '请先输入6位邮箱验证码完成验证' : '';
     }
     document.querySelectorAll('[id^="paymentAccount_"]').forEach(input => {
         const method = input.id.replace('paymentAccount_', '');
@@ -1848,7 +1854,7 @@ function showPaymentMethodsNotice(message, type = 'info') {
 }
 
 async function savePaymentMethods() {
-    if (!profileSecurityUnlocked) return Toast.warning('请先输入6位邮箱验证码完成验证后再保存收款方式');
+    if (hasConfiguredPaymentMethods() && !profileSecurityUnlocked) return Toast.warning('请先输入6位邮箱验证码完成验证后再保存收款方式');
     const methods = getUserPaymentMethods();
     const currentMethods = getUserPaymentMethods();
     Object.keys(methods).forEach(key => {
