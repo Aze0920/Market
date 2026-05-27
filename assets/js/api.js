@@ -113,11 +113,17 @@ const API = {
         try {
             const response = await fetch(this.baseUrl + 'auth.php?action=upload_payment_qrcode', options);
             const text = await response.text();
-            const result = text ? JSON.parse(text) : {};
-            return response.ok ? result : { success: false, message: result.message || '上传失败' };
+            let result = {};
+            try {
+                result = text ? JSON.parse(text) : {};
+            } catch (parseError) {
+                const preview = text ? text.slice(0, 300) : '空响应';
+                return { success: false, message: `服务器返回异常（HTTP ${response.status}）：${preview}` };
+            }
+            return response.ok ? result : { success: false, message: result.message || `上传失败（HTTP ${response.status}）`, ...result };
         } catch (error) {
             console.error('Payment QR Upload Error:', error);
-            return { success: false, message: '收款码上传失败，请稍后重试' };
+            return { success: false, message: '收款码上传失败，请检查网络或服务器状态：' + (error.message || error) };
         }
     },
 

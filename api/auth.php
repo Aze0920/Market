@@ -449,12 +449,26 @@ switch ($action) {
         if ($hasExistingPaymentInfo) {
             verifyProfileEmailCode($user, trim($_POST['email_code'] ?? ''));
         }
-        if (empty($_FILES['image']) || !is_uploaded_file($_FILES['image']['tmp_name'])) {
+        if (empty($_FILES['image'])) {
+            $maxUpload = ini_get('upload_max_filesize') ?: '未知';
+            $maxPost = ini_get('post_max_size') ?: '未知';
+            jsonResponse(['success' => false, 'message' => '没有收到图片文件，可能超过服务器上传限制（upload_max_filesize=' . $maxUpload . '，post_max_size=' . $maxPost . '）'], 400);
+        }
+        if (!is_uploaded_file($_FILES['image']['tmp_name'] ?? '')) {
             jsonResponse(['success' => false, 'message' => '请选择要上传的收款码图片'], 400);
         }
         $file = $_FILES['image'];
         if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
-            jsonResponse(['success' => false, 'message' => '图片上传失败'], 400);
+            $uploadErrors = [
+                UPLOAD_ERR_INI_SIZE => '图片超过服务器 upload_max_filesize 限制',
+                UPLOAD_ERR_FORM_SIZE => '图片超过表单限制',
+                UPLOAD_ERR_PARTIAL => '图片只上传了一部分，请重试',
+                UPLOAD_ERR_NO_FILE => '没有选择图片文件',
+                UPLOAD_ERR_NO_TMP_DIR => '服务器缺少临时上传目录',
+                UPLOAD_ERR_CANT_WRITE => '服务器临时目录写入失败',
+                UPLOAD_ERR_EXTENSION => '上传被服务器扩展拦截',
+            ];
+            jsonResponse(['success' => false, 'message' => $uploadErrors[$file['error']] ?? '图片上传失败，错误码：' . $file['error']], 400);
         }
         if (($file['size'] ?? 0) <= 0 || $file['size'] > 2 * 1024 * 1024) {
             jsonResponse(['success' => false, 'message' => '图片大小不能超过2MB'], 400);
@@ -468,13 +482,17 @@ switch ($action) {
         $siteRoot = is_dir(dirname(__DIR__) . '/public') ? dirname(__DIR__) . '/public' : dirname(__DIR__);
         $uploadDir = $siteRoot . '/uploads/payment_qrcodes';
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
-            jsonResponse(['success' => false, 'message' => '上传目录创建失败'], 500);
+            jsonResponse(['success' => false, 'message' => '上传目录创建失败：' . $uploadDir], 500);
+        }
+        if (!is_writable($uploadDir)) {
+            jsonResponse(['success' => false, 'message' => '上传目录不可写，请检查服务器目录权限：' . $uploadDir], 500);
         }
         $filename = 'payqr_' . date('YmdHis') . '_' . bin2hex(random_bytes(6)) . '.' . $extMap[$mime];
         $target = $uploadDir . '/' . $filename;
         if (!move_uploaded_file($file['tmp_name'], $target)) {
-            jsonResponse(['success' => false, 'message' => '保存图片失败'], 500);
+            jsonResponse(['success' => false, 'message' => '保存图片失败，请检查上传目录权限或磁盘空间'], 500);
         }
+        @chmod($target, 0644);
         $url = '/uploads/payment_qrcodes/' . $filename;
         foreach ($allowed as $key => $label) {
             if (!isset($oldMethods[$key]) || !is_array($oldMethods[$key])) {

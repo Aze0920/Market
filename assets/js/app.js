@@ -1383,7 +1383,6 @@ async function loadProfileTab(area) {
                     <div class="profile-info-row"><span>QQ 绑定</span><strong class="${qqBound ? 'text-success' : 'text-muted'}">${qqBound ? Security.escapeHtml(user.qq_nickname || '已绑定') : '未绑定'}</strong></div>
                     <div class="mt-4 d-grid gap-2">
                         ${qqBound ? `<button class="btn btn-outline-danger" onclick="unbindQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑第三方账号</button>` : `<button class="btn btn-primary" onclick="bindQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定第三方账号</button>`}
-                        <button class="btn btn-outline-primary" onclick="startOAuthLogin('qq')"><i class="bi bi-tencent-qq me-1"></i>QQ 一键登录测试</button>
                     </div>
                 </div>
             </div>
@@ -1507,8 +1506,18 @@ function handlePaymentQrSelect(event, method) {
     if (file) uploadPaymentQrFile(method, file);
 }
 
+function renderPaymentQrPlaceholder() {
+    return '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>';
+}
+
+function renderPaymentQrError(message, previousHtml = '') {
+    const retry = previousHtml ? '<div class="small text-muted mt-2">可重新选择图片再试</div>' : '<div class="small text-muted mt-2">请检查图片格式、大小或稍后重试</div>';
+    return `<div class="payment-upload-error"><i class="bi bi-exclamation-triangle"></i><strong>上传失败</strong><span>${Security.escapeHtml(message || '未知错误')}</span>${retry}</div>`;
+}
+
 async function uploadPaymentQrFile(method, file) {
     if (!file.type.startsWith('image/')) return Toast.warning('请选择图片文件');
+    if (file.size > 2 * 1024 * 1024) return Toast.warning('图片大小不能超过2MB');
     const needsCode = paymentMethodNeedsEmailCode(method);
     const emailCode = document.getElementById('paymentEmailCode_' + method)?.value.trim() || '';
     if (needsCode && !emailCode) {
@@ -1516,11 +1525,14 @@ async function uploadPaymentQrFile(method, file) {
         return Toast.warning('该收款方式已配置过，修改收款码请先填写邮箱验证码');
     }
     const preview = document.getElementById('paymentQrPreview_' + method);
+    const previousHtml = preview?.innerHTML || renderPaymentQrPlaceholder();
     if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>上传中...</span>';
     const result = await API.uploadPaymentQrcode(file, method, emailCode);
+    document.getElementById('paymentQrInput_' + method).value = '';
     if (!result.success) {
-        Toast.error(result.message || '上传失败');
-        if (preview) preview.innerHTML = '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>';
+        const message = result.message || '上传失败';
+        Toast.error(message);
+        if (preview) preview.innerHTML = renderPaymentQrError(message, previousHtml);
         return;
     }
     const input = document.getElementById('paymentQr_' + method);

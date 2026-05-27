@@ -207,6 +207,16 @@ class Database {
         return is_array($config) ? $config : [];
     }
 
+    private function normalizeMembershipInteger($value, $default = 1, $min = 0, $max = 999999) {
+        if ($value === null || $value === '') {
+            return $default;
+        }
+        if (!is_numeric($value)) {
+            return $default;
+        }
+        return max($min, min($max, intval($value)));
+    }
+
     private function normalizeMembershipLevel($level) {
         $name = trim((string)($level['name'] ?? ''));
         if ($name === '') {
@@ -215,9 +225,9 @@ class Database {
         return [
             'name' => substr($name, 0, 50),
             'description' => substr(trim((string)($level['description'] ?? '')), 0, 255),
-            'max_accounts_per_product' => max(0, min(999999, intval($level['max_accounts_per_product'] ?? 1))),
-            'max_products' => max(0, min(999999, intval($level['max_products'] ?? 1))),
-            'priority' => max(0, min(999999, intval($level['priority'] ?? 0))),
+            'max_accounts_per_product' => $this->normalizeMembershipInteger($level['max_accounts_per_product'] ?? null, 1),
+            'max_products' => $this->normalizeMembershipInteger($level['max_products'] ?? null, 1),
+            'priority' => $this->normalizeMembershipInteger($level['priority'] ?? null, 0),
             'fee_rate' => max(0, min(1, floatval($level['fee_rate'] ?? 0))),
             'cost' => max(0, floatval($level['cost'] ?? 0)),
             'publish_fee_per_account' => max(0, floatval($level['publish_fee_per_account'] ?? 0)),

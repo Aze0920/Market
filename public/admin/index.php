@@ -1059,8 +1059,8 @@ function membershipLevelRow(level = {}, index = 0) {
                 <input type="hidden" class="ml-priority" value="${Number(level.priority || index)}">
                 <input type="hidden" class="ml-cost" value="${Number(level.cost || 0)}">
                 <input type="hidden" class="ml-icon" value="${icon}">
-                <input type="hidden" class="ml-max-accounts" value="${Number(level.max_accounts_per_product || 1)}">
-                <input type="hidden" class="ml-max-products" value="${Number(level.max_products || 1)}">
+                <input type="hidden" class="ml-max-accounts" value="${level.max_accounts_per_product === undefined || level.max_accounts_per_product === null || level.max_accounts_per_product === '' ? 1 : Number(level.max_accounts_per_product)}">
+                <input type="hidden" class="ml-max-products" value="${level.max_products === undefined || level.max_products === null || level.max_products === '' ? 1 : Number(level.max_products)}">
                 <input type="hidden" class="ml-fee-rate" value="${feeRate}">
                 <input type="hidden" class="ml-publish-fee" value="${Number(level.publish_fee_per_account || 0)}">
                 <input type="hidden" class="ml-gradient" value="${gradient}">
@@ -1146,17 +1146,31 @@ function deleteMembershipLevelByIndex(index) {
     bootstrap.Modal.getInstance(document.getElementById('membershipLevelEditorModal'))?.hide();
     deleteMembershipLevelRow(row, name);
 }
+function toIntInputValue(value, fallback = 0) {
+    const text = String(value ?? '').trim();
+    if (text === '') return fallback;
+    const number = parseInt(text, 10);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+function toFloatInputValue(value, fallback = 0) {
+    const text = String(value ?? '').trim();
+    if (text === '') return fallback;
+    const number = parseFloat(text);
+    return Number.isFinite(number) ? number : fallback;
+}
+
 function collectMembershipLevels() {
     return Array.from(document.querySelectorAll('.membership-level-row')).map(row => ({
         name: row.querySelector('.ml-name').value.trim(),
         description: row.querySelector('.ml-description').value.trim(),
-        priority: parseInt(row.querySelector('.ml-priority').value || '0', 10),
-        cost: parseFloat(row.querySelector('.ml-cost').value || '0'),
+        priority: toIntInputValue(row.querySelector('.ml-priority').value, 0),
+        cost: toFloatInputValue(row.querySelector('.ml-cost').value, 0),
         icon: row.querySelector('.ml-icon').value.trim(),
-        max_accounts_per_product: parseInt(row.querySelector('.ml-max-accounts').value || '1', 10),
-        max_products: parseInt(row.querySelector('.ml-max-products').value || '1', 10),
-        fee_rate: (parseFloat(row.querySelector('.ml-fee-rate').value || '0') / 100),
-        publish_fee_per_account: parseFloat(row.querySelector('.ml-publish-fee').value || '0'),
+        max_accounts_per_product: Math.max(0, toIntInputValue(row.querySelector('.ml-max-accounts').value, 1)),
+        max_products: Math.max(0, toIntInputValue(row.querySelector('.ml-max-products').value, 1)),
+        fee_rate: (toFloatInputValue(row.querySelector('.ml-fee-rate').value, 0) / 100),
+        publish_fee_per_account: Math.max(0, toFloatInputValue(row.querySelector('.ml-publish-fee').value, 0)),
         gradient: row.querySelector('.ml-gradient').value.trim(),
         enabled: row.querySelector('.ml-enabled').checked,
         can_upgrade: row.querySelector('.ml-can-upgrade').checked

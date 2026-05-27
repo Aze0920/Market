@@ -1843,6 +1843,32 @@ a:hover {
     background: #fff;
 }
 
+.payment-upload-error {
+    min-height: 178px;
+    width: 100%;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    color: #b91c1c;
+    background: #fef2f2;
+    text-align: center;
+    word-break: break-word;
+}
+
+.payment-upload-error i {
+    color: #dc2626;
+    font-size: 1.8rem;
+}
+
+.payment-upload-error span {
+    max-width: 100%;
+    font-size: .88rem;
+    font-weight: 600;
+}
+
 .payment-verify-box {
     border: 1px solid #dbeafe;
     background: #f8fbff;
