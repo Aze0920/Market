@@ -94,7 +94,23 @@ function requireCaptcha($context = 'default') {
         $gtValidate = trim((string)($validate['geetest_validate'] ?? ''));
         $seccode = trim((string)($validate['geetest_seccode'] ?? ''));
         if ($challenge === '' || $gtValidate === '' || $seccode === '') {
+            apiLogRequest('warning', [
+                'event' => 'geetest_verify_missing_fields',
+                'has_challenge' => $challenge !== '',
+                'has_validate' => $gtValidate !== '',
+                'has_seccode' => $seccode !== '',
+            ]);
             jsonResponse(['success' => false, 'message' => '请先完成极验人机验证'], 400);
+        }
+        $expectedValidate = md5($secretKey . 'geetest' . $challenge);
+        if (!hash_equals($expectedValidate, $gtValidate)) {
+            apiLogRequest('warning', [
+                'event' => 'geetest_validate_mismatch',
+                'challenge_prefix' => substr($challenge, 0, 8),
+                'expected_prefix' => substr($expectedValidate, 0, 8),
+                'actual_prefix' => substr($gtValidate, 0, 8),
+            ]);
+            jsonResponse(['success' => false, 'message' => '极验验证参数异常，请重新验证'], 400);
         }
         $payload = http_build_query([
             'seccode' => $seccode,
@@ -111,12 +127,21 @@ function requireCaptcha($context = 'default') {
         $url = 'https://api.geetest.com/validate.php';
         $response = @file_get_contents($url, false, stream_context_create($options));
         if ($response === false) {
+            apiLogRequest('warning', ['event' => 'geetest_validate_request_failed']);
             jsonResponse(['success' => false, 'message' => '极验服务连接失败，请稍后再试'], 502);
         }
-        $expected = md5($secretKey . 'geetest' . $challenge);
-        if (trim($response) !== $expected) {
+        $responseText = trim((string)$response);
+        $expectedResponse = md5($seccode);
+        if (!hash_equals($expectedResponse, $responseText)) {
+            apiLogRequest('warning', [
+                'event' => 'geetest_seccode_mismatch',
+                'challenge_prefix' => substr($challenge, 0, 8),
+                'response_prefix' => substr($responseText, 0, 16),
+                'expected_prefix' => substr($expectedResponse, 0, 16),
+            ]);
             jsonResponse(['success' => false, 'message' => '极验验证失败，请重新验证'], 400);
         }
+        apiLogRequest('info', ['event' => 'geetest_verify_success', 'challenge_prefix' => substr($challenge, 0, 8)]);
         return true;
     }
     if ($provider !== 'turnstile') {

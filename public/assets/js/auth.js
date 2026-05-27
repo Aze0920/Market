@@ -211,11 +211,8 @@ function loadGeetestScript() {
 
 function captchaOverlayHtml(widgetHtml = '<div id="keynestCaptchaWidget" class="captcha-widget"></div>') {
     return `
-        <div class="captcha-card">
+        <div class="captcha-card captcha-card-minimal">
             <button type="button" class="captcha-close" aria-label="关闭">&times;</button>
-            <div class="captcha-icon"><i class="bi bi-shield-check"></i></div>
-            <h5>请先完成人机验证</h5>
-            <p>验证通过后会继续当前操作。</p>
             ${widgetHtml}
         </div>
     `;
