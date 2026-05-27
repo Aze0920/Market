@@ -110,6 +110,7 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
     $enabled = isset($_POST['enabled']) ? filter_var($_POST['enabled'], FILTER_VALIDATE_BOOLEAN) : true;
     $payMethods = getPayMethodsFromRequest();
     $submitMode = sanitizeString($_POST['submit_mode'] ?? 'url_redirect');
+    $apiMode = sanitizeString($_POST['api_mode'] ?? 'submit_page');
     $sortOrder = intval($_POST['sort_order'] ?? 0);
 
     if ($type !== 'yipay') {
@@ -124,6 +125,9 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
     if (!in_array($submitMode, ['url_redirect', 'form_post'], true)) {
         $submitMode = 'url_redirect';
     }
+    if (!in_array($apiMode, ['submit_page', 'mapi_qr'], true)) {
+        $apiMode = 'submit_page';
+    }
 
     $update = [
         'name' => $name,
@@ -134,6 +138,7 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
         'enabled' => $enabled,
         'pay_methods' => $payMethods,
         'submit_mode' => $submitMode,
+        'api_mode' => $apiMode,
         'sort_order' => $sortOrder
     ];
 
@@ -290,6 +295,9 @@ class YiPay {
 
     private function createApiOrder($params) {
         $result = ['payment_url' => '', 'qrcode_url' => '', 'qrcode_content' => ''];
+        if (($this->config['api_mode'] ?? 'submit_page') !== 'mapi_qr') {
+            return $result;
+        }
         $apiUrl = normalizeApiUrl($this->config['api_url']) . 'mapi.php';
         $payload = http_build_query($params);
         $context = stream_context_create([
@@ -310,9 +318,53 @@ class YiPay {
             return $result;
         }
         $result['payment_url'] = $this->firstUrl($data, ['payurl', 'payment_url', 'url', 'jump_url', 'trade_url', 'pay_url']);
-        $result['qrcode_url'] = $this->firstUrl($data, ['qrcode', 'qr_code', 'qrcode_url', 'code_img_url', 'img', 'image', 'qrimg', 'qr_img']);
-        $result['qrcode_content'] = $this->firstString($data, ['code_url', 'qr_code_url', 'qrcode_content', 'payinfo', 'pay_info']);
+        $result['qrcode_url'] = $this->firstImageUrl($data, ['qrcode', 'qr_code', 'qrcode_url', 'code_img_url', 'img', 'image', 'qrimg', 'qr_img']);
+        $result['qrcode_content'] = $this->firstQrContent($data, ['code_url', 'qr_code_url', 'qrcode_content', 'payinfo', 'pay_info', 'qrcode', 'qr_code', 'payurl', 'pay_url']);
         return $result;
+    }
+
+    private function firstImageUrl($data, $keys) {
+        foreach ($keys as $key) {
+            if (!empty($data[$key]) && is_string($data[$key])) {
+                $value = trim($data[$key]);
+                if (preg_match('/^https?:\/\/[^\s<>"\']+\.(png|jpe?g|gif|webp)(\?[^\s<>"\']*)?$/i', $value)) {
+                    return $value;
+                }
+            }
+        }
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $nested = $this->firstImageUrl($value, $keys);
+                if ($nested !== '') return $nested;
+            }
+        }
+        return '';
+    }
+
+    private function firstQrContent($data, $keys) {
+        foreach ($keys as $key) {
+            if (!empty($data[$key]) && is_string($data[$key])) {
+                $value = trim($data[$key]);
+                if ($this->looksLikeQrContent($value)) {
+                    return $value;
+                }
+            }
+        }
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $nested = $this->firstQrContent($value, $keys);
+                if ($nested !== '') return $nested;
+            }
+        }
+        return '';
+    }
+
+    private function looksLikeQrContent($value) {
+        $value = trim((string)$value);
+        if ($value === '' || strlen($value) > 2048) return false;
+        if (preg_match('/^https?:\/\/[^\s<>"\']+$/i', $value)) return true;
+        if (preg_match('/^(weixin|alipays):\/\//i', $value)) return true;
+        return false;
     }
 
     private function firstUrl($data, $keys) {

@@ -2195,6 +2195,10 @@ function paymentQrImageUrl(paymentResultOrUrl) {
     return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(paymentUrl);
 }
 
+function paymentHasDirectQr(paymentResult = {}) {
+    return !!(String(paymentResult.qrcode_content || '').trim() || String(paymentResult.qrcode_url || '').trim());
+}
+
 function showEmbeddedPaymentPage(paymentUrl) {
     const imageEl = document.getElementById('qrPaymentImage');
     const iframeWrap = document.getElementById('qrPaymentIframeWrap');
@@ -2250,7 +2254,7 @@ function showQrPaymentModal(paymentResult, options = {}) {
             imageEl.onerror = null;
             showEmbeddedPaymentPage(paymentUrl);
         };
-        if (qrImageUrl) {
+        if (qrImageUrl && paymentHasDirectQr(paymentResult)) {
             imageEl.classList.remove('hidden');
             imageEl.src = qrImageUrl;
         } else {
@@ -2443,6 +2447,7 @@ async function loadPaymentConfigs() {
                         <small class="text-muted">
                             ${c.enabled ? '<span class="text-success">已启用</span>' : '<span class="text-danger">已禁用</span>'}
                             ${c.fee_rate > 0 ? ` · 手续费: ${(c.fee_rate * 100).toFixed(1)}%` : ''}
+                            · ${c.api_mode === 'mapi_qr' ? '二维码直连' : '跳转页'}
                         </small>
                     </div>
                     <div class="d-flex gap-1">
@@ -2484,6 +2489,7 @@ function clearPaymentConfigForm() {
     document.getElementById('paymentConfigPartnerId').value = '';
     document.getElementById('paymentConfigKey').value = '';
     document.getElementById('paymentConfigFeeRate').value = '';
+    document.getElementById('paymentConfigApiMode').value = 'submit_page';
     document.getElementById('paymentConfigEnabled').checked = true;
 }
 
@@ -2501,6 +2507,7 @@ async function editPaymentConfig(id) {
     document.getElementById('paymentConfigPartnerId').value = config.partner_id;
     document.getElementById('paymentConfigKey').value = config.key;
     document.getElementById('paymentConfigFeeRate').value = config.fee_rate * 100;
+    document.getElementById('paymentConfigApiMode').value = config.api_mode || 'submit_page';
     document.getElementById('paymentConfigEnabled').checked = config.enabled;
     
     document.getElementById('addPaymentConfigForm').style.display = 'block';
@@ -2514,6 +2521,7 @@ async function savePaymentConfig() {
     const partnerId = document.getElementById('paymentConfigPartnerId').value.trim();
     const key = document.getElementById('paymentConfigKey').value.trim();
     const feeRate = parseFloat(document.getElementById('paymentConfigFeeRate')?.value) / 100;
+    const apiMode = document.getElementById('paymentConfigApiMode')?.value || 'submit_page';
     const enabled = document.getElementById('paymentConfigEnabled').checked;
     
     if (!name || !apiUrl || !partnerId || !key) {
@@ -2524,11 +2532,11 @@ async function savePaymentConfig() {
     let result;
     if (editingPaymentConfigId) {
         result = await API.updatePaymentConfig(editingPaymentConfigId, {
-            name, type, api_url: apiUrl, partner_id: partnerId, key, fee_rate: feeRate, enabled
+            name, type, api_url: apiUrl, partner_id: partnerId, key, fee_rate: feeRate, api_mode: apiMode, enabled
         });
     } else {
         result = await API.addPaymentConfig({
-            name, type, api_url: apiUrl, partner_id: partnerId, key, fee_rate: feeRate, enabled
+            name, type, api_url: apiUrl, partner_id: partnerId, key, fee_rate: feeRate, api_mode: apiMode, enabled
         });
     }
     
