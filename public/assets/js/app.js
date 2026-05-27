@@ -1256,6 +1256,7 @@ async function loadProfileTab(area) {
     const user = App.currentUser || {};
     const maskedEmail = user.email ? user.email.replace(/^(.{2}).*(@.*)$/, '$1****$2') : '未绑定邮箱';
     const qqBound = !!user.qq_openid;
+    const qqIdentity = qqBound ? String(user.qq_openid || '').replace(/^[a-z]+:/i, '') : '';
     const isAdmin = user.role === 'admin';
     let adminConfigHtml = '';
     if (isAdmin) {
@@ -1317,6 +1318,7 @@ async function loadProfileTab(area) {
                     <div class="profile-info-row"><span>会员等级</span><strong>${Security.escapeHtml(user.membership_level || 'Free')}</strong></div>
                     <div class="profile-info-row"><span>账户余额</span><strong>¥ ${Number(user.balance || 0).toFixed(2)}</strong></div>
                     <div class="profile-info-row"><span>QQ 绑定</span><strong class="${qqBound ? 'text-success' : 'text-muted'}">${qqBound ? Security.escapeHtml(user.qq_nickname || '已绑定') : '未绑定'}</strong></div>
+                    ${qqBound ? `<div class="profile-info-row"><span>QQ 标识</span><strong title="${Security.escapeAttr(qqIdentity)}">${Security.escapeHtml(Utils.truncate(qqIdentity, 18))}</strong></div>` : ''}
                     <div class="mt-4 d-grid gap-2">
                         ${qqBound ? `<button class="btn btn-outline-danger" onclick="unbindQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑第三方账号</button>` : `<button class="btn btn-primary" onclick="bindQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定第三方账号</button>`}
                         <button class="btn btn-outline-primary" onclick="startOAuthLogin('qq')"><i class="bi bi-tencent-qq me-1"></i>QQ 一键登录测试</button>
