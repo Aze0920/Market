@@ -238,6 +238,7 @@ switch ($action) {
         $products = $db->getProducts($filters);
         $levels = $db->getMembershipLevels();
         $sellerCache = [];
+        $freeLevel = $levels['Free'] ?? ['priority' => 0];
         foreach ($products as &$p) {
             $sellerId = $p['seller_id'] ?? '';
             if ($sellerId !== '' && !array_key_exists($sellerId, $sellerCache)) {
@@ -245,9 +246,12 @@ switch ($action) {
             }
             $seller = $sellerCache[$sellerId] ?? null;
             $levelName = $seller['membership_level'] ?? 'Free';
-            $level = $levels[$levelName] ?? ($levels['Free'] ?? ['priority' => 0]);
+            $level = $levels[$levelName] ?? $freeLevel;
+            $levelPriority = intval($level['priority'] ?? 0);
+            $freePriority = intval($freeLevel['priority'] ?? 0);
             $p['seller_membership_level'] = $levelName;
-            $p['seller_membership_priority'] = intval($level['priority'] ?? 0);
+            $p['seller_membership_priority'] = $levelPriority;
+            $p['seller_is_vip'] = $levelPriority > $freePriority || strcasecmp($levelName, 'Free') !== 0;
             $stats = productRatingStats($db->getComments($p['id']));
             $p['rating_good'] = $stats['good'];
             $p['rating_bad'] = $stats['bad'];
@@ -286,6 +290,12 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
         }
         $safe = $product;
+        $levels = $db->getMembershipLevels();
+        $seller = $db->getUserById($safe['seller_id'] ?? '');
+        $levelName = $seller['membership_level'] ?? 'Free';
+        $level = $levels[$levelName] ?? ($levels['Free'] ?? ['priority' => 0]);
+        $safe['seller_membership_level'] = $levelName;
+        $safe['seller_membership_priority'] = intval($level['priority'] ?? 0);
         unset($safe['account_list'], $safe['pickup_password']);
         $comments = $db->getComments($id);
         $safe['rating_stats'] = productRatingStats($comments);

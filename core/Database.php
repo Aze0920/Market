@@ -983,7 +983,11 @@ class Database {
             $sellerB = $this->getUserById($b['seller_id'] ?? '');
             $levelA = $sellerA ? ($levels[$sellerA['membership_level']] ?? ['priority' => 0]) : ['priority' => 0];
             $levelB = $sellerB ? ($levels[$sellerB['membership_level']] ?? ['priority' => 0]) : ['priority' => 0];
-            return $levelB['priority'] - $levelA['priority'];
+            $priorityDiff = intval($levelB['priority'] ?? 0) <=> intval($levelA['priority'] ?? 0);
+            if ($priorityDiff !== 0) return $priorityDiff;
+            $timeDiff = intval($b['updated_at'] ?? $b['created_at'] ?? 0) <=> intval($a['updated_at'] ?? $a['created_at'] ?? 0);
+            if ($timeDiff !== 0) return $timeDiff;
+            return intval($b['sales'] ?? 0) <=> intval($a['sales'] ?? 0);
         });
 
         return array_values($products);

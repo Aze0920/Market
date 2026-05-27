@@ -40,6 +40,15 @@ function productImageHtml(image, className = '') {
     return Security.escapeHtml(value || '📦');
 }
 
+function sellerMembershipBadge(product = {}) {
+    const level = String(product.seller_membership_level || 'Free').trim() || 'Free';
+    const priority = Number(product.seller_membership_priority || 0);
+    if (priority <= 0 && level.toLowerCase() === 'free') {
+        return '<span class="seller-level-badge free"><i class="bi bi-person"></i>Free</span>';
+    }
+    return `<span class="seller-level-badge vip"><i class="bi bi-gem"></i>${Security.escapeHtml(level)}</span>`;
+}
+
 async function loadProducts(options = {}) {
     const grid = document.getElementById('productGrid');
     const emptyState = document.getElementById('emptyProductState');
@@ -81,7 +90,10 @@ async function loadProducts(options = {}) {
                         <span class="text-success small">好评 ${Security.escapeHtml(p.rating_good || 0)}</span>
                         <span class="text-danger small ms-2">差评 ${Security.escapeHtml(p.rating_bad || 0)}</span>
                     </div>
-                    <p class="text-muted small mb-0">卖家: ${Security.escapeHtml(p.seller_name)}</p>
+                    <div class="seller-line mt-2">
+                        <span class="text-muted small">卖家: ${Security.escapeHtml(p.seller_name)}</span>
+                        ${sellerMembershipBadge(p)}
+                    </div>
                 </div>
             </div>
         </div>
@@ -121,6 +133,7 @@ async function openProductDetail(id) {
                 <div class="product-description markdown-content mb-3">${renderMarkdown(product.description || '暂无描述')}</div>
                 <h3 class="text-danger fw-bold">¥${Security.escapeHtml(product.price.toFixed(2))}</h3>
                 <p><small>库存: <strong>${Security.escapeHtml(product.stock)}</strong> | 已售: <strong>${Security.escapeHtml(product.sales)}</strong> | 卖家: <strong>${Security.escapeHtml(product.seller_name)}</strong></small></p>
+                <div class="mb-2">${sellerMembershipBadge(product)}</div>
                 <p class="small mb-2"><span class="text-success">好评 ${Security.escapeHtml(stats.good || 0)}</span><span class="text-danger ms-3">差评 ${Security.escapeHtml(stats.bad || 0)}</span></p>
                 ${App.currentUser && App.currentUser.id !== product.seller_id ? `
                     <div class="purchase-quantity-box mb-3">
