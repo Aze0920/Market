@@ -1,5 +1,9 @@
 <?php
-require_once dirname(__DIR__) . '/config/install.php';
+$installPath = dirname(__DIR__) . '/config/install.php';
+if (!is_file($installPath)) {
+    $installPath = dirname(__DIR__, 2) . '/config/install.php';
+}
+require_once $installPath;
 keynest_require_installed(false);
 ?>
 <!doctype html>
@@ -609,8 +613,8 @@ function renderProducts() {
                         ${products.map(p => `
                             <tr>
                                 <td><input class="form-check-input product-select" type="checkbox" value="${escapeHtml(p.id)}" onchange="updateProductBatchToolbar()"></td>
-                                <td><strong>${escapeHtml(p.title)}</strong><div class="small text-muted"><code>${escapeHtml(p.id)}</code></div></td>
-                                <td>${escapeHtml(userEmailByNameOrId(p.seller_name, p.seller_id))}</td>
+                                <td><strong>${escapeHtml(p.title)}</strong><div class="small text-muted">${escapeHtml(userEmailByNameOrId(p.seller_name, p.seller_id) || '-')}</div></td>
+                                <td>${escapeHtml(p.seller_name || '-')}</td>
                                 <td>${escapeHtml(p.category || '-')}</td>
                                 <td>${money(p.price)}</td>
                                 <td>${p.stock || 0}</td>
