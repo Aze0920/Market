@@ -221,13 +221,13 @@ async function sendRegisterEmailCode() {
 }
 
 function switchToRegister() {
-    bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
-    setTimeout(() => openRegisterModal(), 200);
+    bootstrap.Modal.getInstance(document.getElementById('loginModal'))?.hide();
+    setTimeout(() => openRegisterModal(), 80);
 }
 
 function switchToLogin() {
-    bootstrap.Modal.getInstance(document.getElementById('registerModal')).hide();
-    setTimeout(() => openLoginModal(), 200);
+    bootstrap.Modal.getInstance(document.getElementById('registerModal'))?.hide();
+    setTimeout(() => openLoginModal(), 80);
 }
 
 function startOAuthLogin(provider = 'qq', mode = '') {

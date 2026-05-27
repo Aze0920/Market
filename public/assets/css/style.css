@@ -685,15 +685,36 @@ a:hover {
     max-width: 860px;
 }
 
+.auth-modal .modal-content {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+
 .auth-modal-content {
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
-    overflow: hidden;
+    gap: 0;
+    overflow: visible;
     min-height: 560px;
+    animation: authPanelIn .34s cubic-bezier(.22, 1, .36, 1);
+}
+
+.auth-register-content {
+    grid-template-columns: minmax(280px, 0.95fr) minmax(0, 1.05fr);
 }
 
 .auth-form-pane {
-    background: #fff;
+    position: relative;
+    z-index: 3;
+    background: rgba(255, 255, 255, .96);
+    border-radius: 0 24px 24px 0;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .26);
+    backdrop-filter: blur(12px);
+}
+
+.auth-register-content .auth-form-pane {
+    border-radius: 24px 0 0 24px;
 }
 
 .auth-form-pane .modal-body {
@@ -724,20 +745,35 @@ a:hover {
     color: #fff;
     min-height: 560px;
     overflow: hidden;
-    background:
-        radial-gradient(circle at 20% 20%, rgba(255, 255, 255, .55) 0, transparent 28%),
-        linear-gradient(135deg, #f7d7ff 0%, #dbeafe 46%, #e0f2fe 100%);
+    background: transparent;
+    border-radius: 24px 0 0 24px;
+}
+
+.auth-register-content .auth-art-pane {
+    border-radius: 0 24px 24px 0;
 }
 
 .auth-anime-image {
     position: absolute;
-    inset: 1rem 1rem 6.8rem;
-    width: calc(100% - 2rem);
-    height: calc(100% - 7.8rem);
-    object-fit: contain;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 100%;
+    min-height: 100%;
+    object-fit: cover;
     object-position: center;
-    border-radius: 20px;
-    filter: drop-shadow(0 18px 36px rgba(15, 23, 42, .18));
+    transform: scale(1.01);
+}
+
+@keyframes authPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .auth-art-pane::before {
