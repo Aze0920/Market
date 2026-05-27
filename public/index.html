@@ -8,7 +8,7 @@
     <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=V1.1.21" rel="stylesheet">
+    <link href="assets/css/style.css?v=V1.1.22" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -472,6 +472,7 @@
                         <div class="qr-payment-iframe-crop hidden" id="qrPaymentIframeWrap">
                             <iframe id="qrPaymentIframe" title="支付二维码页面" loading="eager"></iframe>
                         </div>
+                        <div class="qr-payment-fallback hidden" id="qrPaymentFallback"></div>
                     </div>
                     <div class="qr-payment-status" id="qrPaymentStatus">
                         <span class="spinner-border spinner-border-sm me-2"></span>等待扫码支付，支付成功后会自动刷新
@@ -591,13 +592,13 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=V1.1.21"></script>
-    <script src="assets/js/app.js?v=V1.1.21"></script>
-    <script src="assets/js/product.js?v=V1.1.21"></script>
-    <script src="assets/js/message.js?v=V1.1.21"></script>
-    <script src="assets/js/auth.js?v=V1.1.21"></script>
+    <script src="assets/js/api.js?v=V1.1.22"></script>
+    <script src="assets/js/app.js?v=V1.1.22"></script>
+    <script src="assets/js/product.js?v=V1.1.22"></script>
+    <script src="assets/js/message.js?v=V1.1.22"></script>
+    <script src="assets/js/auth.js?v=V1.1.22"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = 'V1.1.21';
+        window.KEYNEST_ASSET_VERSION = 'V1.1.22';
 
         async function renderFrontMembershipCards(area) {
             if (!area) return;
@@ -626,9 +627,11 @@
                         const canAfford = !App.currentUser || Number(App.currentUser.balance || 0) >= cost;
                         const levelGradient = level.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6)';
                         const levelIcon = level.icon || 'bi-gem';
+                        const maxAccountsText = Number(level.max_accounts_per_product || 0) === 0 ? '不限制' : `${level.max_accounts_per_product} 账号`;
+                        const maxProductsText = Number(level.max_products || 0) === 0 ? '不限制' : `${level.max_products} 个商品`;
                         const levelPrivileges = [
-                            `单商品最大 ${level.max_accounts_per_product || 0} 账号`,
-                            Number(level.max_products || 0) >= 9999 ? '无限商品' : `${level.max_products || 0} 个商品`,
+                            `单商品最大 ${maxAccountsText}`,
+                            `最多商品 ${maxProductsText}`,
                             `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
                             Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
                         ];

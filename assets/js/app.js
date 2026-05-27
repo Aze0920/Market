@@ -980,9 +980,11 @@ async function loadMembershipTab(area) {
                 const canAfford = !App.currentUser || Number(App.currentUser.balance || 0) >= cost;
                 const levelGradient = level.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6)';
                 const levelIcon = level.icon || 'bi-gem';
-    const levelPrivileges = [
-                    `单商品最大 ${Number(level.max_accounts_per_product || 0) === 0 ? '无限制' : (level.max_accounts_per_product + ' 账号')}`,
-                    Number(level.max_products || 0) === 0 ? '无限商品' : `${level.max_products || 0} 个商品`,
+                const maxAccountsText = Number(level.max_accounts_per_product || 0) === 0 ? '不限制' : `${level.max_accounts_per_product} 账号`;
+                const maxProductsText = Number(level.max_products || 0) === 0 ? '不限制' : `${level.max_products} 个商品`;
+                const levelPrivileges = [
+                    `单商品最大 ${maxAccountsText}`,
+                    `最多商品 ${maxProductsText}`,
                     `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
                     Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
                 ];
@@ -2190,31 +2192,69 @@ function paymentQrImageUrl(paymentResultOrUrl) {
         }
         return '';
     }
-    const paymentUrl = String(paymentResultOrUrl || '').trim();
-    if (!paymentUrl) return '';
-    return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(paymentUrl);
+    return '';
 }
 
 function paymentHasDirectQr(paymentResult = {}) {
     return !!(String(paymentResult.qrcode_content || '').trim() || String(paymentResult.qrcode_url || '').trim());
 }
 
+function showPaymentFallback(paymentUrl, message = '当前接口没有返回可直接显示的支付二维码') {
+    const imageEl = document.getElementById('qrPaymentImage');
+    const iframeWrap = document.getElementById('qrPaymentIframeWrap');
+    const iframe = document.getElementById('qrPaymentIframe');
+    const fallbackEl = document.getElementById('qrPaymentFallback');
+    if (imageEl) {
+        imageEl.classList.add('hidden');
+        imageEl.removeAttribute('src');
+        imageEl.onerror = null;
+    }
+    if (iframeWrap) iframeWrap.classList.add('hidden');
+    if (iframe) iframe.removeAttribute('src');
+    if (fallbackEl) {
+        fallbackEl.classList.remove('hidden');
+        fallbackEl.innerHTML = `
+            <div class="qr-payment-fallback-icon"><i class="bi bi-exclamation-triangle"></i></div>
+            <div class="fw-bold mb-1">二维码未返回</div>
+            <div class="small text-muted mb-3">${Security.escapeHtml(message)}</div>
+            <button type="button" class="btn btn-sm btn-primary" onclick="openPaymentPageFallback()">打开支付页面</button>
+        `;
+    }
+    return false;
+}
+
 function showEmbeddedPaymentPage(paymentUrl) {
     const imageEl = document.getElementById('qrPaymentImage');
     const iframeWrap = document.getElementById('qrPaymentIframeWrap');
     const iframe = document.getElementById('qrPaymentIframe');
-    if (!iframeWrap || !iframe || !paymentUrl) return false;
+    const fallbackEl = document.getElementById('qrPaymentFallback');
+    if (!iframeWrap || !iframe || !paymentUrl) return showPaymentFallback(paymentUrl);
     if (imageEl) {
         imageEl.classList.add('hidden');
         imageEl.removeAttribute('src');
+        imageEl.onerror = null;
     }
+    if (fallbackEl) fallbackEl.classList.add('hidden');
     iframeWrap.classList.remove('hidden');
     iframe.src = paymentUrl;
+    window.setTimeout(() => {
+        if (!iframeWrap.classList.contains('hidden')) {
+            showPaymentFallback(paymentUrl, '支付页面可能禁止嵌入，已为你保留打开支付页面入口');
+        }
+    }, 2500);
     return true;
 }
 
 function openCurrentPaymentLink() {
-    Toast.info('请使用当前弹窗二维码完成支付');
+    openPaymentPageFallback();
+}
+
+function openPaymentPageFallback() {
+    if (!currentPaymentLink) {
+        Toast.error('支付链接不存在');
+        return;
+    }
+    window.open(currentPaymentLink, '_blank', 'noopener');
 }
 
 function stopPaymentPolling() {
@@ -2242,6 +2282,7 @@ function showQrPaymentModal(paymentResult, options = {}) {
     const imageEl = document.getElementById('qrPaymentImage');
     const iframeWrap = document.getElementById('qrPaymentIframeWrap');
     const iframe = document.getElementById('qrPaymentIframe');
+    const fallbackEl = document.getElementById('qrPaymentFallback');
     const statusEl = document.getElementById('qrPaymentStatus');
 
     if (methodEl) methodEl.textContent = options.methodLabel || payMethodLabel(payType);
@@ -2249,19 +2290,20 @@ function showQrPaymentModal(paymentResult, options = {}) {
     const qrImageUrl = paymentQrImageUrl(paymentResult);
     if (iframeWrap) iframeWrap.classList.add('hidden');
     if (iframe) iframe.removeAttribute('src');
+    if (fallbackEl) fallbackEl.classList.add('hidden');
     if (imageEl) {
         imageEl.onerror = () => {
             imageEl.onerror = null;
-            showEmbeddedPaymentPage(paymentUrl);
+            showPaymentFallback(paymentUrl, '支付接口返回了二维码地址，但图片加载失败');
         };
         if (qrImageUrl && paymentHasDirectQr(paymentResult)) {
             imageEl.classList.remove('hidden');
             imageEl.src = qrImageUrl;
         } else {
-            showEmbeddedPaymentPage(paymentUrl);
+            showPaymentFallback(paymentUrl);
         }
     } else {
-        showEmbeddedPaymentPage(paymentUrl);
+        showPaymentFallback(paymentUrl);
     }
     if (statusEl) statusEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>等待扫码支付，支付成功后会自动刷新';
 

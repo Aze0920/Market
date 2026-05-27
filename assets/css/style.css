@@ -1610,8 +1610,35 @@ a:hover {
 }
 
 .qr-payment-iframe-crop.hidden,
-.qr-payment-box img.hidden {
+.qr-payment-box img.hidden,
+.qr-payment-fallback.hidden {
     display: none;
+}
+
+.qr-payment-fallback {
+    width: 100%;
+    height: 100%;
+    border-radius: 18px;
+    background: #f8fafc;
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.qr-payment-fallback-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #fff7ed;
+    color: #ea580c;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    margin-bottom: .65rem;
 }
 
 .qr-payment-status {
