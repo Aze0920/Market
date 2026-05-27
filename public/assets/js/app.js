@@ -1741,6 +1741,7 @@ async function saveSystemConfig(options = {}) {
 }
 
 let selectedPaymentConfig = null;
+let rechargePaymentOptions = [];
 
 async function openOnlineRechargeModal() {
     const result = await API.getPaymentConfigs();
@@ -1748,80 +1749,67 @@ async function openOnlineRechargeModal() {
         Toast.error('加载支付方式失败');
         return;
     }
-    
-    const methodsDiv = document.getElementById('rechargePaymentMethods');
-    if (!result.configs || result.configs.length === 0) {
-        methodsDiv.innerHTML = '<p class="text-muted">暂无可使用的支付方式</p>';
-    } else {
-        methodsDiv.innerHTML = result.configs.map(c => {
-            const methods = (c.pay_methods || ['alipay', 'wxpay']).map(payMethodLabel).join(' / ');
-            return `
-            <div class="col-12">
-                <div class="card payment-select-card ${selectedPaymentConfig?.id === c.id ? 'border-primary' : ''}" 
-                     onclick="selectPaymentConfig('${c.id}')" style="cursor: pointer;">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="fw-bold mb-1">${methods}</h6>
-                                <small class="text-muted">
-                                    ${c.fee_rate > 0 ? `手续费: ${(c.fee_rate * 100).toFixed(1)}%` : '在线支付'}
-                                </small>
-                            </div>
-                            ${selectedPaymentConfig?.id === c.id ? '<i class="bi bi-check-circle text-primary" style="font-size: 1.5rem;"></i>' : ''}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-        }).join('');
-        
-        if (result.configs.length > 0) {
-            selectPaymentConfig(result.configs[0].id);
-        }
-    }
-    
-    new bootstrap.Modal(document.getElementById('onlineRechargeModal')).show();
+
+    rechargePaymentOptions = buildRechargePaymentOptions(result.configs || []);
+    selectedPaymentConfig = null;
+
+    const amountInput = document.getElementById('rechargeAmount');
+    if (amountInput) amountInput.value = '';
+
+    renderRechargePaymentSelect();
+    handleRechargePaymentChange();
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('onlineRechargeModal')).show();
 }
 
 function payMethodLabel(method) {
     return ({ alipay: '支付宝', wxpay: '微信支付', qqpay: 'QQ钱包', cashier: '易支付收银台' })[method] || method;
 }
 
-function selectPaymentConfig(configId) {
-    API.getPaymentConfigs().then(r => {
-        if (r.success) {
-            selectedPaymentConfig = r.configs.find(c => c.id === configId);
-            updateRechargePayTypeOptions();
-            updateFeeInfo(selectedPaymentConfig?.fee_rate || 0);
-        }
+function buildRechargePaymentOptions(configs) {
+    return configs.flatMap(config => {
+        const methods = config.pay_methods || ['alipay', 'wxpay'];
+        return methods.map(method => ({
+            value: `${config.id}::${method}`,
+            config,
+            method,
+            label: payMethodLabel(method),
+            feeRate: Number(config.fee_rate || 0)
+        }));
     });
-    
-    document.querySelectorAll('.payment-select-card').forEach(card => {
-        card.classList.remove('border-primary');
-        const checkIcon = card.querySelector('.bi-check-circle');
-        if (checkIcon) checkIcon.remove();
-    });
-    
-    const selectedCard = Array.from(document.querySelectorAll('.payment-select-card')).find(card => 
-        card.getAttribute('onclick')?.includes(`'${configId}'`)
-    );
-    if (selectedCard) {
-        selectedCard.classList.add('border-primary');
-        const icon = document.createElement('i');
-        icon.className = 'bi bi-check-circle text-primary';
-        icon.style.fontSize = '1.5rem';
-        selectedCard.querySelector('.card-body').querySelector('.d-flex').appendChild(icon);
-    }
 }
 
-function updateRechargePayTypeOptions() {
+function renderRechargePaymentSelect() {
     const select = document.getElementById('rechargePayType');
     const help = document.getElementById('rechargePayTypeHelp');
-    if (!select || !selectedPaymentConfig) return;
-    const methods = selectedPaymentConfig.pay_methods || ['alipay', 'wxpay'];
-    select.innerHTML = methods.map(method => `<option value="${method}">${payMethodLabel(method)}</option>`).join('');
+    if (!select) return;
+
+    if (!rechargePaymentOptions.length) {
+        select.innerHTML = '<option value="">暂无可使用的支付方式</option>';
+        select.disabled = true;
+        if (help) help.textContent = '请先在后台添加并启用支付接口';
+        return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = rechargePaymentOptions
+        .map(option => `<option value="${Security.escapeAttr(option.value)}">${Security.escapeHtml(option.label)}</option>`)
+        .join('');
+}
+
+function handleRechargePaymentChange() {
+    const select = document.getElementById('rechargePayType');
+    const help = document.getElementById('rechargePayTypeHelp');
+    const selectedValue = select?.value || '';
+    const option = rechargePaymentOptions.find(item => item.value === selectedValue) || null;
+
+    selectedPaymentConfig = option ? option.config : null;
+    updateFeeInfo(option ? option.feeRate : 0);
+
     if (help) {
-        help.textContent = `当前接口支持：${methods.map(payMethodLabel).join('、')}`;
+        help.textContent = option
+            ? `当前选择：${option.label}${option.feeRate > 0 ? `，手续费 ${(option.feeRate * 100).toFixed(1)}%` : ''}`
+            : '请选择支付方式';
     }
 }
 
@@ -1845,23 +1833,19 @@ function updateFeeInfo(feeRate) {
 
 async function submitOnlineRecharge() {
     const amount = parseFloat(document.getElementById('rechargeAmount')?.value);
-    const payType = document.getElementById('rechargePayType')?.value;
+    const selectedValue = document.getElementById('rechargePayType')?.value || '';
+    const selectedOption = rechargePaymentOptions.find(item => item.value === selectedValue) || null;
     
     if (!amount || amount <= 0) {
         Toast.warning('请输入有效金额');
         return;
     }
-    if (!selectedPaymentConfig) {
+    if (!selectedOption || !selectedOption.config) {
         Toast.warning('请选择支付方式');
         return;
     }
-    const methods = selectedPaymentConfig.pay_methods || ['alipay', 'wxpay'];
-    if (!methods.includes(payType)) {
-        Toast.warning('当前接口不支持所选支付类型');
-        return;
-    }
     
-    const result = await API.createPaymentOrder(selectedPaymentConfig.id, amount, payType);
+    const result = await API.createPaymentOrder(selectedOption.config.id, amount, selectedOption.method);
     if (result.success) {
         window.open(result.payment_url, '_blank');
         Toast.success('请在新窗口完成支付');
