@@ -208,7 +208,7 @@ function adminRunCommand($command, $cwd = null) {
 }
 
 function adminAppVersion() {
-    return 'V1.1.5';
+    return 'V1.1.6';
 }
 
 function adminUpdaterVersion($config) {
@@ -612,6 +612,20 @@ switch ($action) {
             ]);
         }
         adminJsonResponse(['success' => true, 'message' => '用户信息已更新']);
+
+    case 'reset_user_payment_methods':
+        $id = trim($_POST['id'] ?? '');
+        $target = $db->getUserById($id);
+        if (!$target) {
+            adminJsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        if (($target['role'] ?? '') === 'admin') {
+            adminJsonResponse(['success' => false, 'message' => '管理员账号不允许重置收款方式'], 400);
+        }
+        if (!$db->updateUser($id, ['payment_methods' => []])) {
+            adminJsonResponse(['success' => false, 'message' => '重置收款方式失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => '已清空该用户收款方式，用户可重新配置']);
 
     case 'delete_user':
         $id = trim($_POST['id'] ?? '');

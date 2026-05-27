@@ -524,6 +524,8 @@ function openUserEditor(id) {
     const modalId = 'userEditorModal';
     document.getElementById(modalId)?.remove();
     const isAdminRoot = user.username === 'admin';
+    const paymentMethods = user.payment_methods && typeof user.payment_methods === 'object' ? user.payment_methods : {};
+    const hasPaymentMethods = Object.values(paymentMethods).some(item => item && (item.account || item.qrcode));
     const modal = document.createElement('div');
     modal.className = 'modal fade';
     modal.id = modalId;
@@ -541,6 +543,12 @@ function openUserEditor(id) {
                         <div class="col-md-12"><label class="form-label">余额</label><input id="editBalance" type="number" step="0.01" min="0" class="form-control" value="${Number(user.balance || 0)}"></div>
                     </div>
                     ${isAdminRoot ? '<div class="alert alert-warning py-2 small mt-3 mb-0">admin 账号禁止删除，用户名和管理员角色已锁定。</div>' : ''}
+                    <div class="alert alert-light border py-2 small mt-3 mb-0 d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                        <span><i class="bi bi-wallet2 me-1 text-primary"></i>收款方式：${hasPaymentMethods ? '<strong class="text-success">已配置</strong>' : '<span class="text-muted">未配置</span>'}</span>
+                        <button class="btn btn-sm btn-outline-danger" onclick="resetUserPaymentMethodsAdmin('${escapeHtml(user.id)}')" ${isAdminRoot || !hasPaymentMethods ? 'disabled' : ''}>
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>重新配置收款方式
+                        </button>
+                    </div>
                 </div>
                 <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="saveUserAdmin()">保存</button></div>
             </div>
@@ -565,6 +573,25 @@ async function saveUserAdmin() {
     await loadAdminData();
     renderUsers();
 }
+async function resetUserPaymentMethodsAdmin(id) {
+    const user = (Admin.cache.users || []).find(u => u.id === id);
+    if (!user) return showToast('用户不存在', 'error');
+    const confirmed = await adminConfirm({
+        title: '重新配置收款方式？',
+        message: '这会清空用户“' + (user.username || '-') + '”已保存的微信/支付宝收款账号和收款码。清空后用户需要自行重新上传。',
+        confirmText: '确认清空',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!confirmed) return;
+    const res = await request('admin.php?action=reset_user_payment_methods', 'POST', { id });
+    if (!res.success) return showToast(res.message || '重置失败', 'error');
+    showToast(res.message || '已清空收款方式', 'success');
+    bootstrap.Modal.getInstance(document.getElementById('userEditorModal'))?.hide();
+    await loadAdminData();
+    renderUsers();
+}
+
 async function deleteUserAdmin(id) {
     const user = (Admin.cache.users || []).find(u => u.id === id);
     if (!user) return showToast('用户不存在', 'error');
