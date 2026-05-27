@@ -912,9 +912,75 @@ function withdrawMethodText(method) {
     const map = { alipay: '支付宝', wechat: '微信', bank: '银行卡' };
     return map[method] || method || '-';
 }
-function renderFinance() { setTitle('充值提现'); document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><div><h5>申请列表</h5><div class="small text-muted mt-1">提现申请会显示收款方式、账号和收款码，避免后台看不到处理信息。</div></div><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div>${requestTable(Admin.cache.requests || [])}</div>`; }
-function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</strong><div class="small text-muted">${r.id && r.id.startsWith('wd_') ? '提现' : '充值'} · ${money(r.amount)} · ${dateText(r.created_at)}</div>${r.payment_account ? `<div class="small text-muted">${escapeHtml(withdrawMethodText(r.payment_method))}：${escapeHtml(r.payment_account)}</div>` : ''}</div>${statusBadge(r.status)}</div>`).join(''); }
-function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户邮箱</th><th>类型</th><th>金额</th><th>收款信息</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}${r.actual_amount ? `<div class="small text-muted">实到 ${money(r.actual_amount)}</div>` : ''}${r.fee ? `<div class="small text-muted">手续费 ${money(r.fee)}</div>` : ''}</td><td>${r.id && r.id.startsWith('wd_') ? `<div>${escapeHtml(withdrawMethodText(r.payment_method))}</div><div class="small text-muted">${escapeHtml(r.payment_account || '-')}</div>${r.qrcode_url ? `<a class="small" href="${escapeHtml(r.qrcode_url)}" target="_blank" rel="noopener">查看收款码</a>` : '<div class="small text-danger">无收款码</div>'}` : '-'}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td>${r.status === 'pending' ? `<button class="btn btn-sm btn-success me-1" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : '-'}</td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
+function renderFinance() { setTitle('充值提现'); document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><div><h5>申请列表</h5><div class="small text-muted mt-1">点击“查看收款信息”核对客户账号和收款码后再转账。</div></div><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div>${requestTable(Admin.cache.requests || [])}</div>`; }
+function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</strong><div class="small text-muted">${r.id && r.id.startsWith('wd_') ? '提现' : '充值'} · ${money(r.amount)} · ${dateText(r.created_at)}</div></div>${statusBadge(r.status)}</div>`).join(''); }
+function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户邮箱</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}${r.actual_amount ? `<div class="small text-muted">实到 ${money(r.actual_amount)}</div>` : ''}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td><div class="d-flex flex-wrap gap-1">${r.id && r.id.startsWith('wd_') ? `<button class="btn btn-sm btn-outline-primary" onclick="openWithdrawRequestDetail('${escapeHtml(r.id)}')">查看收款信息</button>` : ''}${r.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : ''}${r.status !== 'pending' && !(r.id && r.id.startsWith('wd_')) ? '-' : ''}</div></td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
+function openWithdrawRequestDetail(id) {
+    const r = (Admin.cache.requests || []).find(item => item.id === id);
+    if (!r) return showToast('提现申请不存在，请刷新后重试', 'error');
+    const modalId = 'withdrawRequestDetailModal';
+    document.getElementById(modalId)?.remove();
+    const userEmail = recordUserEmail(r, 'user_id', r.username || r.user_id);
+    const statusActions = r.status === 'pending' ? `
+        <button class="btn btn-outline-danger" onclick="handleRequestFromDetail('${escapeHtml(r.id)}','reject')">拒绝</button>
+        <button class="btn btn-success" onclick="handleRequestFromDetail('${escapeHtml(r.id)}','approve')">确认已转账并通过</button>
+    ` : '';
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = modalId;
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-wallet2 me-2 text-primary"></i>提现收款信息</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6"><div class="small text-muted">用户邮箱</div><div class="fw-bold">${escapeHtml(userEmail)}</div></div>
+                        <div class="col-md-3"><div class="small text-muted">提现金额</div><div class="fw-bold text-danger">${money(r.amount)}</div></div>
+                        <div class="col-md-3"><div class="small text-muted">实到金额</div><div class="fw-bold text-success">${money(r.actual_amount || r.amount)}</div></div>
+                        <div class="col-md-6"><div class="small text-muted">收款方式</div><div class="fw-bold">${escapeHtml(withdrawMethodText(r.payment_method))}</div></div>
+                        <div class="col-md-6"><div class="small text-muted">手续费</div><div class="fw-bold">${money(r.fee || 0)}</div></div>
+                        <div class="col-12">
+                            <div class="small text-muted mb-1">收款账号</div>
+                            <div class="input-group">
+                                <input class="form-control" id="withdrawAccountCopyInput" value="${escapeHtml(r.payment_account || '')}" readonly>
+                                <button class="btn btn-outline-primary" onclick="copyAdminWithdrawAccount()">复制账号</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-center border rounded-4 p-3 bg-light">
+                        <div class="fw-semibold mb-2">客户收款码</div>
+                        ${r.qrcode_url ? `<img src="${escapeHtml(r.qrcode_url)}" alt="收款码" style="max-width:260px;max-height:260px;border-radius:16px;background:#fff;padding:8px;box-shadow:0 8px 24px rgba(15,23,42,.12);" onerror="this.outerHTML='<div class=\'text-danger py-4\'>收款码加载失败，请点击下方链接打开</div>';"><div class="mt-2"><a href="${escapeHtml(r.qrcode_url)}" target="_blank" rel="noopener">新窗口打开收款码</a></div>` : '<div class="text-danger py-4">客户没有提交收款码</div>'}
+                    </div>
+                    ${r.admin_note ? `<div class="alert alert-light border small mt-3 mb-0">处理备注：${escapeHtml(r.admin_note)}</div>` : ''}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                    ${statusActions}
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+async function copyAdminWithdrawAccount() {
+    const input = document.getElementById('withdrawAccountCopyInput');
+    if (!input || !input.value) return showToast('没有可复制的账号', 'error');
+    try {
+        await navigator.clipboard.writeText(input.value);
+        showToast('收款账号已复制', 'success');
+    } catch (e) {
+        input.select();
+        document.execCommand('copy');
+        showToast('收款账号已复制', 'success');
+    }
+}
+async function handleRequestFromDetail(id, action) {
+    await handleRequest(id, action);
+    bootstrap.Modal.getInstance(document.getElementById('withdrawRequestDetailModal'))?.hide();
+}
 async function handleRequest(id, action) { const res = await request(`finance.php?action=${action}`, 'POST', { id }); if (!res.success) return showToast(res.message || '操作失败', 'error'); showToast(res.message || '操作成功', 'success'); await loadAdminData(); }
 function renderCards() {
     setTitle('卡密管理');
