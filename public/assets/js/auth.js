@@ -137,11 +137,42 @@
     }
 })();
 
-function openLoginModal() {
+function setAuthMode(mode) {
+    const content = document.getElementById('authModalContent');
+    if (!content) return;
+    content.classList.toggle('is-register', mode === 'register');
+}
+
+function resetLoginForm() {
     document.getElementById('loginUsername').value = '';
     document.getElementById('loginPassword').value = '';
     setLoginError('');
-    const modal = new bootstrap.Modal(document.getElementById('loginModal'));
+}
+
+function resetRegisterForm() {
+    document.getElementById('regUsername').value = '';
+    document.getElementById('regEmail').value = '';
+    document.getElementById('regPassword').value = '';
+    document.getElementById('regPasswordConfirm').value = '';
+    const codeInput = document.getElementById('regEmailCode');
+    if (codeInput) codeInput.value = '';
+    const group = document.getElementById('regEmailCodeGroup');
+    if (group) group.classList.add('hidden');
+    setRegisterError('');
+}
+
+function openLoginModal() {
+    resetLoginForm();
+    setAuthMode('login');
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('loginModal'));
+    modal.show();
+}
+
+function openRegisterModal() {
+    resetRegisterForm();
+    setAuthMode('register');
+    refreshRegisterEmailVerifyState();
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('loginModal'));
     modal.show();
 }
 
@@ -155,21 +186,6 @@ function setLoginError(message) {
     }
     errorBox.textContent = message;
     errorBox.classList.remove('hidden');
-}
-
-function openRegisterModal() {
-    document.getElementById('regUsername').value = '';
-    document.getElementById('regEmail').value = '';
-    document.getElementById('regPassword').value = '';
-    document.getElementById('regPasswordConfirm').value = '';
-    const codeInput = document.getElementById('regEmailCode');
-    if (codeInput) codeInput.value = '';
-    const group = document.getElementById('regEmailCodeGroup');
-    if (group) group.classList.add('hidden');
-    setRegisterError('');
-    refreshRegisterEmailVerifyState();
-    const modal = new bootstrap.Modal(document.getElementById('registerModal'));
-    modal.show();
 }
 
 async function refreshRegisterEmailVerifyState() {
@@ -221,13 +237,14 @@ async function sendRegisterEmailCode() {
 }
 
 function switchToRegister() {
-    bootstrap.Modal.getInstance(document.getElementById('loginModal'))?.hide();
-    setTimeout(() => openRegisterModal(), 80);
+    resetRegisterForm();
+    setAuthMode('register');
+    refreshRegisterEmailVerifyState();
 }
 
 function switchToLogin() {
-    bootstrap.Modal.getInstance(document.getElementById('registerModal'))?.hide();
-    setTimeout(() => openLoginModal(), 80);
+    resetLoginForm();
+    setAuthMode('login');
 }
 
 function startOAuthLogin(provider = 'qq', mode = '') {
@@ -363,7 +380,7 @@ async function handleRegister() {
         setRegisterError('注册成功，正在进入市场...', 'success');
         Toast.success('注册成功，欢迎加入！');
         setTimeout(() => {
-            bootstrap.Modal.getInstance(document.getElementById('registerModal'))?.hide();
+            bootstrap.Modal.getInstance(document.getElementById('loginModal'))?.hide();
             showHome();
             App.updateUnreadBadge();
         }, 350);

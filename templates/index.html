@@ -8,7 +8,7 @@
     <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=202605270850" rel="stylesheet">
+    <link href="assets/css/style.css?v=202605270857" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -171,7 +171,7 @@
 
     <div class="modal fade auth-modal" id="loginModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content auth-modal-content">
+            <div class="modal-content auth-modal-content" id="authModalContent">
                 <div class="auth-art-pane">
                     <img class="auth-anime-image" src="https://t.alcy.cc/moez" alt="随机动漫图" loading="lazy">
                     <div class="auth-art-caption">
@@ -179,78 +179,68 @@
                         <p>安全交易、自动发货，欢迎回来继续逛市场。</p>
                     </div>
                 </div>
-                <div class="auth-form-pane">
-                    <div class="modal-header border-0 pb-0">
-                        <h5 class="modal-title"><i class="bi bi-person-check me-2"></i>欢迎回来</h5>
-                        <button class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body pt-3">
-                        <div class="form-group">
-                            <label class="form-label">用户名</label>
-                            <input type="text" class="form-control" id="loginUsername" placeholder="输入用户名">
-                        </div>
-                        <div class="form-group mb-3">
-                            <label class="form-label">密码</label>
-                            <input type="password" class="form-control" id="loginPassword" placeholder="输入密码">
-                        </div>
-                        <div id="loginErrorBox" class="alert alert-danger py-2 small hidden"></div>
-                        <button type="button" class="btn btn-primary w-100 auth-main-btn" id="loginSubmitBtn" onclick="handleLogin()">登录</button>
-                        <button type="button" class="btn btn-outline w-100 mt-2" onclick="startOAuthLogin('qq')">
-                            <i class="bi bi-tencent-qq me-1"></i>QQ 一键登录
-                        </button>
-                        <p class="text-center mt-3 mb-0 text-muted">
-                            没有账号？<a href="#" onclick="switchToRegister()">立即注册</a>
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade auth-modal" id="registerModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content auth-modal-content auth-register-content">
-                <div class="auth-form-pane">
-                    <div class="modal-header border-0 pb-0">
-                        <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>创建账号</h5>
-                        <button class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body pt-3">
-                        <div class="form-group">
-                            <label class="form-label">用户名</label>
-                            <input type="text" class="form-control" id="regUsername" placeholder="2-30个字符，支持中文">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">邮箱</label>
-                            <input type="email" class="form-control" id="regEmail" placeholder="your@email.com">
-                        </div>
-                        <div class="form-group hidden" id="regEmailCodeGroup">
-                            <label class="form-label">邮箱验证码</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="regEmailCode" placeholder="6位验证码" maxlength="6">
-                                <button class="btn btn-outline-primary" type="button" id="sendRegEmailCodeBtn" onclick="sendRegisterEmailCode()">发送验证码</button>
+                <div class="auth-form-shell">
+                    <div class="auth-form-track" id="authFormTrack">
+                        <div class="auth-form-pane auth-login-pane">
+                            <div class="modal-header border-0 pb-0">
+                                <h5 class="modal-title"><i class="bi bi-person-check me-2"></i>欢迎回来</h5>
+                                <button class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body pt-3">
+                                <div class="form-group">
+                                    <label class="form-label">用户名</label>
+                                    <input type="text" class="form-control" id="loginUsername" placeholder="输入用户名">
+                                </div>
+                                <div class="form-group mb-3">
+                                    <label class="form-label">密码</label>
+                                    <input type="password" class="form-control" id="loginPassword" placeholder="输入密码">
+                                </div>
+                                <div id="loginErrorBox" class="alert alert-danger py-2 small hidden"></div>
+                                <button type="button" class="btn btn-primary w-100 auth-main-btn" id="loginSubmitBtn" onclick="handleLogin()">登录</button>
+                                <button type="button" class="btn btn-outline w-100 mt-2" onclick="startOAuthLogin('qq')">
+                                    <i class="bi bi-tencent-qq me-1"></i>QQ 一键登录
+                                </button>
+                                <p class="text-center mt-3 mb-0 text-muted">
+                                    没有账号？<a href="#" onclick="switchToRegister(); return false;">立即注册</a>
+                                </p>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">密码</label>
-                            <input type="password" class="form-control" id="regPassword" placeholder="至少6位，包含字母和数字">
+                        <div class="auth-form-pane auth-register-pane">
+                            <div class="modal-header border-0 pb-0">
+                                <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>创建账号</h5>
+                                <button class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body pt-3">
+                                <div class="form-group">
+                                    <label class="form-label">用户名</label>
+                                    <input type="text" class="form-control" id="regUsername" placeholder="2-30个字符，支持中文">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">邮箱</label>
+                                    <input type="email" class="form-control" id="regEmail" placeholder="your@email.com">
+                                </div>
+                                <div class="form-group hidden" id="regEmailCodeGroup">
+                                    <label class="form-label">邮箱验证码</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="regEmailCode" placeholder="6位验证码" maxlength="6">
+                                        <button class="btn btn-outline-primary" type="button" id="sendRegEmailCodeBtn" onclick="sendRegisterEmailCode()">发送验证码</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">密码</label>
+                                    <input type="password" class="form-control" id="regPassword" placeholder="至少6位，包含字母和数字">
+                                </div>
+                                <div class="form-group mb-3">
+                                    <label class="form-label">确认密码</label>
+                                    <input type="password" class="form-control" id="regPasswordConfirm" placeholder="再次输入密码">
+                                </div>
+                                <div id="registerResultBox" class="alert py-2 small hidden"></div>
+                                <button class="btn btn-primary w-100 auth-main-btn" id="registerSubmitBtn" onclick="handleRegister()">注册</button>
+                                <p class="text-center mt-3 mb-0 text-muted">
+                                    已有账号？<a href="#" onclick="switchToLogin(); return false;">立即登录</a>
+                                </p>
+                            </div>
                         </div>
-                        <div class="form-group mb-3">
-                            <label class="form-label">确认密码</label>
-                            <input type="password" class="form-control" id="regPasswordConfirm" placeholder="再次输入密码">
-                        </div>
-                        <div id="registerResultBox" class="alert py-2 small hidden"></div>
-                        <button class="btn btn-primary w-100 auth-main-btn" id="registerSubmitBtn" onclick="handleRegister()">注册</button>
-                        <p class="text-center mt-3 mb-0 text-muted">
-                            已有账号？<a href="#" onclick="switchToLogin()">立即登录</a>
-                        </p>
-                    </div>
-                </div>
-                <div class="auth-art-pane">
-                    <img class="auth-anime-image" src="https://t.alcy.cc/moez" alt="随机动漫图" loading="lazy">
-                    <div class="auth-art-caption">
-                        <h4>加入 KeyNest</h4>
-                        <p>安全交易、自动发货，欢迎回来继续逛市场。</p>
                     </div>
                 </div>
             </div>
@@ -587,13 +577,13 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=202605270850"></script>
-    <script src="assets/js/app.js?v=202605270850"></script>
-    <script src="assets/js/product.js?v=202605270850"></script>
-    <script src="assets/js/message.js?v=202605270850"></script>
-    <script src="assets/js/auth.js?v=202605270850"></script>
+    <script src="assets/js/api.js?v=202605270857"></script>
+    <script src="assets/js/app.js?v=202605270857"></script>
+    <script src="assets/js/product.js?v=202605270857"></script>
+    <script src="assets/js/message.js?v=202605270857"></script>
+    <script src="assets/js/auth.js?v=202605270857"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = '202605270850';
+        window.KEYNEST_ASSET_VERSION = '202605270857';
 
         async function renderFrontMembershipCards(area) {
             if (!area) return;
