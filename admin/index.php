@@ -549,6 +549,14 @@ function openUserEditor(id) {
                             <i class="bi bi-arrow-counterclockwise me-1"></i>重新配置收款方式
                         </button>
                     </div>
+                    <div class="alert alert-light border py-2 small mt-3 mb-0">
+                        <label class="form-label fw-semibold mb-1"><i class="bi bi-key me-1 text-primary"></i>重置登录密码</label>
+                        <div class="input-group input-group-sm">
+                            <input id="editNewPassword" type="password" class="form-control" autocomplete="new-password" placeholder="输入新密码，留空则不修改">
+                            <button class="btn btn-outline-secondary" type="button" onclick="toggleEditUserPassword()"><i class="bi bi-eye"></i></button>
+                        </div>
+                        <div class="form-text">仅填写时才会重置，至少 6 位。</div>
+                    </div>
                 </div>
                 <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="saveUserAdmin()">保存</button></div>
             </div>
@@ -558,6 +566,11 @@ function openUserEditor(id) {
 }
 async function saveUserAdmin() {
     const roleEl = document.getElementById('editRole');
+    const newPassword = document.getElementById('editNewPassword')?.value || '';
+    if (newPassword && newPassword.length < 6) {
+        showToast('新密码至少 6 位', 'error');
+        return;
+    }
     const payload = {
         id: document.getElementById('editUserId').value,
         username: document.getElementById('editUsername').value.trim(),
@@ -566,12 +579,18 @@ async function saveUserAdmin() {
         membership_level: document.getElementById('editMembership').value,
         balance: document.getElementById('editBalance').value
     };
+    if (newPassword) payload.new_password = newPassword;
     const res = await request('admin.php?action=update_user', 'POST', payload);
     if (!res.success) return showToast(res.message || '保存失败', 'error');
-    showToast('用户信息已保存', 'success');
+    showToast(res.message || '用户信息已保存', 'success');
     bootstrap.Modal.getInstance(document.getElementById('userEditorModal'))?.hide();
     await loadAdminData();
     renderUsers();
+}
+function toggleEditUserPassword() {
+    const input = document.getElementById('editNewPassword');
+    if (!input) return;
+    input.type = input.type === 'password' ? 'text' : 'password';
 }
 async function resetUserPaymentMethodsAdmin(id) {
     const user = (Admin.cache.users || []).find(u => u.id === id);

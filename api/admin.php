@@ -39,7 +39,7 @@ function adminUserPayload() {
     if ($id === '') {
         adminJsonResponse(['success' => false, 'message' => '缺少用户ID'], 400);
     }
-    return [
+    $payload = [
         'id' => $id,
         'username' => trim($_POST['username'] ?? ''),
         'email' => trim($_POST['email'] ?? ''),
@@ -47,6 +47,14 @@ function adminUserPayload() {
         'membership_level' => trim($_POST['membership_level'] ?? 'Free'),
         'balance' => floatval($_POST['balance'] ?? 0),
     ];
+    $newPassword = trim((string)($_POST['new_password'] ?? ''));
+    if ($newPassword !== '') {
+        if (strlen($newPassword) < 6 || strlen($newPassword) > 72) {
+            adminJsonResponse(['success' => false, 'message' => '新密码长度需为 6-72 位'], 400);
+        }
+        $payload['password'] = password_hash($newPassword, PASSWORD_DEFAULT);
+    }
+    return $payload;
 }
 
 function adminLogFilePath($type, $date = '') {
@@ -611,7 +619,7 @@ switch ($action) {
                 'paid_at' => time()
             ]);
         }
-        adminJsonResponse(['success' => true, 'message' => '用户信息已更新']);
+        adminJsonResponse(['success' => true, 'message' => isset($updates['password']) ? '用户信息已更新，登录密码已重置' : '用户信息已更新']);
 
     case 'reset_user_payment_methods':
         $id = trim($_POST['id'] ?? '');
