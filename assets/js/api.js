@@ -68,18 +68,22 @@ const API = {
     },
 
     // 认证
-    login(username, password) {
-        return this.request('auth.php?action=login', 'POST', { username, password });
+    login(username, password, captcha_token = '') {
+        return this.request('auth.php?action=login', 'POST', { username, password, captcha_token });
     },
 
-    register(username, email, password, password_confirm, email_code = '') {
+    register(username, email, password, password_confirm, email_code = '', captcha_token = '') {
         return this.request('auth.php?action=register', 'POST', {
-            username, email, password, password_confirm, email_code
+            username, email, password, password_confirm, email_code, captcha_token
         });
     },
 
-    sendEmailCode(email) {
-        return this.request('auth.php?action=send_email_code', 'POST', { email });
+    sendEmailCode(email, captcha_token = '') {
+        return this.request('auth.php?action=send_email_code', 'POST', { email, captcha_token });
+    },
+
+    getCaptchaConfig() {
+        return this.request('auth.php?action=captcha_config');
     },
 
     logout() {
@@ -92,6 +96,30 @@ const API = {
 
     updateProfile(username, email) {
         return this.request('auth.php?action=update_profile', 'POST', { username, email });
+    },
+
+    async uploadAvatar(file) {
+        const options = {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new FormData()
+        };
+        options.body.append('image', file);
+        try {
+            const response = await fetch(this.baseUrl + 'auth.php?action=upload_avatar', options);
+            const text = await response.text();
+            let result = {};
+            try {
+                result = text ? JSON.parse(text) : {};
+            } catch (parseError) {
+                const preview = text ? text.slice(0, 300) : '空响应';
+                return { success: false, message: `服务器返回异常（HTTP ${response.status}）：${preview}` };
+            }
+            return response.ok ? result : { success: false, message: result.message || `上传失败（HTTP ${response.status}）`, ...result };
+        } catch (error) {
+            console.error('Avatar Upload Error:', error);
+            return { success: false, message: '头像上传失败，请检查网络或服务器状态：' + (error.message || error) };
+        }
     },
 
     savePaymentMethods(methods, emailCode = '') {
@@ -128,8 +156,8 @@ const API = {
         }
     },
 
-    sendProfileEmailCode() {
-        return this.request('auth.php?action=send_profile_email_code', 'POST');
+    sendProfileEmailCode(captcha_token = '') {
+        return this.request('auth.php?action=send_profile_email_code', 'POST', { captcha_token });
     },
 
     changePassword(emailCode, newPassword, confirmPassword) {

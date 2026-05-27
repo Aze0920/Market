@@ -275,11 +275,76 @@ class YiPay {
         $params['sign'] = $this->signParams($params);
         $params['sign_type'] = 'MD5';
 
+        $submitUrl = normalizeApiUrl($this->config['api_url']) . 'submit.php?' . http_build_query($params);
+        $apiData = $this->createApiOrder($params);
+
         return [
-            'url' => normalizeApiUrl($this->config['api_url']) . 'submit.php?' . http_build_query($params),
+            'url' => $apiData['payment_url'] ?: $submitUrl,
+            'qrcode_url' => $apiData['qrcode_url'],
+            'qrcode_content' => $apiData['qrcode_content'],
             'params' => $params,
             'submit_mode' => $this->config['submit_mode'] ?? 'url_redirect'
         ];
+    }
+
+    private function createApiOrder($params) {
+        $result = ['payment_url' => '', 'qrcode_url' => '', 'qrcode_content' => ''];
+        $apiUrl = normalizeApiUrl($this->config['api_url']) . 'mapi.php';
+        $payload = http_build_query($params);
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/x-www-form-urlencoded\r\nUser-Agent: KeyNestPayment/1.0\r\n",
+                'content' => $payload,
+                'timeout' => 8,
+                'ignore_errors' => true,
+            ]
+        ]);
+        $body = @file_get_contents($apiUrl, false, $context);
+        if (!$body) {
+            return $result;
+        }
+        $data = json_decode($body, true);
+        if (!is_array($data)) {
+            return $result;
+        }
+        $result['payment_url'] = $this->firstUrl($data, ['payurl', 'payment_url', 'url', 'jump_url', 'trade_url', 'pay_url']);
+        $result['qrcode_url'] = $this->firstUrl($data, ['qrcode', 'qr_code', 'qrcode_url', 'code_img_url', 'img', 'image', 'qrimg', 'qr_img']);
+        $result['qrcode_content'] = $this->firstString($data, ['code_url', 'qr_code_url', 'qrcode_content', 'payinfo', 'pay_info']);
+        return $result;
+    }
+
+    private function firstUrl($data, $keys) {
+        foreach ($keys as $key) {
+            if (!empty($data[$key]) && is_string($data[$key])) {
+                $value = trim($data[$key]);
+                if (preg_match('/^https?:\/\/[^\s<>"\']+$/i', $value)) {
+                    return $value;
+                }
+            }
+        }
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $nested = $this->firstUrl($value, $keys);
+                if ($nested !== '') return $nested;
+            }
+        }
+        return '';
+    }
+
+    private function firstString($data, $keys) {
+        foreach ($keys as $key) {
+            if (!empty($data[$key]) && is_string($data[$key])) {
+                return trim($data[$key]);
+            }
+        }
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $nested = $this->firstString($value, $keys);
+                if ($nested !== '') return $nested;
+            }
+        }
+        return '';
     }
 
     public function verifyNotify($data) {
@@ -390,6 +455,8 @@ switch ($action) {
             'success' => true,
             'order' => $order,
             'payment_url' => $paymentData['url'],
+            'qrcode_url' => $paymentData['qrcode_url'] ?? '',
+            'qrcode_content' => $paymentData['qrcode_content'] ?? '',
             'payment_params' => $paymentData['params'],
             'submit_mode' => $paymentData['submit_mode']
         ]);
@@ -456,6 +523,8 @@ switch ($action) {
             'success' => true,
             'order' => $order,
             'payment_url' => $paymentData['url'],
+            'qrcode_url' => $paymentData['qrcode_url'] ?? '',
+            'qrcode_content' => $paymentData['qrcode_content'] ?? '',
             'payment_params' => $paymentData['params'],
             'submit_mode' => $paymentData['submit_mode']
         ]);
@@ -517,6 +586,8 @@ switch ($action) {
             'success' => true,
             'order' => $order,
             'payment_url' => $paymentData['url'],
+            'qrcode_url' => $paymentData['qrcode_url'] ?? '',
+            'qrcode_content' => $paymentData['qrcode_content'] ?? '',
             'payment_params' => $paymentData['params'],
             'submit_mode' => $paymentData['submit_mode']
         ]);

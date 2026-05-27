@@ -54,6 +54,60 @@ function isEmailVerifyEnabled() {
     return !empty($config['register_email_verify_enabled']);
 }
 
+function captchaClientConfig() {
+    global $db;
+    $config = $db->getSystemConfig();
+    return [
+        'enabled' => !empty($config['captcha_enabled']),
+        'login_enabled' => !empty($config['captcha_enabled']) && !empty($config['captcha_login_enabled']),
+        'register_enabled' => !empty($config['captcha_enabled']) && !empty($config['captcha_register_enabled']),
+        'email_code_enabled' => !empty($config['captcha_enabled']),
+        'provider' => $config['captcha_provider'] ?? 'turnstile',
+        'site_key' => $config['captcha_site_key'] ?? '',
+    ];
+}
+
+function requireCaptcha($context = 'default') {
+    global $db;
+    $config = $db->getSystemConfig();
+    if (empty($config['captcha_enabled'])) {
+        return true;
+    }
+    $provider = $config['captcha_provider'] ?? 'turnstile';
+    $siteKey = trim((string)($config['captcha_site_key'] ?? ''));
+    $secretKey = trim((string)($config['captcha_secret_key'] ?? ''));
+    if ($provider !== 'turnstile') {
+        jsonResponse(['success' => false, 'message' => '当前人机验证服务商暂未接入前端校验，请先在后台选择 Cloudflare Turnstile'], 400);
+    }
+    if ($siteKey === '' || $secretKey === '') {
+        jsonResponse(['success' => false, 'message' => '人机验证未配置完整，请联系管理员配置 Site Key 和 Secret Key'], 400);
+    }
+    $token = trim((string)($_POST['captcha_token'] ?? $_POST['cf-turnstile-response'] ?? ''));
+    if ($token === '') {
+        jsonResponse(['success' => false, 'message' => '请先完成人机验证'], 400);
+    }
+    $payload = http_build_query([
+        'secret' => $secretKey,
+        'response' => $token,
+        'remoteip' => $_SERVER['REMOTE_ADDR'] ?? '',
+    ]);
+    $options = ['http' => [
+        'method' => 'POST',
+        'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
+        'content' => $payload,
+        'timeout' => 8,
+    ]];
+    $response = @file_get_contents('https://challenges.cloudflare.com/turnstile/v0/siteverify', false, stream_context_create($options));
+    if ($response === false) {
+        jsonResponse(['success' => false, 'message' => '人机验证服务连接失败，请稍后再试'], 502);
+    }
+    $result = json_decode($response, true);
+    if (empty($result['success'])) {
+        jsonResponse(['success' => false, 'message' => '人机验证失败，请重新验证'], 400);
+    }
+    return true;
+}
+
 function verifyRegisterEmailCode($email, $code) {
     if (!isEmailVerifyEnabled()) return true;
     $email = strtolower(trim($email));
@@ -76,6 +130,7 @@ function verifyRegisterEmailCode($email, $code) {
 function sendRegisterEmailCode($email) {
     global $db;
     $config = $db->getSystemConfig();
+    requireCaptcha('send_register_email_code');
     if (empty($config['register_email_verify_enabled'])) {
         jsonResponse(['success' => true, 'message' => '邮箱验证未启用']);
     }
@@ -118,6 +173,7 @@ function sendRegisterEmailCode($email) {
 function sendProfileEmailCode($user) {
     global $db;
     $config = $db->getSystemConfig();
+    requireCaptcha('send_profile_email_code');
     $email = strtolower(trim($user['email'] ?? ''));
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         jsonResponse(['success' => false, 'message' => '当前账号未绑定有效邮箱，无法发送验证码'], 400);
@@ -149,7 +205,7 @@ function sendProfileEmailCode($user) {
     jsonResponse(['success' => true, 'message' => '验证码已发送到当前绑定邮箱']);
 }
 
-function verifyProfileEmailCode($user, $code) {
+function verifyProfileEmailCode($user, $code, $consume = false) {
     $record = $_SESSION['profile_email_code'][$user['id']] ?? null;
     $email = strtolower(trim($user['email'] ?? ''));
     if (!$record || empty($record['code']) || empty($record['expires_at'])) {
@@ -166,7 +222,9 @@ function verifyProfileEmailCode($user, $code) {
     if (!hash_equals((string)$record['code'], trim($code))) {
         jsonResponse(['success' => false, 'message' => '邮箱验证码错误'], 400);
     }
-    unset($_SESSION['profile_email_code'][$user['id']]);
+    if ($consume) {
+        unset($_SESSION['profile_email_code'][$user['id']]);
+    }
 }
 
 function safeUser($user) {
@@ -198,6 +256,11 @@ switch ($action) {
 
         if (empty($username) || empty($password)) {
             jsonResponse(['success' => false, 'message' => '请填写用户名和密码'], 400);
+        }
+
+        $captchaConfig = captchaClientConfig();
+        if (!empty($captchaConfig['login_enabled'])) {
+            requireCaptcha('login');
         }
 
         // 检查速率限制
@@ -260,6 +323,10 @@ switch ($action) {
         }
         if ($password !== $passwordConfirm) {
             jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
+        }
+        $captchaConfig = captchaClientConfig();
+        if (!empty($captchaConfig['register_enabled'])) {
+            requireCaptcha('register');
         }
         verifyRegisterEmailCode($email, $emailCode);
         if ($db->getUserByUsername($username)) {
@@ -348,7 +415,10 @@ switch ($action) {
             $_SESSION['last_activity'] = time();
         }
         
-        jsonResponse(['success' => true, 'logged_in' => true, 'user' => safeUser($user)]);
+        jsonResponse(['success' => true, 'logged_in' => true, 'user' => safeUser($user), 'captcha' => captchaClientConfig()]);
+
+    case 'captcha_config':
+        jsonResponse(['success' => true, 'captcha' => captchaClientConfig()]);
 
     case 'update_profile':
         $userId = requireAuth();
@@ -384,6 +454,63 @@ switch ($action) {
         $updatedUser = $db->getUserById($userId);
         jsonResponse(['success' => true, 'message' => '个人资料已保存', 'user' => safeUser($updatedUser)]);
 
+    case 'upload_avatar':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        if (empty($_FILES['image'])) {
+            $maxUpload = ini_get('upload_max_filesize') ?: '未知';
+            $maxPost = ini_get('post_max_size') ?: '未知';
+            jsonResponse(['success' => false, 'message' => '没有收到头像文件，可能超过服务器上传限制（upload_max_filesize=' . $maxUpload . '，post_max_size=' . $maxPost . '）'], 400);
+        }
+        if (!is_uploaded_file($_FILES['image']['tmp_name'] ?? '')) {
+            jsonResponse(['success' => false, 'message' => '请选择要上传的头像图片'], 400);
+        }
+        $file = $_FILES['image'];
+        if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            $uploadErrors = [
+                UPLOAD_ERR_INI_SIZE => '头像超过服务器 upload_max_filesize 限制',
+                UPLOAD_ERR_FORM_SIZE => '头像超过表单限制',
+                UPLOAD_ERR_PARTIAL => '头像只上传了一部分，请重试',
+                UPLOAD_ERR_NO_FILE => '没有选择头像文件',
+                UPLOAD_ERR_NO_TMP_DIR => '服务器缺少临时上传目录',
+                UPLOAD_ERR_CANT_WRITE => '服务器临时目录写入失败',
+                UPLOAD_ERR_EXTENSION => '上传被服务器扩展拦截',
+            ];
+            jsonResponse(['success' => false, 'message' => $uploadErrors[$file['error']] ?? '头像上传失败，错误码：' . $file['error']], 400);
+        }
+        if (($file['size'] ?? 0) <= 0 || $file['size'] > 2 * 1024 * 1024) {
+            jsonResponse(['success' => false, 'message' => '头像大小不能超过2MB'], 400);
+        }
+        $info = @getimagesize($file['tmp_name']);
+        $mime = $info['mime'] ?? '';
+        $extMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+        if (!isset($extMap[$mime])) {
+            jsonResponse(['success' => false, 'message' => '仅支持 JPG、PNG、GIF、WEBP 头像'], 400);
+        }
+        $siteRoot = is_dir(dirname(__DIR__) . '/public') ? dirname(__DIR__) . '/public' : dirname(__DIR__);
+        $uploadDir = $siteRoot . '/uploads/avatars';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+            jsonResponse(['success' => false, 'message' => '头像目录创建失败：' . $uploadDir], 500);
+        }
+        if (!is_writable($uploadDir)) {
+            jsonResponse(['success' => false, 'message' => '头像目录不可写，请检查服务器目录权限：' . $uploadDir], 500);
+        }
+        $filename = 'avatar_' . date('YmdHis') . '_' . bin2hex(random_bytes(6)) . '.' . $extMap[$mime];
+        $target = $uploadDir . '/' . $filename;
+        if (!move_uploaded_file($file['tmp_name'], $target)) {
+            jsonResponse(['success' => false, 'message' => '保存头像失败，请检查上传目录权限或磁盘空间'], 500);
+        }
+        @chmod($target, 0644);
+        $url = '/uploads/avatars/' . $filename;
+        if (!$db->updateUser($userId, ['avatar' => $url])) {
+            jsonResponse(['success' => false, 'message' => '头像保存失败'], 500);
+        }
+        $updatedUser = $db->getUserById($userId);
+        jsonResponse(['success' => true, 'url' => $url, 'message' => '头像上传成功', 'user' => safeUser($updatedUser)]);
+
     case 'save_payment_methods':
         $userId = requireAuth();
         $user = $db->getUserById($userId);
@@ -397,23 +524,20 @@ switch ($action) {
         }
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
-        $requiresEmailCode = false;
         $methods = [];
         foreach ($allowed as $key => $label) {
             $item = is_array($decoded[$key] ?? null) ? $decoded[$key] : [];
             $oldItem = is_array($oldMethods[$key] ?? null) ? $oldMethods[$key] : [];
-            $account = trim((string)($item['account'] ?? ''));
-            $qrcode = trim((string)($item['qrcode'] ?? ''));
             $oldAccount = trim((string)($oldItem['account'] ?? ''));
             $oldQrcode = trim((string)($oldItem['qrcode'] ?? ''));
+            $isLocked = $oldQrcode !== '';
+            $account = $isLocked ? $oldAccount : trim((string)($item['account'] ?? ''));
+            $qrcode = $isLocked ? $oldQrcode : trim((string)($item['qrcode'] ?? ''));
             if (strlen($account) > 100) {
                 jsonResponse(['success' => false, 'message' => $label . '收款账号过长'], 400);
             }
             if ($qrcode !== '' && !preg_match('/^(https?:\/\/|\/uploads\/payment_qrcodes\/)[^\s<>"\']+\.(png|jpe?g|gif|webp)(\?[^\s<>"\']*)?$/i', $qrcode)) {
                 jsonResponse(['success' => false, 'message' => $label . '收款码地址格式不正确'], 400);
-            }
-            if (($oldAccount !== '' || $oldQrcode !== '') && (($oldAccount !== '' && $account !== $oldAccount) || ($oldQrcode !== '' && $qrcode !== $oldQrcode))) {
-                $requiresEmailCode = true;
             }
             $methods[$key] = [
                 'label' => $label,
@@ -422,15 +546,16 @@ switch ($action) {
                 'updated_at' => ($account !== $oldAccount || $qrcode !== $oldQrcode) ? time() : intval($oldItem['updated_at'] ?? 0)
             ];
         }
-        if ($requiresEmailCode) {
-            verifyProfileEmailCode($user, trim($_POST['email_code'] ?? ''));
+        $code = trim($_POST['email_code'] ?? '');
+        if ($code !== '') {
+            verifyProfileEmailCode($user, $code, false);
         }
         $ok = $db->updateUser($userId, ['payment_methods' => $methods]);
         if (!$ok) {
             jsonResponse(['success' => false, 'message' => '收款方式保存失败'], 500);
         }
         $updatedUser = $db->getUserById($userId);
-        jsonResponse(['success' => true, 'message' => $requiresEmailCode ? '邮箱验证通过，收款方式已更新' : '收款方式已保存', 'user' => safeUser($updatedUser)]);
+        jsonResponse(['success' => true, 'message' => '收款方式已保存', 'user' => safeUser($updatedUser)]);
 
     case 'upload_payment_qrcode':
         $userId = requireAuth();
@@ -439,6 +564,10 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
         }
         $method = trim((string)($_POST['method'] ?? ''));
+        $emailCode = trim((string)($_POST['email_code'] ?? ''));
+        if ($emailCode !== '') {
+            verifyProfileEmailCode($user, $emailCode, false);
+        }
         $incomingAccount = trim((string)($_POST['account'] ?? ''));
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         if (!isset($allowed[$method])) {
@@ -449,9 +578,9 @@ switch ($action) {
         }
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
         $oldItem = is_array($oldMethods[$method] ?? null) ? $oldMethods[$method] : [];
-        $hasExistingPaymentInfo = trim((string)($oldItem['account'] ?? '')) !== '' || trim((string)($oldItem['qrcode'] ?? '')) !== '';
+        $hasExistingPaymentInfo = trim((string)($oldItem['qrcode'] ?? '')) !== '';
         if ($hasExistingPaymentInfo) {
-            verifyProfileEmailCode($user, trim($_POST['email_code'] ?? ''));
+            jsonResponse(['success' => false, 'message' => '该收款方式已锁定，不能重复上传；如需重配请联系管理员'], 400);
         }
         if (empty($_FILES['image'])) {
             $maxUpload = ini_get('upload_max_filesize') ?: '未知';
@@ -542,7 +671,7 @@ switch ($action) {
         if (strlen($newPassword) < 6 || !preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{6,}$/', $newPassword)) {
             jsonResponse(['success' => false, 'message' => '密码至少6位，且需包含字母和数字'], 400);
         }
-        verifyProfileEmailCode($user, $code);
+        verifyProfileEmailCode($user, $code, false);
         $ok = $db->updateUser($userId, ['password' => password_hash($newPassword, PASSWORD_DEFAULT)]);
         if (!$ok) {
             jsonResponse(['success' => false, 'message' => '密码修改失败'], 500);

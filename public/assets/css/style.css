@@ -413,6 +413,23 @@ a:hover {
     display: block;
 }
 
+.product-card .product-image.image-error,
+.product-detail-image.image-error,
+.product-image-preview-placeholder.image-error {
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    text-align: center;
+}
+
+.product-card .product-image.image-error i,
+.product-detail-image.image-error i,
+.product-image-preview-placeholder.image-error i {
+    font-size: 2rem;
+    color: var(--primary-accent);
+}
+
 .product-card .product-body {
     padding: 1rem;
     flex: 1;
@@ -560,6 +577,19 @@ a:hover {
     justify-content: center;
     font-weight: 700;
     font-size: 1rem;
+    overflow: hidden;
+}
+
+.avatar.has-image {
+    background: #fff;
+    border: 1px solid rgba(99, 102, 241, .18);
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .nav-avatar-clickable {
@@ -703,6 +733,74 @@ a:hover {
 .sidebar-nav-item i {
     font-size: 1rem;
     width: 18px;
+}
+
+.captcha-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.56);
+    backdrop-filter: blur(10px);
+}
+
+.captcha-card {
+    position: relative;
+    width: min(420px, 100%);
+    border-radius: 24px;
+    background: #fff;
+    padding: 2rem;
+    text-align: center;
+    box-shadow: 0 30px 90px rgba(15, 23, 42, 0.28);
+    animation: modalSlideIn .22s ease;
+}
+
+.captcha-close {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    border: 0;
+    background: #f1f5f9;
+    color: #64748b;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.captcha-icon {
+    width: 58px;
+    height: 58px;
+    margin: 0 auto 1rem;
+    display: grid;
+    place-items: center;
+    border-radius: 20px;
+    color: #fff;
+    font-size: 1.8rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-accent));
+}
+
+.captcha-card h5 {
+    font-weight: 800;
+    margin-bottom: .45rem;
+}
+
+.captcha-card p {
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+}
+
+.captcha-widget {
+    display: flex;
+    justify-content: center;
+    min-height: 65px;
+}
+
+.captcha-inline-box {
+    margin-bottom: .75rem;
 }
 
 .modal-content {
@@ -1834,6 +1932,32 @@ a:hover {
     font-size: 1.25rem;
 }
 
+.payment-account-lock-wrap {
+    position: relative;
+}
+
+.payment-account-lock-wrap .form-control.locked {
+    padding-right: 6.2rem;
+    color: #64748b;
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    cursor: not-allowed;
+}
+
+.payment-account-lock {
+    position: absolute;
+    right: .75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    color: #475569;
+    font-size: .78rem;
+    font-weight: 800;
+    pointer-events: none;
+}
+
 .payment-upload-zone {
     display: block;
     border: 1.5px dashed var(--border-color);
@@ -2034,6 +2158,46 @@ a:hover {
     border-radius: var(--border-radius-lg);
     background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     box-shadow: var(--shadow-sm);
+}
+
+.profile-avatar-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.profile-avatar-upload {
+    position: relative;
+    display: inline-flex;
+    cursor: pointer;
+}
+
+.profile-main-avatar {
+    width: 64px;
+    height: 64px;
+    font-size: 1.45rem;
+    box-shadow: 0 14px 30px rgba(79, 70, 229, .2);
+}
+
+.profile-avatar-camera {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--primary-accent);
+    color: #fff;
+    border: 2px solid #fff;
+    display: grid;
+    place-items: center;
+    font-size: .72rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.profile-avatar-upload:hover .profile-main-avatar {
+    transform: translateY(-1px) scale(1.02);
 }
 
 .profile-info-row {

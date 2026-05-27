@@ -492,6 +492,8 @@ class Database {
             'captcha_site_key' => '',
             'captcha_secret_key' => '',
             'captcha_extra_config' => '',
+            'captcha_login_enabled' => false,
+            'captcha_register_enabled' => false,
             'announcement_enabled' => false,
             'announcement_popup_enabled' => false,
             'announcement_title' => '',
@@ -853,7 +855,7 @@ class Database {
             $userId = $updates['id'];
         }
 
-        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods'];
+        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
                 unset($updates[$key]);
@@ -880,6 +882,12 @@ class Database {
             }
             if ($key === 'payment_methods') {
                 $updates[$key] = is_array($value) ? $value : [];
+            }
+            if ($key === 'avatar') {
+                $updates[$key] = trim((string)$value);
+                if ($updates[$key] !== '' && !preg_match('/^\/uploads\/avatars\/[a-zA-Z0-9_.-]+\.(png|jpe?g|gif|webp)$/i', $updates[$key])) {
+                    unset($updates[$key]);
+                }
             }
         }
 

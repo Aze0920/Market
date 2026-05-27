@@ -32,12 +32,22 @@ function deliveryInfoHtml(d) {
     }).join('');
 }
 
-function productImageHtml(image, className = '') {
+function resolveProductImageUrl(image) {
     const value = String(image || '').trim();
-    if (/^(https?:\/\/|\/uploads\/products\/).+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(value)) {
-        return `<img class="product-custom-img ${className}" src="${Security.escapeAttr(value)}" alt="商品图片" loading="lazy">`;
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    if (/^\/uploads\/products\/[a-zA-Z0-9_.-]+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(value)) {
+        return value;
     }
-    return Security.escapeHtml(value || '📦');
+    return '';
+}
+
+function productImageHtml(image, className = '') {
+    const url = resolveProductImageUrl(image);
+    if (url) {
+        return `<img class="product-custom-img ${className}" src="${Security.escapeAttr(url)}" alt="商品图片" loading="lazy" onerror="this.remove(); this.parentElement.classList.add('image-error'); this.parentElement.innerHTML='<i class=&quot;bi bi-image&quot;></i><span>商品图片暂时无法访问</span>';">`;
+    }
+    return Security.escapeHtml(String(image || '').trim() || '📦');
 }
 
 function sellerMembershipBadge(product = {}) {
@@ -184,6 +194,8 @@ function updatePurchaseQuantityTotal() {
 
 let selectedPurchasePaymentValue = 'balance';
 let purchasePaymentOptions = [];
+let buyNowOpening = false;
+let confirmPurchasePending = false;
 
 function purchaseMethodLabel(type) {
     const labels = { balance: '余额', alipay: '支付宝', wxpay: '微信', qqpay: 'QQ钱包', cashier: '聚合收银台' };
@@ -205,65 +217,73 @@ function selectPurchasePaymentOption(value) {
 }
 
 async function handleBuyNow() {
-    if (!App.currentUser) {
-        Toast.warning('请先登录');
-        openLoginModal();
-        return;
+    if (buyNowOpening) return;
+    buyNowOpening = true;
+    const buyBtn = document.getElementById('btnBuyNow');
+    const oldBuyBtnHtml = buyBtn?.innerHTML;
+    if (buyBtn) {
+        buyBtn.disabled = true;
+        buyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>处理中...';
     }
+    try {
+        if (!App.currentUser) {
+            Toast.warning('请先登录');
+            openLoginModal();
+            return;
+        }
 
-    if (!App.currentDetailProduct) return;
+        if (!App.currentDetailProduct) return;
 
-    if (App.currentDetailProduct.stock <= 0) {
-        Toast.error('商品已售罄');
-        return;
-    }
+        if (App.currentDetailProduct.stock <= 0) {
+            Toast.error('商品已售罄');
+            return;
+        }
 
-    if (App.currentUser.id === App.currentDetailProduct.seller_id) {
-        Toast.warning('不能购买自己的商品');
-        return;
-    }
+        if (App.currentUser.id === App.currentDetailProduct.seller_id) {
+            Toast.warning('不能购买自己的商品');
+            return;
+        }
 
-    const quantityInput = document.getElementById('buyQuantity');
-    const quantity = Math.max(1, Math.min(App.currentDetailProduct.stock, parseInt(quantityInput?.value || '1', 10)));
-    const totalPrice = App.currentDetailProduct.price * quantity;
+        const quantityInput = document.getElementById('buyQuantity');
+        const quantity = Math.max(1, Math.min(App.currentDetailProduct.stock, parseInt(quantityInput?.value || '1', 10)));
+        const totalPrice = App.currentDetailProduct.price * quantity;
 
-    const balanceEnough = Number(App.currentUser.balance || 0) >= totalPrice;
-    const configsResult = await API.getPaymentConfigs();
-    const onlineOptions = [];
-    if (configsResult.success && Array.isArray(configsResult.configs)) {
-        configsResult.configs
-            .filter(config => config.enabled)
-            .forEach(config => {
-                (config.pay_methods || ['alipay', 'wxpay']).forEach(method => {
-                    const value = `${config.id}|${method}`;
-                    if (!onlineOptions.some(item => item.value === value)) {
-                        onlineOptions.push({
-                            value,
-                            type: method,
-                            configId: config.id,
-                            payType: method,
-                            label: purchaseMethodLabel(method),
-                            desc: config.name || '在线支付',
-                            disabled: false
-                        });
-                    }
+        const balanceEnough = Number(App.currentUser.balance || 0) >= totalPrice;
+        const configsResult = await API.getPaymentConfigs();
+        const onlineOptions = [];
+        if (configsResult.success && Array.isArray(configsResult.configs)) {
+            configsResult.configs
+                .filter(config => config.enabled)
+                .forEach(config => {
+                    (config.pay_methods || ['alipay', 'wxpay']).forEach(method => {
+                        const value = `${config.id}|${method}`;
+                        if (!onlineOptions.some(item => item.value === value)) {
+                            onlineOptions.push({
+                                value,
+                                type: method,
+                                configId: config.id,
+                                payType: method,
+                                label: purchaseMethodLabel(method),
+                                desc: config.name || '在线支付',
+                                disabled: false
+                            });
+                        }
+                    });
                 });
-            });
-    }
-    purchasePaymentOptions = [
-        {
-            value: 'balance',
-            type: 'balance',
-            label: '余额',
-            desc: balanceEnough ? `可用 ¥${Number(App.currentUser.balance || 0).toFixed(2)}` : `余额不足 ¥${Number(App.currentUser.balance || 0).toFixed(2)}`,
-            disabled: !balanceEnough
-        },
-        ...onlineOptions
-    ];
-    selectedPurchasePaymentValue = purchasePaymentOptions.find(item => !item.disabled)?.value || '';
+        }
+        purchasePaymentOptions = [
+            {
+                value: 'balance',
+                type: 'balance',
+                label: '余额',
+                desc: balanceEnough ? `可用 ¥${Number(App.currentUser.balance || 0).toFixed(2)}` : `余额不足 ¥${Number(App.currentUser.balance || 0).toFixed(2)}`,
+                disabled: !balanceEnough
+            },
+            ...onlineOptions
+        ];
+        selectedPurchasePaymentValue = purchasePaymentOptions.find(item => !item.disabled)?.value || '';
 
-    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
-    document.getElementById('purchaseBody').innerHTML = `
+        document.getElementById('purchaseBody').innerHTML = `
         <div class="text-center mb-3">
             <i class="bi bi-cart-check-fill text-success" style="font-size: 3rem;"></i>
             <h5 class="fw-bold mt-2">确认购买</h5>
@@ -290,54 +310,70 @@ async function handleBuyNow() {
         </div>
     `;
 
-    document.getElementById('purchaseFooter').innerHTML = `
-        <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary" onclick="confirmPurchase(${quantity})" ${selectedPurchasePaymentValue ? '' : 'disabled'}>确认购买</button>
-    `;
+        document.getElementById('purchaseFooter').innerHTML = `
+            <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+            <button class="btn btn-primary" id="btnConfirmPurchase" onclick="confirmPurchase(${quantity})" ${selectedPurchasePaymentValue ? '' : 'disabled'}>确认购买</button>
+        `;
 
-    modal.show();
+        showModalSafely('purchaseConfirmModal', { hide: ['productDetailModal'] });
+    } finally {
+        buyNowOpening = false;
+        if (buyBtn) {
+            buyBtn.disabled = false;
+            buyBtn.innerHTML = oldBuyBtnHtml;
+        }
+        setTimeout(cleanupBootstrapModalArtifacts, 260);
+    }
 }
 
 async function confirmPurchase(quantity = 1) {
+    if (confirmPurchasePending) return;
     if (!App.currentDetailProduct) return;
-
-    const selectedOption = purchasePaymentOptions.find(item => item.value === selectedPurchasePaymentValue);
-    if (!selectedOption || selectedOption.disabled) {
-        Toast.warning('请选择可用的支付方式');
-        return;
+    confirmPurchasePending = true;
+    const confirmBtn = document.getElementById('btnConfirmPurchase');
+    const oldConfirmHtml = confirmBtn?.innerHTML;
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>处理中...';
     }
 
-    if (selectedOption.value !== 'balance') {
-        const result = await API.createProductPaymentOrder(
-            selectedOption.configId,
-            App.currentDetailProduct.id,
-            quantity,
-            selectedOption.payType
-        );
-        if (!result.success) {
-            Toast.error(result.message || '创建支付订单失败');
+    try {
+        const selectedOption = purchasePaymentOptions.find(item => item.value === selectedPurchasePaymentValue);
+        if (!selectedOption || selectedOption.disabled) {
+            Toast.warning('请选择可用的支付方式');
             return;
         }
-        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
-        showQrPaymentModal(result, {
-            methodLabel: selectedOption.label,
-            successMessage: '支付成功，商品已发货，页面即将刷新'
-        });
-        return;
-    }
 
-    const result = await API.buyProduct(App.currentDetailProduct.id, quantity);
+        if (selectedOption.value !== 'balance') {
+            const result = await API.createProductPaymentOrder(
+                selectedOption.configId,
+                App.currentDetailProduct.id,
+                quantity,
+                selectedOption.payType
+            );
+            if (!result.success) {
+                Toast.error(result.message || '创建支付订单失败');
+                return;
+            }
+            hideModalSafely('purchaseConfirmModal');
+            showQrPaymentModal(result, {
+                methodLabel: selectedOption.label,
+                successMessage: '支付成功，商品已发货，页面即将刷新'
+            });
+            return;
+        }
 
-    if (!result.success) {
-        Toast.error(result.message);
-        return;
-    }
+        const result = await API.buyProduct(App.currentDetailProduct.id, quantity);
 
-    // 显示发货信息
-    const order = result.order;
-    const d = order.delivery_info;
+        if (!result.success) {
+            Toast.error(result.message);
+            return;
+        }
 
-    document.getElementById('purchaseBody').innerHTML = `
+        const order = result.order;
+        const d = order.delivery_info;
+
+        document.getElementById('purchaseBody').innerHTML = `
         <div class="text-center mb-3">
             <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
             <h5 class="fw-bold mt-2">购买成功！</h5>
@@ -352,13 +388,21 @@ async function confirmPurchase(quantity = 1) {
         <p class="text-muted small text-center mt-2">信息已保存至「购买记录」</p>
     `;
 
-    document.getElementById('purchaseFooter').innerHTML = `
+        document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-primary w-100" data-bs-dismiss="modal" onclick="afterPurchase()">完成</button>
     `;
 
-    App.currentDetailProduct = null;
-    Toast.success('购买成功！');
-    await refreshUserData();
+        App.currentDetailProduct = null;
+        Toast.success('购买成功！');
+        await refreshUserData();
+    } finally {
+        confirmPurchasePending = false;
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = oldConfirmHtml;
+        }
+        setTimeout(cleanupBootstrapModalArtifacts, 180);
+    }
 }
 
 async function afterPurchase() {
@@ -478,9 +522,9 @@ function togglePickupPasswordInput() {
 function updatePublishImagePreview(value) {
     const preview = document.getElementById('pubImagePreview');
     if (!preview) return;
-    const url = String(value || '').trim();
-    if (/^(https?:\/\/|\/uploads\/products\/).+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(url)) {
-        preview.innerHTML = `<img src="${Security.escapeAttr(url)}" alt="商品图片预览">`;
+    const url = resolveProductImageUrl(value);
+    if (url) {
+        preview.innerHTML = `<img src="${Security.escapeAttr(url)}" alt="商品图片预览" onerror="this.remove(); this.parentElement.classList.add('image-error'); this.parentElement.innerHTML='<i class=&quot;bi bi-image&quot;></i><span>图片暂时无法访问，请重新上传</span>';">`;
     } else {
         preview.innerHTML = '<i class="bi bi-cloud-arrow-up"></i><span>点击选择或拖拽上传图片</span><small>支持 JPG / PNG / GIF / WEBP，最大 2MB</small>';
     }

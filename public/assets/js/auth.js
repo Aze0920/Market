@@ -137,6 +137,80 @@
     }
 })();
 
+let keynestCaptchaConfig = null;
+let keynestCaptchaScriptLoading = null;
+
+async function getKeynestCaptchaConfig() {
+    if (keynestCaptchaConfig) return keynestCaptchaConfig;
+    const result = await API.getCaptchaConfig();
+    keynestCaptchaConfig = result.success ? (result.captcha || {}) : {};
+    return keynestCaptchaConfig;
+}
+
+function loadTurnstileScript() {
+    if (window.turnstile) return Promise.resolve();
+    if (keynestCaptchaScriptLoading) return keynestCaptchaScriptLoading;
+    keynestCaptchaScriptLoading = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('人机验证组件加载失败，请检查网络或浏览器拦截'));
+        document.head.appendChild(script);
+    });
+    return keynestCaptchaScriptLoading;
+}
+
+async function runCaptcha(context = 'default', force = false) {
+    const config = await getKeynestCaptchaConfig();
+    const shouldRun = force || (context === 'login' && config.login_enabled) || (context === 'register' && config.register_enabled) || (context === 'email_code' && config.email_code_enabled);
+    if (!shouldRun) return '';
+    if (!config.enabled || !config.site_key) {
+        Toast.error('人机验证未配置完整，请联系管理员');
+        throw new Error('captcha_not_configured');
+    }
+    if ((config.provider || 'turnstile') !== 'turnstile') {
+        Toast.error('当前仅支持 Cloudflare Turnstile，请在后台切换服务商');
+        throw new Error('captcha_provider_unsupported');
+    }
+    await loadTurnstileScript();
+    return new Promise((resolve, reject) => {
+        document.getElementById('keynestCaptchaOverlay')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'keynestCaptchaOverlay';
+        overlay.className = 'captcha-overlay';
+        overlay.innerHTML = `
+            <div class="captcha-card">
+                <button type="button" class="captcha-close" aria-label="关闭">&times;</button>
+                <div class="captcha-icon"><i class="bi bi-shield-check"></i></div>
+                <h5>请先完成人机验证</h5>
+                <p>验证通过后会继续当前操作。</p>
+                <div id="keynestCaptchaWidget" class="captcha-widget"></div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        const close = (error) => {
+            overlay.remove();
+            if (error) reject(error);
+        };
+        overlay.querySelector('.captcha-close').onclick = () => close(new Error('captcha_cancelled'));
+        try {
+            window.turnstile.render('#keynestCaptchaWidget', {
+                sitekey: config.site_key,
+                callback: token => {
+                    overlay.remove();
+                    resolve(token);
+                },
+                'error-callback': () => close(new Error('captcha_failed')),
+                'expired-callback': () => Toast.warning('人机验证已过期，请重新验证')
+            });
+        } catch (error) {
+            close(error);
+        }
+    });
+}
+
 function setAuthMode(mode) {
     const content = document.getElementById('authModalContent');
     if (!content) return;
@@ -146,6 +220,7 @@ function setAuthMode(mode) {
 function resetLoginForm() {
     document.getElementById('loginUsername').value = '';
     document.getElementById('loginPassword').value = '';
+    document.getElementById('loginCaptchaBox')?.replaceChildren();
     setLoginError('');
 }
 
@@ -158,6 +233,7 @@ function resetRegisterForm() {
     if (codeInput) codeInput.value = '';
     const group = document.getElementById('regEmailCodeGroup');
     if (group) group.classList.add('hidden');
+    document.getElementById('registerCaptchaBox')?.replaceChildren();
     setRegisterError('');
 }
 
@@ -210,16 +286,28 @@ async function sendRegisterEmailCode() {
         btn.disabled = true;
         btn.textContent = '发送中...';
     }
-    const result = await API.sendEmailCode(email);
-    if (!result.success) {
+    try {
+        const captchaToken = await runCaptcha('email_code', true);
+        const result = await API.sendEmailCode(email, captchaToken);
+        if (!result.success) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '发送验证码';
+            }
+            Toast.error(result.message || '验证码发送失败');
+            return;
+        }
+        Toast.success(result.message || '验证码已发送');
+    } catch (error) {
         if (btn) {
             btn.disabled = false;
             btn.textContent = '发送验证码';
         }
-        Toast.error(result.message || '验证码发送失败');
+        if (error && error.message !== 'captcha_cancelled') {
+            Toast.error(error.message || '人机验证失败，请重试');
+        }
         return;
     }
-    Toast.success(result.message || '验证码已发送');
     registerEmailCodeCountdown = 60;
     clearInterval(registerEmailCodeTimer);
     registerEmailCodeTimer = setInterval(() => {
@@ -271,7 +359,8 @@ async function handleLogin() {
 
     try {
         setLoginError('');
-        const result = await API.login(username, password);
+        const captchaToken = await runCaptcha('login');
+        const result = await API.login(username, password, captchaToken);
 
         if (!result.success) {
             const message = result.message || '登录失败，请检查用户名和密码';
@@ -286,7 +375,7 @@ async function handleLogin() {
         showHome();
         App.updateUnreadBadge();
     } catch (error) {
-        const message = error && error.message ? error.message : '登录请求失败，请稍后重试';
+        const message = error && error.message === 'captcha_cancelled' ? '已取消人机验证' : (error && error.message ? error.message : '登录请求失败，请稍后重试');
         setLoginError(message);
         Toast.error(message);
     } finally {
@@ -367,7 +456,8 @@ async function handleRegister() {
     }
 
     try {
-        const result = await API.register(username, email, password, passwordConfirm, emailCode);
+        const captchaToken = await runCaptcha('register');
+        const result = await API.register(username, email, password, passwordConfirm, emailCode, captchaToken);
 
         if (!result.success) {
             const message = result.message || '注册失败，请检查验证码、用户名或邮箱';
@@ -385,7 +475,7 @@ async function handleRegister() {
             App.updateUnreadBadge();
         }, 350);
     } catch (error) {
-        const message = error && error.message ? error.message : '注册请求失败，请稍后重试';
+        const message = error && error.message === 'captcha_cancelled' ? '已取消人机验证' : (error && error.message ? error.message : '注册请求失败，请稍后重试');
         showRegisterError(message);
         Toast.error(message);
     } finally {

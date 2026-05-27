@@ -218,15 +218,20 @@ switch ($action) {
         if (!isset($extMap[$mime])) {
             jsonResponse(['success' => false, 'message' => '仅支持 JPG、PNG、GIF、WEBP 图片'], 400);
         }
-        $uploadDir = dirname(__DIR__) . '/uploads/products';
+        $siteRoot = is_dir(dirname(__DIR__) . '/public') ? dirname(__DIR__) . '/public' : dirname(__DIR__);
+        $uploadDir = $siteRoot . '/uploads/products';
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
-            jsonResponse(['success' => false, 'message' => '上传目录创建失败'], 500);
+            jsonResponse(['success' => false, 'message' => '上传目录创建失败：' . $uploadDir], 500);
+        }
+        if (!is_writable($uploadDir)) {
+            jsonResponse(['success' => false, 'message' => '上传目录不可写，请检查服务器目录权限：' . $uploadDir], 500);
         }
         $filename = 'product_' . date('YmdHis') . '_' . bin2hex(random_bytes(6)) . '.' . $extMap[$mime];
         $target = $uploadDir . '/' . $filename;
         if (!move_uploaded_file($file['tmp_name'], $target)) {
-            jsonResponse(['success' => false, 'message' => '保存图片失败'], 500);
+            jsonResponse(['success' => false, 'message' => '保存图片失败，请检查上传目录权限或磁盘空间'], 500);
         }
+        @chmod($target, 0644);
         jsonResponse(['success' => true, 'url' => '/uploads/products/' . $filename, 'message' => '图片上传成功']);
 
     case 'list':

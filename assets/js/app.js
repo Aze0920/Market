@@ -41,6 +41,24 @@ window.Security = {
     }
 };
 
+function userAvatarUrl(user = {}) {
+    const value = String(user.avatar || '').trim();
+    if (/^\/uploads\/avatars\/[a-zA-Z0-9_.-]+\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(value)) {
+        return value;
+    }
+    return '';
+}
+
+function avatarHtml(user = {}, className = '') {
+    const initial = Security.escapeHtml(String(user.username || 'U').charAt(0).toUpperCase());
+    const url = userAvatarUrl(user);
+    const classes = `avatar ${className}`.trim();
+    if (url) {
+        return `<div class="${Security.escapeAttr(classes)} has-image"><img src="${Security.escapeAttr(url)}" alt="头像" onerror="this.remove(); this.parentElement.classList.remove('has-image'); this.parentElement.textContent='${initial}';"></div>`;
+    }
+    return `<div class="${Security.escapeAttr(classes)}">${initial}</div>`;
+}
+
 window.App = {
     currentUser: null,
     currentPage: 'home',
@@ -75,7 +93,11 @@ window.App = {
             const navAvatar = document.getElementById('navAvatar');
             const navProfileBtn = document.getElementById('navProfileBtn');
             if (navAvatar) {
-                navAvatar.textContent = Security.escapeHtml(this.currentUser.username.charAt(0).toUpperCase());
+                const avatarUrl = userAvatarUrl(this.currentUser);
+                navAvatar.classList.toggle('has-image', !!avatarUrl);
+                navAvatar.innerHTML = avatarUrl
+                    ? `<img src="${Security.escapeAttr(avatarUrl)}" alt="头像" onerror="this.remove(); this.parentElement.classList.remove('has-image'); this.parentElement.textContent='${Security.escapeHtml(this.currentUser.username.charAt(0).toUpperCase())}';">`
+                    : Security.escapeHtml(this.currentUser.username.charAt(0).toUpperCase());
                 navAvatar.onclick = () => showDashboard('profile');
                 navAvatar.title = '个人中心';
                 navAvatar.setAttribute('role', 'button');
@@ -189,6 +211,41 @@ window.Utils = {
         });
     }
 };
+
+function cleanupBootstrapModalArtifacts() {
+    const visibleModals = Array.from(document.querySelectorAll('.modal.show'));
+    const backdrops = Array.from(document.querySelectorAll('.modal-backdrop'));
+    if (visibleModals.length === 0) {
+        backdrops.forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+        return;
+    }
+    if (backdrops.length > visibleModals.length) {
+        backdrops.slice(0, backdrops.length - visibleModals.length).forEach(el => el.remove());
+    }
+}
+
+function hideModalSafely(id) {
+    const el = typeof id === 'string' ? document.getElementById(id) : id;
+    if (!el || typeof bootstrap === 'undefined') return;
+    bootstrap.Modal.getInstance(el)?.hide();
+}
+
+function showModalSafely(id, options = {}) {
+    const el = typeof id === 'string' ? document.getElementById(id) : id;
+    if (!el || typeof bootstrap === 'undefined') return null;
+    (options.hide || []).forEach(hideModalSafely);
+    setTimeout(cleanupBootstrapModalArtifacts, 180);
+    const modal = bootstrap.Modal.getOrCreateInstance(el);
+    modal.show();
+    return modal;
+}
+
+document.addEventListener('hidden.bs.modal', () => {
+    setTimeout(cleanupBootstrapModalArtifacts, 80);
+});
 
 function persistFrontendState() {
     if (!App.currentPage) return;
@@ -314,7 +371,14 @@ function renderDashboard(tabName = null) {
     if (!App.currentUser) return;
 
     document.getElementById('dashUsername').textContent = App.currentUser.username;
-    document.getElementById('dashAvatar').textContent = App.currentUser.username.charAt(0).toUpperCase();
+    const dashAvatar = document.getElementById('dashAvatar');
+    if (dashAvatar) {
+        const avatarUrl = userAvatarUrl(App.currentUser);
+        dashAvatar.classList.toggle('has-image', !!avatarUrl);
+        dashAvatar.innerHTML = avatarUrl
+            ? `<img src="${Security.escapeAttr(avatarUrl)}" alt="头像" onerror="this.remove(); this.parentElement.classList.remove('has-image'); this.parentElement.textContent='${Security.escapeHtml(App.currentUser.username.charAt(0).toUpperCase())}';">`
+            : Security.escapeHtml(App.currentUser.username.charAt(0).toUpperCase());
+    }
     document.getElementById('dashBalance').textContent = '¥ ' + App.currentUser.balance.toFixed(2) + (App.currentUser.frozen_balance > 0 ? '（冻结 ¥' + Number(App.currentUser.frozen_balance).toFixed(2) + '）' : '');
 
     let sidebarHtml = `
@@ -688,6 +752,45 @@ async function loadMyProductsTab(area) {
     `;
 }
 
+function paymentOrderTitle(order = {}) {
+    const type = String(order.type || '').trim();
+    const amount = Number(order.amount || 0);
+    const absAmount = Math.abs(amount).toFixed(2);
+    const titleMap = {
+        recharge: '在线充值',
+        membership_upgrade: '开通会员',
+        product_online_purchase: '购买商品',
+        product_purchase: '购买商品',
+        product_sale_income: '商品销售收入',
+        publish_fee: '发布商品扣费',
+        admin_balance_adjust: amount >= 0 ? '后台加款' : '后台扣款'
+    };
+    const label = titleMap[type] || (amount < 0 ? '消费支出' : '余额收入');
+    const sign = amount < 0 ? '-' : '';
+    return `${label} ${sign}¥${absAmount}`;
+}
+
+function paymentOrderStatusText(order = {}) {
+    const status = String(order.status || 'pending');
+    const type = String(order.type || '');
+    if (status === 'paid') {
+        if (['product_purchase', 'product_online_purchase', 'publish_fee', 'membership_upgrade'].includes(type) || Number(order.amount || 0) < 0) {
+            return '已完成';
+        }
+        return '已到账';
+    }
+    if (status === 'pending') return '处理中';
+    if (status === 'unpaid') return '未支付';
+    return '失败';
+}
+
+function paymentOrderStatusClass(order = {}) {
+    const status = String(order.status || 'pending');
+    if (status === 'paid') return 'success';
+    if (status === 'pending') return 'warning';
+    return 'danger';
+}
+
 async function loadBalanceTab(area) {
     const result = await API.getMyRequests();
     const paymentResult = await API.getMyPaymentOrders();
@@ -727,15 +830,16 @@ async function loadBalanceTab(area) {
 
     let paymentOrdersHtml = '';
     if (!paymentResult.success || paymentResult.orders.length === 0) {
-        paymentOrdersHtml = '<p class="text-muted mt-3">暂无在线充值记录</p>';
+        paymentOrdersHtml = '<p class="text-muted mt-3">暂无余额流水记录</p>';
     } else {
+        const sortedPaymentOrders = [...paymentResult.orders].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
         paymentOrdersHtml = `
             <div class="mt-3">
-                ${paymentResult.orders.map(o => `
+                ${sortedPaymentOrders.map(o => `
                     <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                        <span>在线充值 ¥${o.amount.toFixed(2)}</span>
-                        <span class="badge badge-${o.status === 'paid' ? 'success' : o.status === 'pending' ? 'warning' : 'danger'}">
-                            ${o.status === 'paid' ? '已到账' : o.status === 'pending' ? '处理中' : o.status === 'unpaid' ? '未支付' : '失败'}
+                        <span>${Security.escapeHtml(paymentOrderTitle(o))}</span>
+                        <span class="badge badge-${paymentOrderStatusClass(o)}">
+                            ${Security.escapeHtml(paymentOrderStatusText(o))}
                         </span>
                         <span class="text-muted small">${Utils.formatDate(o.created_at)}</span>
                     </div>
@@ -833,7 +937,7 @@ async function loadBalanceTab(area) {
         
         <div class="row">
             <div class="col-md-6">
-                <h6 class="fw-bold">在线充值记录</h6>
+                <h6 class="fw-bold">余额流水记录</h6>
                 ${paymentOrdersHtml}
             </div>
             <div class="col-md-6">
@@ -1283,17 +1387,14 @@ function paymentMethodVerifyHtml(key, item) {
     if (!item.account && !item.qrcode) return '';
     return `
         <div class="payment-verify-box mt-3">
-            <div class="small text-muted mb-2"><i class="bi bi-shield-lock me-1"></i>已配置过，修改账号或收款码需邮箱验证码</div>
-            <div class="input-group">
-                <input class="form-control" id="paymentEmailCode_${Security.escapeAttr(key)}" maxlength="6" placeholder="邮箱验证码">
-                <button class="btn btn-outline-primary" type="button" onclick="sendProfileEmailCode()">发送验证码</button>
-            </div>
+            <div class="small text-muted"><i class="bi bi-lock-fill me-1"></i>已配置并锁定，收款账号和收款码不能在前台修改；如需重配请联系管理员。</div>
         </div>
     `;
 }
 
 function renderPaymentMethodUploadCard(key, item) {
     const hasQr = !!item.qrcode;
+    const isLocked = hasQr;
     const imageUrl = hasQr ? `${item.qrcode}${item.qrcode.includes('?') ? '&' : '?'}v=${Date.now()}` : '';
     const uploadAttrs = hasQr
         ? 'aria-disabled="true" onclick="event.preventDefault(); Toast.info(\'收款码已锁定，不能重复上传；如需人工修改请联系管理员。\')"'
@@ -1302,10 +1403,13 @@ function renderPaymentMethodUploadCard(key, item) {
         <div class="payment-receive-card" data-method="${Security.escapeAttr(key)}">
             <div class="payment-receive-head">
                 <div class="payment-receive-title"><i class="bi ${paymentMethodIcon(key)}"></i>${Security.escapeHtml(item.label)}</div>
-                <span class="badge ${hasQr && item.account ? 'badge-success' : 'badge-warning'}">${hasQr && item.account ? '已配置' : '待完善'}</span>
+                <span class="badge ${hasQr && item.account ? 'badge-success' : 'badge-warning'}">${hasQr && item.account ? '已锁定' : '待完善'}</span>
             </div>
             <label class="form-label mt-3">收款账号</label>
-            <input class="form-control" id="paymentAccount_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.account || '')}" placeholder="填写${Security.escapeAttr(item.label)}账号/昵称">
+            <div class="payment-account-lock-wrap">
+                <input class="form-control ${isLocked ? 'locked' : ''}" id="paymentAccount_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.account || '')}" placeholder="填写${Security.escapeAttr(item.label)}账号/昵称" ${isLocked ? 'readonly aria-readonly="true" title="已锁定，如需修改请联系管理员重新配置"' : ''}>
+                ${isLocked ? '<span class="payment-account-lock"><i class="bi bi-lock-fill"></i>已锁定</span>' : ''}
+            </div>
             ${paymentMethodVerifyHtml(key, item)}
             <label class="payment-upload-zone ${hasQr ? 'locked' : ''} mt-3" ${uploadAttrs}>
                 <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" ${hasQr ? 'disabled' : `onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')"`}>
@@ -1375,7 +1479,15 @@ async function loadProfileTab(area) {
             <div class="col-lg-5">
                 <div class="profile-card-soft h-100">
                     <div class="d-flex align-items-center gap-3 mb-4">
-                        <div class="avatar" style="width:58px;height:58px;font-size:1.35rem;">${Security.escapeHtml((user.username || 'U').charAt(0).toUpperCase())}</div>
+                        <div class="profile-avatar-wrap">
+                            <label class="profile-avatar-upload" for="profileAvatarInput" title="点击上传头像">
+                                ${avatarHtml(user, 'profile-main-avatar')}
+                                <span class="profile-avatar-camera"><i class="bi bi-camera-fill"></i></span>
+                            </label>
+                            <input type="file" id="profileAvatarInput" accept="image/*" class="hidden" onchange="handleAvatarSelect(event)">
+                            <button class="btn btn-sm btn-outline-primary mt-2" onclick="document.getElementById('profileAvatarInput')?.click()"><i class="bi bi-upload me-1"></i>上传头像</button>
+                            <small class="text-muted d-block mt-1">不上传则使用默认头像</small>
+                        </div>
                         <div>
                             <h5 class="fw-bold mb-1">${Security.escapeHtml(user.username || '-')}</h5>
                             <div class="text-muted small">${Security.escapeHtml(maskedEmail)}</div>
@@ -1406,8 +1518,8 @@ async function loadProfileTab(area) {
                         </div>
                     </div>
                     <hr class="my-4">
-                    <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-2 text-primary"></i>修改密码</h6>
-                    <div class="alert alert-light border small mb-3">验证码会发送到当前账号邮箱：<strong>${Security.escapeHtml(maskedEmail)}</strong></div>
+                    <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-2 text-primary"></i>账号安全验证</h6>
+                    <div class="alert alert-light border small mb-3">发送一次验证码即可在有效期内用于修改密码、保存支付宝和微信收款方式：<strong>${Security.escapeHtml(maskedEmail)}</strong></div>
                     <div class="row g-3">
                         <div class="col-md-7">
                             <label class="form-label">邮箱验证码</label>
@@ -1450,6 +1562,36 @@ async function loadProfileTab(area) {
     `;
 }
 
+async function handleAvatarSelect(event) {
+    const input = event.target;
+    const file = input?.files?.[0];
+    if (!file) return;
+    if (!/^image\/(jpeg|png|gif|webp)$/.test(file.type)) {
+        input.value = '';
+        return Toast.warning('头像仅支持 JPG、PNG、GIF、WEBP 图片');
+    }
+    if (file.size > 2 * 1024 * 1024) {
+        input.value = '';
+        return Toast.warning('头像大小不能超过2MB');
+    }
+    const btn = document.querySelector('.profile-avatar-wrap .btn');
+    const oldHtml = btn?.innerHTML;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>上传中';
+    }
+    const result = await API.uploadAvatar(file);
+    input.value = '';
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+    }
+    if (!result.success) return Toast.error(result.message || '头像上传失败');
+    if (result.user) App.setUser(result.user);
+    Toast.success(result.message || '头像上传成功');
+    renderDashboardTab('profile');
+}
+
 let profileEmailCountdown = 0;
 let profileEmailTimer = null;
 function updateProfileEmailButton() {
@@ -1465,7 +1607,16 @@ function updateProfileEmailButton() {
 }
 async function sendProfileEmailCode() {
     if (profileEmailCountdown > 0) return;
-    const result = await API.sendProfileEmailCode();
+    let result;
+    try {
+        const captchaToken = await runCaptcha('email_code', true);
+        result = await API.sendProfileEmailCode(captchaToken);
+    } catch (error) {
+        if (error && error.message !== 'captcha_cancelled') {
+            Toast.error(error.message || '人机验证失败，请重试');
+        }
+        return;
+    }
     if (!result.success) return Toast.error(result.message || '验证码发送失败');
     Toast.success(result.message || '验证码已发送');
     profileEmailCountdown = 60;
@@ -1528,10 +1679,10 @@ async function uploadPaymentQrFile(method, file) {
     if (!file.type.startsWith('image/')) return Toast.warning('请选择图片文件');
     if (file.size > 2 * 1024 * 1024) return Toast.warning('图片大小不能超过2MB');
     const needsCode = paymentMethodNeedsEmailCode(method);
-    const emailCode = document.getElementById('paymentEmailCode_' + method)?.value.trim() || '';
+    const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
     if (needsCode && !emailCode) {
         document.getElementById('paymentQrInput_' + method).value = '';
-        return Toast.warning('该收款方式已配置过，修改收款码请先填写邮箱验证码');
+        return Toast.warning('该收款方式已配置过，修改收款码请先填写上方账号安全验证码');
     }
     const preview = document.getElementById('paymentQrPreview_' + method);
     const previousHtml = preview?.innerHTML || renderPaymentQrPlaceholder();
@@ -1562,29 +1713,14 @@ function showPaymentMethodsNotice(message, type = 'info') {
 async function savePaymentMethods() {
     const methods = getUserPaymentMethods();
     const currentMethods = getUserPaymentMethods();
-    const changedKeys = [];
     Object.keys(methods).forEach(key => {
-        const account = document.getElementById('paymentAccount_' + key)?.value.trim() || '';
-        const qrcode = document.getElementById('paymentQr_' + key)?.value.trim() || '';
-        if ((currentMethods[key]?.account || currentMethods[key]?.qrcode) && ((currentMethods[key]?.account && account !== currentMethods[key].account) || (currentMethods[key]?.qrcode && qrcode !== currentMethods[key].qrcode))) {
-            changedKeys.push(key);
-        }
+        const locked = !!currentMethods[key]?.qrcode;
+        const account = locked ? (currentMethods[key]?.account || '') : (document.getElementById('paymentAccount_' + key)?.value.trim() || '');
+        const qrcode = locked ? (currentMethods[key]?.qrcode || '') : (document.getElementById('paymentQr_' + key)?.value.trim() || '');
         methods[key].account = account;
         methods[key].qrcode = qrcode;
     });
-    let emailCode = '';
-    if (changedKeys.length) {
-        if (changedKeys.length > 1) {
-            showPaymentMethodsNotice('一次只能修改一个已配置的收款方式，请分别保存。', 'error');
-            return Toast.warning('一次只能修改一个已配置的收款方式');
-        }
-        const key = changedKeys[0];
-        emailCode = document.getElementById('paymentEmailCode_' + key)?.value.trim() || '';
-        if (!emailCode) {
-            showPaymentMethodsNotice(`修改${methods[key].label || '收款方式'}需要填写该项下方的邮箱验证码。`, 'error');
-            return Toast.warning('修改已配置的收款方式需要邮箱验证码');
-        }
-    }
+    const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
     const btn = document.getElementById('savePaymentMethodsBtn');
     const oldHtml = btn?.innerHTML;
     if (btn) {
@@ -2002,7 +2138,19 @@ let currentPaymentLink = '';
 let paymentPollingTimer = null;
 let paymentPollingOrderId = '';
 
-function paymentQrImageUrl(paymentUrl) {
+function paymentQrImageUrl(paymentResultOrUrl) {
+    if (paymentResultOrUrl && typeof paymentResultOrUrl === 'object') {
+        const directQr = String(paymentResultOrUrl.qrcode_url || '').trim();
+        if (/^https?:\/\//i.test(directQr) || directQr.startsWith('/')) {
+            return directQr;
+        }
+        const qrContent = String(paymentResultOrUrl.qrcode_content || '').trim();
+        if (qrContent) {
+            return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(qrContent);
+        }
+        return paymentQrImageUrl(paymentResultOrUrl.payment_url || '');
+    }
+    const paymentUrl = String(paymentResultOrUrl || '').trim();
     return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(paymentUrl);
 }
 
@@ -2037,7 +2185,13 @@ function showQrPaymentModal(paymentResult, options = {}) {
 
     if (methodEl) methodEl.textContent = options.methodLabel || payMethodLabel(payType);
     if (amountEl) amountEl.textContent = '¥ ' + amount.toFixed(2);
-    if (imageEl) imageEl.src = paymentQrImageUrl(paymentUrl);
+    if (imageEl) {
+        imageEl.src = paymentQrImageUrl(paymentResult);
+        imageEl.onerror = () => {
+            imageEl.onerror = null;
+            imageEl.src = paymentQrImageUrl(paymentUrl);
+        };
+    }
     if (statusEl) statusEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>等待扫码支付，支付成功后会自动刷新';
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('qrPaymentModal')).show();

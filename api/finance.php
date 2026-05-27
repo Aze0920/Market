@@ -336,6 +336,8 @@ switch ($action) {
             'oauth_caihong_enabled',
             'register_email_verify_enabled',
             'captcha_enabled',
+            'captcha_login_enabled',
+            'captcha_register_enabled',
             'announcement_enabled',
             'announcement_popup_enabled'
         ];
