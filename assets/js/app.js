@@ -1295,6 +1295,9 @@ function paymentMethodVerifyHtml(key, item) {
 function renderPaymentMethodUploadCard(key, item) {
     const hasQr = !!item.qrcode;
     const imageUrl = hasQr ? `${item.qrcode}${item.qrcode.includes('?') ? '&' : '?'}v=${Date.now()}` : '';
+    const uploadAttrs = hasQr
+        ? 'aria-disabled="true" onclick="event.preventDefault(); Toast.info(\'收款码已锁定，不能重复上传；如需人工修改请联系管理员。\')"'
+        : `for="paymentQrInput_${Security.escapeAttr(key)}" ondragover="handlePaymentQrDragOver(event)" ondragleave="handlePaymentQrDragLeave(event)" ondrop="handlePaymentQrDrop(event, '${Security.escapeAttr(key)}')"`;
     return `
         <div class="payment-receive-card" data-method="${Security.escapeAttr(key)}">
             <div class="payment-receive-head">
@@ -1304,11 +1307,11 @@ function renderPaymentMethodUploadCard(key, item) {
             <label class="form-label mt-3">收款账号</label>
             <input class="form-control" id="paymentAccount_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.account || '')}" placeholder="填写${Security.escapeAttr(item.label)}账号/昵称">
             ${paymentMethodVerifyHtml(key, item)}
-            <label class="payment-upload-zone mt-3" for="paymentQrInput_${Security.escapeAttr(key)}" ondragover="handlePaymentQrDragOver(event)" ondragleave="handlePaymentQrDragLeave(event)" ondrop="handlePaymentQrDrop(event, '${Security.escapeAttr(key)}')">
-                <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')">
+            <label class="payment-upload-zone ${hasQr ? 'locked' : ''} mt-3" ${uploadAttrs}>
+                <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" ${hasQr ? 'disabled' : `onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')"`}>
                 <input type="hidden" id="paymentQr_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.qrcode || '')}">
                 <div class="payment-upload-preview" id="paymentQrPreview_${Security.escapeAttr(key)}">
-                    ${hasQr ? `<img src="${Security.escapeAttr(imageUrl)}" alt="${Security.escapeAttr(item.label)}收款码">` : '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>'}
+                    ${hasQr ? `<img src="${Security.escapeAttr(imageUrl)}" alt="${Security.escapeAttr(item.label)}收款码"><div class="payment-upload-lock"><i class="bi bi-lock-fill"></i>已锁定，不能重复上传</div>` : renderPaymentQrPlaceholder()}
                 </div>
             </label>
         </div>
@@ -1434,8 +1437,9 @@ async function loadProfileTab(area) {
                             <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-2 text-primary"></i>收款方式</h6>
                             <div class="text-muted small">提现会直接使用这里配置的微信或支付宝收款信息</div>
                         </div>
-                        <button class="btn btn-primary" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
+                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
                     </div>
+                    <div id="paymentMethodsNotice" class="payment-methods-notice hidden mb-3"></div>
                     <div class="payment-receive-grid">
                         ${Object.entries(paymentMethods).map(([key, item]) => renderPaymentMethodUploadCard(key, item)).join('')}
                     </div>
@@ -1497,11 +1501,16 @@ function handlePaymentQrDragLeave(event) {
 function handlePaymentQrDrop(event, method) {
     event.preventDefault();
     event.currentTarget.classList.remove('dragover');
+    if (paymentMethodNeedsEmailCode(method)) return Toast.info('收款码已锁定，不能重复上传');
     const file = event.dataTransfer?.files?.[0];
     if (file) uploadPaymentQrFile(method, file);
 }
 
 function handlePaymentQrSelect(event, method) {
+    if (paymentMethodNeedsEmailCode(method)) {
+        if (event.target) event.target.value = '';
+        return Toast.info('收款码已锁定，不能重复上传');
+    }
     const file = event.target?.files?.[0];
     if (file) uploadPaymentQrFile(method, file);
 }
@@ -1542,26 +1551,60 @@ async function uploadPaymentQrFile(method, file) {
     Toast.success(result.message || '上传成功');
 }
 
+function showPaymentMethodsNotice(message, type = 'info') {
+    const box = document.getElementById('paymentMethodsNotice');
+    if (!box) return;
+    const icon = type === 'success' ? 'bi-check-circle-fill' : type === 'error' ? 'bi-x-circle-fill' : 'bi-info-circle-fill';
+    box.className = `payment-methods-notice ${type} mb-3`;
+    box.innerHTML = `<i class="bi ${icon}"></i><span>${Security.escapeHtml(message)}</span>`;
+}
+
 async function savePaymentMethods() {
     const methods = getUserPaymentMethods();
-    let needsCode = false;
     const currentMethods = getUserPaymentMethods();
+    const changedKeys = [];
     Object.keys(methods).forEach(key => {
         const account = document.getElementById('paymentAccount_' + key)?.value.trim() || '';
         const qrcode = document.getElementById('paymentQr_' + key)?.value.trim() || '';
         if ((currentMethods[key]?.account || currentMethods[key]?.qrcode) && (account !== currentMethods[key].account || qrcode !== currentMethods[key].qrcode)) {
-            needsCode = true;
+            changedKeys.push(key);
         }
         methods[key].account = account;
         methods[key].qrcode = qrcode;
     });
-    const emailCode = needsCode ? (document.querySelector('[id^="paymentEmailCode_"]')?.value.trim() || '') : '';
-    if (needsCode && !emailCode) return Toast.warning('修改已配置的收款方式需要邮箱验证码');
+    let emailCode = '';
+    if (changedKeys.length) {
+        if (changedKeys.length > 1) {
+            showPaymentMethodsNotice('一次只能修改一个已配置的收款方式，请分别保存。', 'error');
+            return Toast.warning('一次只能修改一个已配置的收款方式');
+        }
+        const key = changedKeys[0];
+        emailCode = document.getElementById('paymentEmailCode_' + key)?.value.trim() || '';
+        if (!emailCode) {
+            showPaymentMethodsNotice(`修改${methods[key].label || '收款方式'}需要填写该项下方的邮箱验证码。`, 'error');
+            return Toast.warning('修改已配置的收款方式需要邮箱验证码');
+        }
+    }
+    const btn = document.getElementById('savePaymentMethodsBtn');
+    const oldHtml = btn?.innerHTML;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>保存中...';
+    }
+    showPaymentMethodsNotice('正在保存收款方式...', 'info');
     const result = await API.savePaymentMethods(methods, emailCode);
-    if (!result.success) return Toast.error(result.message || '保存失败');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+    }
+    if (!result.success) {
+        showPaymentMethodsNotice(result.message || '保存失败', 'error');
+        return Toast.error(result.message || '保存失败');
+    }
+    showPaymentMethodsNotice(result.message || '收款方式已保存', 'success');
     Toast.success(result.message || '收款方式已保存');
     if (result.user) App.setUser(result.user);
-    renderDashboardTab('profile');
+    setTimeout(() => renderDashboardTab('profile'), 700);
 }
 async function changeProfilePassword() {
     const code = document.getElementById('profileEmailCode')?.value.trim() || '';
