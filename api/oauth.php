@@ -118,7 +118,12 @@ if (empty($_GET['code'])) {
     ]);
     $loginData = oauthDecodeJson(oauthHttpGet($loginUrl));
     if (($loginData['code'] ?? null) !== 0 || empty($loginData['url'])) {
-        oauthRedirect('获取聚合登录地址失败：' . ($loginData['msg'] ?? '接口无响应'));
+        $callbackHost = parse_url($callbackUri, PHP_URL_HOST) ?: $callbackUri;
+        $msg = $loginData['msg'] ?? '接口无响应';
+        if (mb_strpos($msg, '域名') !== false || mb_strpos($msg, '授权') !== false) {
+            $msg .= '。当前回调域名：' . $callbackHost . '，请在聚合登录平台的“回调域名白名单”中添加这个完整域名（例如 shop.uzip.cn），不要只填主域名。';
+        }
+        oauthRedirect('获取聚合登录地址失败：' . $msg);
     }
     header('Location: ' . $loginData['url']);
     exit;
