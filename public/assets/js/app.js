@@ -2140,17 +2140,18 @@ let paymentPollingOrderId = '';
 
 function paymentQrImageUrl(paymentResultOrUrl) {
     if (paymentResultOrUrl && typeof paymentResultOrUrl === 'object') {
-        const directQr = String(paymentResultOrUrl.qrcode_url || '').trim();
-        if (/^https?:\/\//i.test(directQr) || directQr.startsWith('/')) {
-            return directQr;
-        }
         const qrContent = String(paymentResultOrUrl.qrcode_content || '').trim();
         if (qrContent) {
             return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(qrContent);
         }
-        return paymentQrImageUrl(paymentResultOrUrl.payment_url || '');
+        const directQr = String(paymentResultOrUrl.qrcode_url || '').trim();
+        if (/^https?:\/\//i.test(directQr) || directQr.startsWith('/')) {
+            return directQr;
+        }
+        return paymentQrImageUrl('');
     }
     const paymentUrl = String(paymentResultOrUrl || '').trim();
+    if (!paymentUrl) return '';
     return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(paymentUrl);
 }
 
@@ -2189,7 +2190,7 @@ function showQrPaymentModal(paymentResult, options = {}) {
         imageEl.src = paymentQrImageUrl(paymentResult);
         imageEl.onerror = () => {
             imageEl.onerror = null;
-            imageEl.src = paymentQrImageUrl(paymentUrl);
+            Toast.error('未能获取支付平台真实二维码，请重新发起支付');
         };
     }
     if (statusEl) statusEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>等待扫码支付，支付成功后会自动刷新';
