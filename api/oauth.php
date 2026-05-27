@@ -27,17 +27,20 @@ function oauthRedirect($message, $success = false) {
 }
 
 function oauthRequireEnabled($config) {
-    if (empty($config['oauth_qq_enabled'])) {
-        oauthRedirect('聚合登录未启用');
+    if (empty($config['oauth_caihong_enabled'])) {
+        oauthRedirect('彩虹聚合登录未启用，请到后台 系统设置 → 登录注册 开启右侧“彩虹聚合登录”');
     }
-    foreach (['oauth_qq_app_id', 'oauth_qq_app_key'] as $field) {
+    foreach (['oauth_caihong_app_id', 'oauth_caihong_key'] as $field) {
         if (trim((string)($config[$field] ?? '')) === '') {
-            oauthRedirect('聚合登录 AppID/AppKey 未配置完整');
+            oauthRedirect('彩虹聚合登录 AppID/通信 Key 未配置完整');
         }
     }
 }
 
 function oauthCallbackUri($config) {
+    if (!empty($config['oauth_caihong_redirect_uri'])) {
+        return $config['oauth_caihong_redirect_uri'];
+    }
     if (!empty($config['oauth_qq_redirect_uri'])) {
         return $config['oauth_qq_redirect_uri'];
     }
@@ -77,7 +80,10 @@ function oauthDecodeJson($body) {
 }
 
 function oauthApiBase($config) {
-    $apiUrl = trim((string)($config['oauth_api_url'] ?? ''));
+    $apiUrl = trim((string)($config['oauth_caihong_api_url'] ?? ''));
+    if ($apiUrl === '') {
+        $apiUrl = trim((string)($config['oauth_api_url'] ?? ''));
+    }
     if ($apiUrl === '') {
         $apiUrl = 'https://login.az0.cn/';
     }
@@ -104,8 +110,8 @@ if (empty($_GET['code'])) {
 
     $loginUrl = $apiBase . '?' . http_build_query([
         'act' => 'login',
-        'appid' => $config['oauth_qq_app_id'],
-        'appkey' => $config['oauth_qq_app_key'],
+        'appid' => $config['oauth_caihong_app_id'],
+        'appkey' => $config['oauth_caihong_key'],
         'type' => $provider,
         'redirect_uri' => $callbackUri,
         'state' => $state
@@ -128,8 +134,8 @@ unset($_SESSION['oauth_qq_state'], $_SESSION['oauth_qq_mode'], $_SESSION['oauth_
 
 $callbackUrl = $apiBase . '?' . http_build_query([
     'act' => 'callback',
-    'appid' => $config['oauth_qq_app_id'],
-    'appkey' => $config['oauth_qq_app_key'],
+    'appid' => $config['oauth_caihong_app_id'],
+    'appkey' => $config['oauth_caihong_key'],
     'type' => $provider,
     'code' => $_GET['code']
 ]);
