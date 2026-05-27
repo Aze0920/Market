@@ -45,7 +45,25 @@ function sanitizeUsername($username) {
 }
 
 function sanitizeEmail($email) {
-    return filter_var(trim($email), FILTER_SANITIZE_EMAIL);
+    return filter_var(trim((string)$email), FILTER_SANITIZE_EMAIL);
+}
+
+function sanitizeString($value) {
+    if (is_array($value) || is_object($value)) {
+        $value = '';
+    }
+    return htmlspecialchars(trim((string)$value), ENT_QUOTES, 'UTF-8');
+}
+
+function safeTrimString($value, $maxLength = 500) {
+    if (is_array($value) || is_object($value)) {
+        return '';
+    }
+    $value = trim((string)$value);
+    if ($maxLength > 0 && mb_strlen($value, 'UTF-8') > $maxLength) {
+        $value = mb_substr($value, 0, $maxLength, 'UTF-8');
+    }
+    return $value;
 }
 
 function isEmailVerifyEnabled() {
@@ -661,11 +679,11 @@ switch ($action) {
         foreach ($allowed as $key => $label) {
             $item = is_array($decoded[$key] ?? null) ? $decoded[$key] : [];
             $oldItem = is_array($oldMethods[$key] ?? null) ? $oldMethods[$key] : [];
-            $oldAccount = trim((string)($oldItem['account'] ?? ''));
-            $oldQrcode = trim((string)($oldItem['qrcode'] ?? ''));
+            $oldAccount = safeTrimString($oldItem['account'] ?? '', 100);
+            $oldQrcode = safeTrimString($oldItem['qrcode'] ?? '', 300);
             $isLocked = ($oldAccount !== '' || $oldQrcode !== '') && !$securityUnlocked;
-            $account = $isLocked ? $oldAccount : trim((string)($item['account'] ?? ''));
-            $qrcode = $isLocked ? $oldQrcode : trim((string)($item['qrcode'] ?? ''));
+            $account = $isLocked ? $oldAccount : safeTrimString($item['account'] ?? '', 100);
+            $qrcode = $isLocked ? $oldQrcode : safeTrimString($item['qrcode'] ?? '', 300);
             if (strlen($account) > 100) {
                 jsonResponse(['success' => false, 'message' => $label . '收款账号过长'], 400);
             }
@@ -704,7 +722,7 @@ switch ($action) {
         if ($emailCode !== '') {
             verifyProfileEmailCode($user, $emailCode, false);
         }
-        $incomingAccount = trim((string)($_POST['account'] ?? ''));
+        $incomingAccount = safeTrimString($_POST['account'] ?? '', 100);
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         if (!isset($allowed[$method])) {
             jsonResponse(['success' => false, 'message' => '收款方式不正确'], 400);
@@ -714,7 +732,7 @@ switch ($action) {
         }
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
         $oldItem = is_array($oldMethods[$method] ?? null) ? $oldMethods[$method] : [];
-        $hasExistingPaymentInfo = trim((string)($oldItem['qrcode'] ?? '')) !== '' || trim((string)($oldItem['account'] ?? '')) !== '';
+        $hasExistingPaymentInfo = safeTrimString($oldItem['qrcode'] ?? '', 300) !== '' || safeTrimString($oldItem['account'] ?? '', 100) !== '';
         if ($hasExistingPaymentInfo && $emailCode === '') {
             jsonResponse(['success' => false, 'message' => '该收款方式已锁定，请先输入邮箱验证码完成解锁'], 400);
         }
