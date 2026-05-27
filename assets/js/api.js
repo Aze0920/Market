@@ -216,6 +216,10 @@ const API = {
         return this.request('product.php?action=update', 'POST', { id, ...productData });
     },
 
+    addProductStock(id, accountList) {
+        return this.request('product.php?action=add_stock', 'POST', { id, account_list: accountList });
+    },
+
     deleteProduct(id) {
         return this.request('product.php?action=delete', 'POST', { id });
     },

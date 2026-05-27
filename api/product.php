@@ -477,6 +477,71 @@ switch ($action) {
         unset($safe['account_list'], $safe['pickup_password']);
         jsonResponse(['success' => true, 'message' => '商品已更新', 'product' => $safe]);
 
+    case 'add_stock':
+        $userId = requireAuth();
+        $id = $_POST['id'] ?? '';
+        if (!validateId($id)) {
+            jsonResponse(['success' => false, 'message' => '无效的商品ID'], 400);
+        }
+        $product = $db->getProductById($id);
+        if (!$product) {
+            jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        if (($product['seller_id'] ?? '') !== $userId && ($_SESSION['user_role'] ?? '') !== 'admin') {
+            jsonResponse(['success' => false, 'message' => '无权修改该商品'], 403);
+        }
+        $user = getCurrentUser();
+        $levels = $db->getMembershipLevels();
+        $userLevel = $levels[$user['membership_level'] ?? 'Free'] ?? $levels['Free'];
+        $accountListText = trim((string)($_POST['account_list'] ?? ''));
+        if ($accountListText === '') {
+            jsonResponse(['success' => false, 'message' => '请填写要添加的库存账号'], 400);
+        }
+        $accountLines = preg_split('/\r\n|\r|\n/', $accountListText);
+        $newAccounts = [];
+        foreach ($accountLines as $line) {
+            $account = parseAccountLine($line);
+            if ($account) {
+                $newAccounts[] = $account;
+            }
+        }
+        if (empty($newAccounts)) {
+            jsonResponse(['success' => false, 'message' => '库存账号格式不正确，请至少填写一行账号信息'], 400);
+        }
+        $oldAccounts = is_array($product['account_list'] ?? null) ? $product['account_list'] : [];
+        $maxAccountsPerProduct = intval($userLevel['max_accounts_per_product'] ?? 0);
+        if ($maxAccountsPerProduct > 0 && count($oldAccounts) + count($newAccounts) > $maxAccountsPerProduct) {
+            jsonResponse(['success' => false, 'message' => "您当前会员等级单个商品最多{$maxAccountsPerProduct}个账户，当前已有" . count($oldAccounts) . '个，本次添加' . count($newAccounts) . '个'], 400);
+        }
+        $publishFee = floatval($userLevel['publish_fee_per_account'] ?? 0) * count($newAccounts);
+        if (floatval($user['balance'] ?? 0) < $publishFee) {
+            jsonResponse(['success' => false, 'message' => "添加库存费用不足，需要{$publishFee}元"], 400);
+        }
+        if ($publishFee > 0) {
+            $db->updateUser($userId, ['balance' => floatval($user['balance'] ?? 0) - $publishFee]);
+            $db->createPaymentOrder([
+                'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
+                'user_id' => $userId,
+                'payment_config_id' => 'balance',
+                'pay_type' => 'balance',
+                'amount' => -$publishFee,
+                'actual_amount' => -$publishFee,
+                'fee' => 0,
+                'status' => 'paid',
+                'type' => 'publish_fee',
+                'title' => '余额支付添加库存费用',
+                'description' => '添加库存扣费：' . ($product['title'] ?? ''),
+                'paid_at' => time()
+            ]);
+        }
+        $product['account_list'] = array_merge($oldAccounts, $newAccounts);
+        $product['stock'] = intval($product['stock'] ?? 0) + count($newAccounts);
+        $product['updated_at'] = time();
+        $db->updateProduct($product);
+        $safe = $product;
+        unset($safe['account_list'], $safe['pickup_password']);
+        jsonResponse(['success' => true, 'message' => '库存已添加 +' . count($newAccounts), 'product' => $safe]);
+
     case 'delete':
         $userId = requireAuth();
         global $db;

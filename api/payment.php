@@ -278,11 +278,6 @@ class YiPay {
         $submitUrl = normalizeApiUrl($this->config['api_url']) . 'submit.php?' . http_build_query($params);
         $apiData = $this->createApiOrder($params);
         $paymentUrl = $apiData['payment_url'] ?: $submitUrl;
-        $pageQr = $this->extractQrCodeFromPaymentPage($paymentUrl);
-        if ($pageQr !== '') {
-            $apiData['qrcode_url'] = '';
-            $apiData['qrcode_content'] = $pageQr;
-        }
 
         return [
             'url' => $paymentUrl,
@@ -318,56 +313,6 @@ class YiPay {
         $result['qrcode_url'] = $this->firstUrl($data, ['qrcode', 'qr_code', 'qrcode_url', 'code_img_url', 'img', 'image', 'qrimg', 'qr_img']);
         $result['qrcode_content'] = $this->firstString($data, ['code_url', 'qr_code_url', 'qrcode_content', 'payinfo', 'pay_info']);
         return $result;
-    }
-
-    private function extractQrCodeFromPaymentPage($paymentUrl) {
-        if (!preg_match('/^https?:\/\//i', (string)$paymentUrl)) {
-            return '';
-        }
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => "User-Agent: Mozilla/5.0 KeyNestPayment/1.0\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n",
-                'timeout' => 8,
-                'ignore_errors' => true,
-            ]
-        ]);
-        $html = @file_get_contents($paymentUrl, false, $context);
-        if (!$html || !is_string($html)) {
-            return '';
-        }
-        $patterns = [
-            '/\b(?:let|var|const)\s+qrcode\s*=\s*(["\'])(.*?)\1\s*;/is',
-            '/\bqrcode\s*=\s*(["\'])(https?:\/\/[^"\']+)\1/is',
-            '/text\s*:\s*(["\'])(https?:\/\/[^"\']+)\1/is',
-            '/data-qr(?:code)?\s*=\s*(["\'])(.*?)\1/is',
-        ];
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $html, $match)) {
-                $value = html_entity_decode(trim($match[2]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-                if ($this->isPaymentQrContent($value)) {
-                    return $value;
-                }
-            }
-        }
-        return '';
-    }
-
-    private function isPaymentQrContent($value) {
-        $value = trim((string)$value);
-        if ($value === '' || strlen($value) > 2048) {
-            return false;
-        }
-        if (preg_match('/^https?:\/\/qr\.alipay\.com\//i', $value)) {
-            return true;
-        }
-        if (preg_match('/^weixin:\/\//i', $value)) {
-            return true;
-        }
-        if (preg_match('/^https?:\/\/(wx\.tenpay\.com|payapp\.weixin\.qq\.com|weixin\.qq\.com)\//i', $value)) {
-            return true;
-        }
-        return false;
     }
 
     private function firstUrl($data, $keys) {

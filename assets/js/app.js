@@ -731,7 +731,9 @@ async function loadMyProductsTab(area) {
                                 <div class="flex-grow-1 min-width-0">
                                     <div class="d-flex align-items-center gap-2 mb-2">
                                         <span class="badge badge-primary">${Security.escapeHtml(p.category || '其他')}</span>
-                                        <span class="text-muted small"><i class="bi bi-pencil-square me-1"></i>点击编辑</span>
+                                        <button class="btn btn-sm btn-outline-primary seller-stock-action" onclick="event.stopPropagation(); openAddStockModal('${Security.escapeAttr(p.id)}')" title="添加库存">
+                                            <i class="bi bi-plus-circle me-1"></i>添加库存
+                                        </button>
                                     </div>
                                     <h6 class="fw-bold seller-product-title mb-2">${Security.escapeHtml(p.title || '-')}</h6>
                                     <div class="seller-product-meta">
@@ -1229,6 +1231,44 @@ async function openSellerProductManage(productId) {
     modal.show();
     updateEditProductImagePreview(product.image || '');
     initEditProductImageDropZone();
+}
+
+async function openAddStockModal(productId) {
+    const productResult = await API.getProduct(productId);
+    if (!productResult.success) {
+        Toast.error(productResult.message || '商品不存在');
+        return;
+    }
+    const product = productResult.product || {};
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h5 class="fw-bold mb-3"><i class="bi bi-plus-circle me-1"></i>添加库存</h5>
+        <div class="alert alert-light border small mb-3">
+            商品：<strong>${Security.escapeHtml(product.title || '-')}</strong><br>
+            当前库存：<strong>${Security.escapeHtml(product.stock || 0)}</strong>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">新增库存账号</label>
+            <textarea class="form-control" id="addStockAccountList" rows="8" placeholder="每行一个账号，格式与发布商品时一致"></textarea>
+            <small class="text-muted">只会追加新增库存，不会覆盖原库存。</small>
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="submitAddStock('${Security.escapeAttr(productId)}')">确认添加</button>
+    `;
+    modal.show();
+}
+
+async function submitAddStock(productId) {
+    const accountList = document.getElementById('addStockAccountList')?.value?.trim() || '';
+    if (!accountList) return Toast.warning('请填写要添加的库存账号');
+    const result = await API.addProductStock(productId, accountList);
+    if (!result.success) return Toast.error(result.message || '添加库存失败');
+    Toast.success(result.message || '库存已添加');
+    bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+    renderDashboardTab('myproducts');
+    if (typeof loadProducts === 'function') loadProducts();
 }
 
 async function saveSellerProduct(productId) {
@@ -2148,11 +2188,25 @@ function paymentQrImageUrl(paymentResultOrUrl) {
         if (/^https?:\/\//i.test(directQr) || directQr.startsWith('/')) {
             return directQr;
         }
-        return paymentQrImageUrl('');
+        return '';
     }
     const paymentUrl = String(paymentResultOrUrl || '').trim();
     if (!paymentUrl) return '';
     return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=' + encodeURIComponent(paymentUrl);
+}
+
+function showEmbeddedPaymentPage(paymentUrl) {
+    const imageEl = document.getElementById('qrPaymentImage');
+    const iframeWrap = document.getElementById('qrPaymentIframeWrap');
+    const iframe = document.getElementById('qrPaymentIframe');
+    if (!iframeWrap || !iframe || !paymentUrl) return false;
+    if (imageEl) {
+        imageEl.classList.add('hidden');
+        imageEl.removeAttribute('src');
+    }
+    iframeWrap.classList.remove('hidden');
+    iframe.src = paymentUrl;
+    return true;
 }
 
 function openCurrentPaymentLink() {
@@ -2182,16 +2236,28 @@ function showQrPaymentModal(paymentResult, options = {}) {
     const methodEl = document.getElementById('qrPaymentMethod');
     const amountEl = document.getElementById('qrPaymentAmount');
     const imageEl = document.getElementById('qrPaymentImage');
+    const iframeWrap = document.getElementById('qrPaymentIframeWrap');
+    const iframe = document.getElementById('qrPaymentIframe');
     const statusEl = document.getElementById('qrPaymentStatus');
 
     if (methodEl) methodEl.textContent = options.methodLabel || payMethodLabel(payType);
     if (amountEl) amountEl.textContent = '¥ ' + amount.toFixed(2);
+    const qrImageUrl = paymentQrImageUrl(paymentResult);
+    if (iframeWrap) iframeWrap.classList.add('hidden');
+    if (iframe) iframe.removeAttribute('src');
     if (imageEl) {
-        imageEl.src = paymentQrImageUrl(paymentResult);
         imageEl.onerror = () => {
             imageEl.onerror = null;
-            Toast.error('未能获取支付平台真实二维码，请重新发起支付');
+            showEmbeddedPaymentPage(paymentUrl);
         };
+        if (qrImageUrl) {
+            imageEl.classList.remove('hidden');
+            imageEl.src = qrImageUrl;
+        } else {
+            showEmbeddedPaymentPage(paymentUrl);
+        }
+    } else {
+        showEmbeddedPaymentPage(paymentUrl);
     }
     if (statusEl) statusEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>等待扫码支付，支付成功后会自动刷新';
 

@@ -1305,6 +1305,13 @@ a:hover {
     font-size: 0.86rem;
 }
 
+.seller-stock-action {
+    border-radius: 999px;
+    padding: 0.18rem 0.55rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
 .seller-product-delete {
     box-shadow: 0 8px 20px rgba(239, 68, 68, 0.18);
 }
@@ -1582,6 +1589,29 @@ a:hover {
     height: 100%;
     object-fit: contain;
     display: block;
+}
+
+.qr-payment-box iframe {
+    border: 0;
+    width: 360px;
+    height: 560px;
+    transform: translate(-72px, -140px) scale(1.08);
+    transform-origin: top left;
+    pointer-events: none;
+    background: #fff;
+}
+
+.qr-payment-iframe-crop {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #fff;
+}
+
+.qr-payment-iframe-crop.hidden,
+.qr-payment-box img.hidden {
+    display: none;
 }
 
 .qr-payment-status {
