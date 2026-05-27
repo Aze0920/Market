@@ -1780,27 +1780,43 @@ function buildRechargePaymentOptions(configs) {
 }
 
 function renderRechargePaymentSelect() {
-    const select = document.getElementById('rechargePayType');
+    const optionsBox = document.getElementById('rechargePayTypeOptions');
+    const hiddenInput = document.getElementById('rechargePayType');
     const help = document.getElementById('rechargePayTypeHelp');
-    if (!select) return;
+    if (!optionsBox || !hiddenInput) return;
 
     if (!rechargePaymentOptions.length) {
-        select.innerHTML = '<option value="">暂无可使用的支付方式</option>';
-        select.disabled = true;
+        optionsBox.innerHTML = '<div class="text-muted small">暂无可使用的支付方式</div>';
+        hiddenInput.value = '';
         if (help) help.textContent = '请先在后台添加并启用支付接口';
         return;
     }
 
-    select.disabled = false;
-    select.innerHTML = rechargePaymentOptions
-        .map(option => `<option value="${Security.escapeAttr(option.value)}">${Security.escapeHtml(option.label)}</option>`)
-        .join('');
+    hiddenInput.value = rechargePaymentOptions[0].value;
+    optionsBox.innerHTML = rechargePaymentOptions.map((option, index) => `
+        <button type="button"
+                class="recharge-payment-option ${index === 0 ? 'active' : ''}"
+                data-value="${Security.escapeAttr(option.value)}"
+                onclick="selectRechargePaymentOption('${Security.escapeAttr(option.value)}')">
+            <span>${Security.escapeHtml(option.label)}</span>
+            <i class="bi bi-check-circle-fill"></i>
+        </button>
+    `).join('');
+}
+
+function selectRechargePaymentOption(value) {
+    const hiddenInput = document.getElementById('rechargePayType');
+    if (hiddenInput) hiddenInput.value = value;
+    document.querySelectorAll('.recharge-payment-option').forEach(option => {
+        option.classList.toggle('active', option.dataset.value === value);
+    });
+    handleRechargePaymentChange();
 }
 
 function handleRechargePaymentChange() {
-    const select = document.getElementById('rechargePayType');
+    const hiddenInput = document.getElementById('rechargePayType');
     const help = document.getElementById('rechargePayTypeHelp');
-    const selectedValue = select?.value || '';
+    const selectedValue = hiddenInput?.value || '';
     const option = rechargePaymentOptions.find(item => item.value === selectedValue) || null;
 
     selectedPaymentConfig = option ? option.config : null;
