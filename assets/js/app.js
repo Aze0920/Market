@@ -1831,6 +1831,8 @@ function renderPaymentQrError(message, previousHtml = '') {
 async function uploadPaymentQrFile(method, file) {
     if (!file.type.startsWith('image/')) return Toast.warning('请选择图片文件');
     if (file.size > 2 * 1024 * 1024) return Toast.warning('图片大小不能超过2MB');
+    const accountValue = document.getElementById('paymentAccount_' + method)?.value.trim() || '';
+    if (!accountValue) return warnPaymentMethods('请先填写收款账号/昵称，再上传收款码图片');
     const needsCode = paymentMethodNeedsEmailCode(method);
     const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
     if (needsCode && !profileSecurityUnlocked) {
@@ -1840,7 +1842,16 @@ async function uploadPaymentQrFile(method, file) {
     const preview = document.getElementById('paymentQrPreview_' + method);
     const previousHtml = preview?.innerHTML || renderPaymentQrPlaceholder();
     if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>上传中...</span>';
-    const result = await API.uploadPaymentQrcode(file, method, emailCode, accountValue);
+    let result;
+    try {
+        result = await API.uploadPaymentQrcode(file, method, emailCode, accountValue);
+    } catch (error) {
+        const message = error?.message || '收款码上传异常，请重试';
+        Toast.error(message);
+        showPaymentMethodsNotice(message, 'error');
+        if (preview) preview.innerHTML = renderPaymentQrError(message, previousHtml);
+        return;
+    }
     document.getElementById('paymentQrInput_' + method).value = '';
     if (!result.success) {
         const message = result.message || '上传失败';
