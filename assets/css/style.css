@@ -562,6 +562,58 @@ a:hover {
     font-size: 1rem;
 }
 
+.nav-avatar-clickable {
+    cursor: pointer;
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.nav-avatar-clickable:hover {
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 10px 24px rgba(99, 102, 241, .22);
+}
+
+.nav-icon-btn {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: #fff;
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .2s ease;
+}
+
+.nav-icon-btn:hover {
+    color: var(--primary-accent);
+    border-color: var(--primary-accent);
+    background: var(--primary-light);
+    box-shadow: 0 10px 22px rgba(99, 102, 241, .12);
+    transform: translateY(-1px);
+}
+
+.nav-announcement-btn i {
+    font-size: 1rem;
+}
+
+.nav-dot-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    font-size: .62rem;
+    line-height: 17px;
+    text-align: center;
+    box-shadow: 0 0 0 2px #fff;
+}
+
 .avatar-lg {
     width: 60px;
     height: 60px;
@@ -1712,10 +1764,145 @@ a:hover {
 }
 
 #navAnnouncementBtn {
-    min-width: 38px;
-    width: 38px;
-    height: 38px;
-    padding: 0;
+    flex: 0 0 38px;
+}
+
+.payment-receive-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.payment-receive-card {
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    background: #fff;
+    padding: 1rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.payment-receive-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.payment-receive-title {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.payment-receive-title i {
+    color: var(--primary-accent);
+    font-size: 1.25rem;
+}
+
+.payment-upload-zone {
+    display: block;
+    border: 1.5px dashed var(--border-color);
+    border-radius: 16px;
+    background: #f8fafc;
+    min-height: 178px;
+    cursor: pointer;
+    transition: all .2s ease;
+    overflow: hidden;
+}
+
+.payment-upload-zone:hover,
+.payment-upload-zone.dragover {
+    border-color: var(--primary-accent);
+    background: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
+}
+
+.payment-upload-preview {
+    min-height: 178px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.payment-upload-preview i {
+    font-size: 2rem;
+    color: var(--primary-accent);
+}
+
+.payment-upload-preview img {
+    width: 100%;
+    height: 178px;
+    object-fit: contain;
+    padding: .5rem;
+    background: #fff;
+}
+
+.withdraw-payment-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem;
+}
+
+.withdraw-payment-option {
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: #fff;
+    padding: .85rem;
+    min-height: 82px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .25rem;
+    transition: all .2s ease;
+    font-weight: 800;
+}
+
+.withdraw-payment-option i {
+    color: var(--primary-accent);
+    font-size: 1.35rem;
+}
+
+.withdraw-payment-option small {
+    max-width: 100%;
+    color: var(--text-muted);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.withdraw-payment-option:hover,
+.withdraw-payment-option.active {
+    border-color: var(--primary-accent);
+    background: var(--primary-light);
+    color: var(--primary-accent);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, .14);
+}
+
+.withdraw-payment-empty {
+    grid-column: 1 / -1;
+    border: 1px dashed var(--warning);
+    border-radius: 16px;
+    background: rgba(245, 158, 11, .08);
+    color: #92400e;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    flex-wrap: wrap;
+    font-weight: 700;
+}
+
+.withdraw-payment-empty i {
+    font-size: 1.2rem;
 }
 
 .profile-card-soft {
@@ -1737,6 +1924,13 @@ a:hover {
 
 .profile-info-row:last-of-type {
     border-bottom: 0;
+}
+
+@media (max-width: 767.98px) {
+    .payment-receive-grid,
+    .withdraw-payment-options {
+        grid-template-columns: 1fr;
+    }
 }
 
 .hidden { display: none !important; }

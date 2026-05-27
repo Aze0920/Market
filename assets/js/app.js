@@ -72,7 +72,15 @@ window.App = {
             if (publishLink) publishLink.classList.remove('hidden');
 
             document.getElementById('navUsername').textContent = Security.escapeHtml(this.currentUser.username);
-            document.getElementById('navAvatar').textContent = Security.escapeHtml(this.currentUser.username.charAt(0).toUpperCase());
+            const navAvatar = document.getElementById('navAvatar');
+            const navProfileBtn = document.getElementById('navProfileBtn');
+            if (navAvatar) {
+                navAvatar.textContent = Security.escapeHtml(this.currentUser.username.charAt(0).toUpperCase());
+                navAvatar.onclick = () => showDashboard('profile');
+                navAvatar.title = '个人中心';
+                navAvatar.setAttribute('role', 'button');
+            }
+            if (navProfileBtn) navProfileBtn.classList.add('hidden');
             document.getElementById('navBalance').textContent = '¥ ' + this.currentUser.balance.toFixed(2) + (this.currentUser.frozen_balance > 0 ? '（冻结 ¥' + Number(this.currentUser.frozen_balance).toFixed(2) + '）' : '');
             const navAdminBtn = document.getElementById('navAdminBtn');
             if (navAdminBtn) {
@@ -92,6 +100,7 @@ window.App = {
 
     async updateUnreadBadge() {
         const badge = document.getElementById('unreadBadge');
+        if (!badge) return;
         if (!this.currentUser) {
             badge.classList.add('hidden');
             return;
@@ -865,9 +874,9 @@ async function loadMembershipTab(area) {
                 const canAfford = !App.currentUser || Number(App.currentUser.balance || 0) >= cost;
                 const levelGradient = level.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6)';
                 const levelIcon = level.icon || 'bi-gem';
-                const levelPrivileges = [
-                    `单商品最大 ${level.max_accounts_per_product || 0} 账号`,
-                    Number(level.max_products || 0) >= 9999 ? '无限商品' : `${level.max_products || 0} 个商品`,
+    const levelPrivileges = [
+                    `单商品最大 ${Number(level.max_accounts_per_product || 0) === 0 ? '无限制' : (level.max_accounts_per_product + ' 账号')}`,
+                    Number(level.max_products || 0) === 0 ? '无限商品' : `${level.max_products || 0} 个商品`,
                     `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
                     Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
                 ];
@@ -1252,10 +1261,44 @@ async function loadReviewsTab(area) {
     `;
 }
 
+function getUserPaymentMethods(user = App.currentUser || {}) {
+    const methods = user.payment_methods && typeof user.payment_methods === 'object' ? user.payment_methods : {};
+    return {
+        alipay: { label: '支付宝', account: methods.alipay?.account || '', qrcode: methods.alipay?.qrcode || '' },
+        wechat: { label: '微信', account: methods.wechat?.account || '', qrcode: methods.wechat?.qrcode || '' }
+    };
+}
+
+function paymentMethodIcon(key) {
+    return key === 'wechat' ? 'bi-wechat' : 'bi-alipay';
+}
+
+function renderPaymentMethodUploadCard(key, item) {
+    const hasQr = !!item.qrcode;
+    return `
+        <div class="payment-receive-card" data-method="${Security.escapeAttr(key)}">
+            <div class="payment-receive-head">
+                <div class="payment-receive-title"><i class="bi ${paymentMethodIcon(key)}"></i>${Security.escapeHtml(item.label)}</div>
+                <span class="badge ${hasQr && item.account ? 'badge-success' : 'badge-warning'}">${hasQr && item.account ? '已配置' : '待完善'}</span>
+            </div>
+            <label class="form-label mt-3">收款账号</label>
+            <input class="form-control" id="paymentAccount_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.account || '')}" placeholder="填写${Security.escapeAttr(item.label)}账号/昵称">
+            <label class="payment-upload-zone mt-3" for="paymentQrInput_${Security.escapeAttr(key)}" ondragover="handlePaymentQrDragOver(event)" ondragleave="handlePaymentQrDragLeave(event)" ondrop="handlePaymentQrDrop(event, '${Security.escapeAttr(key)}')">
+                <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')">
+                <input type="hidden" id="paymentQr_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.qrcode || '')}">
+                <div class="payment-upload-preview" id="paymentQrPreview_${Security.escapeAttr(key)}">
+                    ${hasQr ? `<img src="${Security.escapeAttr(item.qrcode)}" alt="${Security.escapeAttr(item.label)}收款码">` : '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>'}
+                </div>
+            </label>
+        </div>
+    `;
+}
+
 async function loadProfileTab(area) {
     const user = App.currentUser || {};
     const maskedEmail = user.email ? user.email.replace(/^(.{2}).*(@.*)$/, '$1****$2') : '未绑定邮箱';
     const qqBound = !!user.qq_openid;
+    const paymentMethods = getUserPaymentMethods(user);
     const isAdmin = user.role === 'admin';
     let adminConfigHtml = '';
     if (isAdmin) {
@@ -1321,7 +1364,6 @@ async function loadProfileTab(area) {
                         ${qqBound ? `<button class="btn btn-outline-danger" onclick="unbindQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑第三方账号</button>` : `<button class="btn btn-primary" onclick="bindQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定第三方账号</button>`}
                         <button class="btn btn-outline-primary" onclick="startOAuthLogin('qq')"><i class="bi bi-tencent-qq me-1"></i>QQ 一键登录测试</button>
                     </div>
-                    <div class="text-muted small mt-3">QQ 一键登录需要先绑定当前账号，未绑定的 QQ 会提示先绑定。</div>
                 </div>
             </div>
             <div class="col-lg-7">
@@ -1365,6 +1407,20 @@ async function loadProfileTab(area) {
                     </div>
                 </div>
             </div>
+            <div class="col-12">
+                <div class="profile-card-soft">
+                    <div class="d-flex justify-content-between align-items-center mb-3 gap-3 flex-wrap">
+                        <div>
+                            <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-2 text-primary"></i>收款方式</h6>
+                            <div class="text-muted small">提现会直接使用这里配置的微信或支付宝收款信息</div>
+                        </div>
+                        <button class="btn btn-primary" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
+                    </div>
+                    <div class="payment-receive-grid">
+                        ${Object.entries(paymentMethods).map(([key, item]) => renderPaymentMethodUploadCard(key, item)).join('')}
+                    </div>
+                </div>
+            </div>
             ${adminConfigHtml}
         </div>
     `;
@@ -1404,6 +1460,57 @@ async function saveProfileInfo() {
     const result = await API.updateProfile(username, email);
     if (!result.success) return Toast.error(result.message || '保存失败');
     Toast.success(result.message || '个人资料已保存');
+    if (result.user) App.setUser(result.user);
+    renderDashboardTab('profile');
+}
+
+function handlePaymentQrDragOver(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('dragover');
+}
+
+function handlePaymentQrDragLeave(event) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('dragover');
+}
+
+function handlePaymentQrDrop(event, method) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('dragover');
+    const file = event.dataTransfer?.files?.[0];
+    if (file) uploadPaymentQrFile(method, file);
+}
+
+function handlePaymentQrSelect(event, method) {
+    const file = event.target?.files?.[0];
+    if (file) uploadPaymentQrFile(method, file);
+}
+
+async function uploadPaymentQrFile(method, file) {
+    if (!file.type.startsWith('image/')) return Toast.warning('请选择图片文件');
+    const preview = document.getElementById('paymentQrPreview_' + method);
+    if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>上传中...</span>';
+    const result = await API.uploadPaymentQrcode(file);
+    if (!result.success) {
+        Toast.error(result.message || '上传失败');
+        if (preview) preview.innerHTML = '<i class="bi bi-cloud-arrow-up"></i><span>点击或拖拽上传收款码</span>';
+        return;
+    }
+    const input = document.getElementById('paymentQr_' + method);
+    if (input) input.value = result.url || '';
+    if (preview) preview.innerHTML = `<img src="${Security.escapeAttr(result.url || '')}" alt="收款码">`;
+    Toast.success(result.message || '上传成功');
+}
+
+async function savePaymentMethods() {
+    const methods = getUserPaymentMethods();
+    Object.keys(methods).forEach(key => {
+        methods[key].account = document.getElementById('paymentAccount_' + key)?.value.trim() || '';
+        methods[key].qrcode = document.getElementById('paymentQr_' + key)?.value.trim() || '';
+    });
+    const result = await API.savePaymentMethods(methods);
+    if (!result.success) return Toast.error(result.message || '保存失败');
+    Toast.success(result.message || '收款方式已保存');
     if (result.user) App.setUser(result.user);
     renderDashboardTab('profile');
 }
@@ -1624,8 +1731,68 @@ async function rejectRequest(id) {
 
 let withdrawFeeRate = 0.01;
 let minWithdrawAmount = 10;
+let selectedWithdrawPaymentMethod = '';
+
+function getConfiguredWithdrawMethods() {
+    const methods = getUserPaymentMethods();
+    return Object.entries(methods)
+        .map(([key, item]) => ({ key, ...item }))
+        .filter(item => item.account && item.qrcode);
+}
+
+function renderWithdrawPaymentOptions() {
+    const box = document.getElementById('withdrawPaymentOptions');
+    const help = document.getElementById('withdrawPaymentHelp');
+    if (!box) return;
+    const methods = getConfiguredWithdrawMethods();
+    if (!methods.length) {
+        box.innerHTML = `
+            <div class="withdraw-payment-empty">
+                <i class="bi bi-exclamation-circle"></i>
+                <span>未上传收款方式，请在个人中心上传收款方式</span>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="bootstrap.Modal.getInstance(document.getElementById('withdrawModal'))?.hide(); showDashboard('profile')">去上传</button>
+            </div>
+        `;
+        selectedWithdrawPaymentMethod = '';
+        if (help) help.textContent = '请先在个人中心上传微信或支付宝收款方式';
+        return;
+    }
+    if (!methods.some(item => item.key === selectedWithdrawPaymentMethod)) {
+        selectedWithdrawPaymentMethod = methods[0].key;
+    }
+    box.innerHTML = methods.map(item => `
+        <button type="button" class="withdraw-payment-option ${item.key === selectedWithdrawPaymentMethod ? 'active' : ''}" onclick="selectWithdrawPaymentMethod('${Security.escapeAttr(item.key)}')">
+            <i class="bi ${paymentMethodIcon(item.key)}"></i>
+            <span>${Security.escapeHtml(item.label)}</span>
+            <small>${Security.escapeHtml(item.account)}</small>
+        </button>
+    `).join('');
+    applyWithdrawPaymentMethod();
+}
+
+function selectWithdrawPaymentMethod(method) {
+    selectedWithdrawPaymentMethod = method;
+    renderWithdrawPaymentOptions();
+}
+
+function applyWithdrawPaymentMethod() {
+    const methods = getUserPaymentMethods();
+    const item = methods[selectedWithdrawPaymentMethod];
+    const methodInput = document.getElementById('withdrawPaymentMethod');
+    const accountInput = document.getElementById('withdrawAccount');
+    const qrcodeInput = document.getElementById('withdrawQrcode');
+    const help = document.getElementById('withdrawPaymentHelp');
+    if (methodInput) methodInput.value = item?.label || '';
+    if (accountInput) accountInput.value = item?.account || '';
+    if (qrcodeInput) qrcodeInput.value = item?.qrcode || '';
+    if (help && item) help.textContent = `将使用个人中心已上传的${item.label}收款方式`;
+}
 
 async function openWithdrawModal() {
+    const userResult = await API.getCurrentUser();
+    if (userResult.success && userResult.user) {
+        App.setUser(userResult.user);
+    }
     const sysConfigResult = await API.getSystemConfig();
     if (sysConfigResult.success) {
         minWithdrawAmount = sysConfigResult.config.min_withdraw_amount || 10;
@@ -1637,6 +1804,8 @@ async function openWithdrawModal() {
     document.getElementById('withdrawAccount').value = '';
     document.getElementById('withdrawQrcode').value = '';
     document.getElementById('withdrawFeeNote').textContent = '';
+    selectedWithdrawPaymentMethod = '';
+    renderWithdrawPaymentOptions();
     
     new bootstrap.Modal(document.getElementById('withdrawModal')).show();
 }
@@ -1665,13 +1834,8 @@ async function submitWithdraw() {
         return;
     }
     
-    if (!paymentMethod) {
-        Toast.warning('请选择收款方式');
-        return;
-    }
-    
-    if (!paymentAccount) {
-        Toast.warning('请填写收款账号');
+    if (!paymentMethod || !paymentAccount || !qrcodeUrl) {
+        Toast.warning('请先在个人中心上传收款方式');
         return;
     }
     
@@ -1751,7 +1915,7 @@ function paymentQrImageUrl(paymentUrl) {
 }
 
 function openCurrentPaymentLink() {
-    if (currentPaymentLink) window.location.href = currentPaymentLink;
+    Toast.info('请使用当前弹窗二维码完成支付');
 }
 
 function stopPaymentPolling() {

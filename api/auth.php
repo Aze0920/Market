@@ -384,6 +384,72 @@ switch ($action) {
         $updatedUser = $db->getUserById($userId);
         jsonResponse(['success' => true, 'message' => '个人资料已保存', 'user' => safeUser($updatedUser)]);
 
+    case 'save_payment_methods':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        $raw = $_POST['payment_methods'] ?? '';
+        $decoded = json_decode((string)$raw, true);
+        if (!is_array($decoded)) {
+            jsonResponse(['success' => false, 'message' => '收款方式数据格式不正确'], 400);
+        }
+        $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
+        $methods = [];
+        foreach ($allowed as $key => $label) {
+            $item = is_array($decoded[$key] ?? null) ? $decoded[$key] : [];
+            $account = trim((string)($item['account'] ?? ''));
+            $qrcode = trim((string)($item['qrcode'] ?? ''));
+            if (strlen($account) > 100) {
+                jsonResponse(['success' => false, 'message' => $label . '收款账号过长'], 400);
+            }
+            if ($qrcode !== '' && !preg_match('/^(https?:\/\/|\/uploads\/payment_qrcodes\/)[^\s<>"\']+\.(png|jpe?g|gif|webp)(\?[^\s<>"\']*)?$/i', $qrcode)) {
+                jsonResponse(['success' => false, 'message' => $label . '收款码地址格式不正确'], 400);
+            }
+            $methods[$key] = [
+                'label' => $label,
+                'account' => sanitizeString($account),
+                'qrcode' => sanitizeString($qrcode),
+                'updated_at' => time()
+            ];
+        }
+        $ok = $db->updateUser($userId, ['payment_methods' => $methods]);
+        if (!$ok) {
+            jsonResponse(['success' => false, 'message' => '收款方式保存失败'], 500);
+        }
+        $updatedUser = $db->getUserById($userId);
+        jsonResponse(['success' => true, 'message' => '收款方式已保存', 'user' => safeUser($updatedUser)]);
+
+    case 'upload_payment_qrcode':
+        requireAuth();
+        if (empty($_FILES['image']) || !is_uploaded_file($_FILES['image']['tmp_name'])) {
+            jsonResponse(['success' => false, 'message' => '请选择要上传的收款码图片'], 400);
+        }
+        $file = $_FILES['image'];
+        if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            jsonResponse(['success' => false, 'message' => '图片上传失败'], 400);
+        }
+        if (($file['size'] ?? 0) <= 0 || $file['size'] > 2 * 1024 * 1024) {
+            jsonResponse(['success' => false, 'message' => '图片大小不能超过2MB'], 400);
+        }
+        $info = @getimagesize($file['tmp_name']);
+        $mime = $info['mime'] ?? '';
+        $extMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+        if (!isset($extMap[$mime])) {
+            jsonResponse(['success' => false, 'message' => '仅支持 JPG、PNG、GIF、WEBP 图片'], 400);
+        }
+        $uploadDir = dirname(__DIR__) . '/uploads/payment_qrcodes';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+            jsonResponse(['success' => false, 'message' => '上传目录创建失败'], 500);
+        }
+        $filename = 'payqr_' . date('YmdHis') . '_' . bin2hex(random_bytes(6)) . '.' . $extMap[$mime];
+        $target = $uploadDir . '/' . $filename;
+        if (!move_uploaded_file($file['tmp_name'], $target)) {
+            jsonResponse(['success' => false, 'message' => '保存图片失败'], 500);
+        }
+        jsonResponse(['success' => true, 'url' => '/uploads/payment_qrcodes/' . $filename, 'message' => '收款码上传成功']);
+
     case 'send_profile_email_code':
         $userId = requireAuth();
         $user = $db->getUserById($userId);

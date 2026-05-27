@@ -215,8 +215,8 @@ class Database {
         return [
             'name' => substr($name, 0, 50),
             'description' => substr(trim((string)($level['description'] ?? '')), 0, 255),
-            'max_accounts_per_product' => max(1, min(999999, intval($level['max_accounts_per_product'] ?? 1))),
-            'max_products' => max(1, min(999999, intval($level['max_products'] ?? 1))),
+            'max_accounts_per_product' => max(0, min(999999, intval($level['max_accounts_per_product'] ?? 1))),
+            'max_products' => max(0, min(999999, intval($level['max_products'] ?? 1))),
             'priority' => max(0, min(999999, intval($level['priority'] ?? 0))),
             'fee_rate' => max(0, min(1, floatval($level['fee_rate'] ?? 0))),
             'cost' => max(0, floatval($level['cost'] ?? 0)),

@@ -47,6 +47,19 @@ function validateId($id) {
     return preg_match('/^[a-zA-Z0-9_]+$/', $id);
 }
 
+function attachFinanceUserEmails($records) {
+    global $db;
+    return array_map(function($record) use ($db) {
+        if (!empty($record['user_id'])) {
+            $user = $db->getUserById($record['user_id']);
+            if ($user && !empty($user['email'])) {
+                $record['user_id_email'] = $user['email'];
+            }
+        }
+        return $record;
+    }, $records);
+}
+
 switch ($action) {
     case 'balance':
         $user = getCurrentUser();
@@ -147,6 +160,7 @@ switch ($action) {
         $allRequests = array_merge($depositRequests, $withdrawRequests);
         usort($allRequests, fn($a, $b) => $b['created_at'] - $a['created_at']);
         
+        $allRequests = attachFinanceUserEmails($allRequests);
         jsonResponse(['success' => true, 'requests' => $allRequests]);
 
     case 'all_requests':
@@ -158,6 +172,7 @@ switch ($action) {
         $allRequests = array_merge($depositRequests, $withdrawRequests);
         usort($allRequests, fn($a, $b) => $b['created_at'] - $a['created_at']);
         
+        $allRequests = attachFinanceUserEmails($allRequests);
         jsonResponse(['success' => true, 'requests' => $allRequests]);
 
     case 'approve':
@@ -267,6 +282,7 @@ switch ($action) {
         requireAdmin();
         $requests = $db->getWithdrawRequests();
         usort($requests, fn($a, $b) => $b['created_at'] - $a['created_at']);
+        $requests = attachFinanceUserEmails($requests);
         jsonResponse(['success' => true, 'requests' => $requests]);
 
     case 'get_system_config':

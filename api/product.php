@@ -302,11 +302,12 @@ switch ($action) {
         $userLevel = $levels[$user['membership_level'] ?? 'Free'] ?? $levels['Free'];
 
         $existingProducts = $db->getProducts(['seller_id' => $userId]);
-        if (count($existingProducts) >= $userLevel['max_products']) {
-            productPublishFail("您当前会员等级最多只能发布{$userLevel['max_products']}个商品，当前已发布" . count($existingProducts) . "个", [
+        $maxProducts = intval($userLevel['max_products'] ?? 0);
+        if ($maxProducts > 0 && count($existingProducts) >= $maxProducts) {
+            productPublishFail("您当前会员等级最多只能发布{$maxProducts}个商品，当前已发布" . count($existingProducts) . "个", [
                 'membership_level' => $user['membership_level'] ?? 'Free',
                 'existing_products' => count($existingProducts),
-                'max_products' => $userLevel['max_products']
+                'max_products' => $maxProducts
             ]);
         }
 
@@ -348,11 +349,12 @@ switch ($action) {
             productPublishFail('账户列表格式不正确，请至少填写一行账号信息');
         }
 
-        if (count($accountList) > $userLevel['max_accounts_per_product']) {
-            productPublishFail("您当前会员等级单个商品最多添加{$userLevel['max_accounts_per_product']}个账户，当前填写" . count($accountList) . "个", [
+        $maxAccountsPerProduct = intval($userLevel['max_accounts_per_product'] ?? 0);
+        if ($maxAccountsPerProduct > 0 && count($accountList) > $maxAccountsPerProduct) {
+            productPublishFail("您当前会员等级单个商品最多添加{$maxAccountsPerProduct}个账户，当前填写" . count($accountList) . "个", [
                 'membership_level' => $user['membership_level'] ?? 'Free',
                 'account_count' => count($accountList),
-                'max_accounts_per_product' => $userLevel['max_accounts_per_product']
+                'max_accounts_per_product' => $maxAccountsPerProduct
             ]);
         }
 

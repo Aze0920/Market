@@ -511,7 +511,29 @@ function adminApplyUpdate() {
     return ['success' => true, 'message' => '更新完成', 'status' => adminUpdateStatus(), 'output' => $output];
 }
 
+function adminEmailForUserId($userId) {
+    global $db;
+    $userId = trim((string)$userId);
+    if ($userId === '') return '';
+    $user = $db->getUserById($userId);
+    return $user['email'] ?? '';
+}
+
+function adminAttachUserEmails($record) {
+    if (!is_array($record)) return $record;
+    foreach (['user_id', 'buyer_id', 'seller_id', 'used_by'] as $field) {
+        if (!empty($record[$field])) {
+            $email = adminEmailForUserId($record[$field]);
+            if ($email !== '') {
+                $record[$field . '_email'] = $email;
+            }
+        }
+    }
+    return $record;
+}
+
 function adminSafeComplaintOrder($order) {
+    $order = adminAttachUserEmails($order);
     if (isset($order['complaint']) && is_array($order['complaint'])) {
         unset($order['complaint']['password_hash']);
         unset($order['complaint']['email']);

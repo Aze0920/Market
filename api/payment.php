@@ -65,6 +65,19 @@ function getPayMethodsFromRequest() {
     return empty($methods) ? ['alipay', 'wxpay'] : $methods;
 }
 
+function attachPaymentOrderEmails($orders) {
+    global $db;
+    return array_map(function($order) use ($db) {
+        if (!empty($order['user_id'])) {
+            $user = $db->getUserById($order['user_id']);
+            if ($user && !empty($user['email'])) {
+                $order['user_id_email'] = $user['email'];
+            }
+        }
+        return $order;
+    }, $orders);
+}
+
 function expirePendingPaymentOrders($orders = null) {
     global $db;
     $orders = $orders === null ? $db->getPaymentOrders() : $orders;
@@ -607,6 +620,7 @@ switch ($action) {
         requireAdmin();
         $orders = expirePendingPaymentOrders($db->getPaymentOrders());
         usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        $orders = attachPaymentOrderEmails($orders);
         jsonResponse(['success' => true, 'orders' => $orders]);
 
     case 'update_order_status':

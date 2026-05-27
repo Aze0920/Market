@@ -1,5 +1,5 @@
 <?php
-require_once dirname(__DIR__, 2) . '/config/install.php';
+require_once dirname(__DIR__) . '/config/install.php';
 keynest_require_installed(false);
 ?>
 <!doctype html>
@@ -183,7 +183,7 @@ keynest_require_installed(false);
             </div>
             <div class="admin-profile-wrap">
                 <button type="button" class="user-pill" id="adminProfileToggle" onclick="toggleAdminProfileDropdown()">
-                    <div class="avatar" id="adminAvatar">A</div>
+                <div class="avatar" id="adminAvatar">A</div>
                     <div><div class="fw-bold" id="adminName">admin</div><div class="small text-muted">个人中心</div></div>
                     <i class="bi bi-chevron-down text-muted"></i>
                 </button>
@@ -610,7 +610,7 @@ function renderProducts() {
                             <tr>
                                 <td><input class="form-check-input product-select" type="checkbox" value="${escapeHtml(p.id)}" onchange="updateProductBatchToolbar()"></td>
                                 <td><strong>${escapeHtml(p.title)}</strong><div class="small text-muted"><code>${escapeHtml(p.id)}</code></div></td>
-                                <td>${escapeHtml(p.seller_name || '-')}</td>
+                                <td>${escapeHtml(userEmailByNameOrId(p.seller_name, p.seller_id))}</td>
                                 <td>${escapeHtml(p.category || '-')}</td>
                                 <td>${money(p.price)}</td>
                                 <td>${p.stock || 0}</td>
@@ -681,6 +681,27 @@ function orderTypeLabel(type, payType) {
     };
     return map[type] || payType || type || '-';
 }
+function findAdminUserById(id) {
+    return (Admin.cache.users || []).find(u => String(u.id || '') === String(id || '')) || null;
+}
+function userEmailById(id, fallback = '-') {
+    const user = findAdminUserById(id);
+    return user?.email || fallback || id || '-';
+}
+function recordUserEmail(record, field = 'user_id', fallback = '-') {
+    return record?.[field + '_email'] || userEmailById(record?.[field], fallback || record?.[field] || '-');
+}
+function userEmailByNameOrId(name, id = '') {
+    const users = Admin.cache.users || [];
+    const byId = findAdminUserById(id);
+    if (byId?.email) return byId.email;
+    const byName = users.find(u => String(u.username || '') === String(name || ''));
+    return byName?.email || name || id || '-';
+}
+function memberLimitText(value, unit) {
+    const number = Number(value || 0);
+    return number === 0 ? '无限制' : `${number} ${unit}`;
+}
 function complaintStatusBadge(status) {
     const map = { open: ['warning', '处理中'], processing: ['info', '跟进中'], resolved: ['success', '已解决'], rejected: ['danger', '已驳回'], withdrawn: ['info', '已撤诉'] };
     const item = map[status] || ['info', status || '-'];
@@ -725,8 +746,8 @@ function renderComplaintAdminCard(order) {
                 ${complaintStatusBadge(complaint.status)}
             </div>
             <div class="complaint-grid-admin mb-3">
-                <div class="complaint-meta-admin"><div class="small text-muted">买家</div><strong>${escapeHtml(order.buyer_name || '-')}</strong><div class="small text-muted">${escapeHtml(order.buyer_id || '')}</div></div>
-                <div class="complaint-meta-admin"><div class="small text-muted">卖家</div><strong>${escapeHtml(order.seller_name || '-')}</strong><div class="small text-muted">${escapeHtml(order.seller_id || '')}</div></div>
+                <div class="complaint-meta-admin"><div class="small text-muted">买家</div><strong>${escapeHtml(order.buyer_name || '-')}</strong><div class="small text-muted">${escapeHtml(recordUserEmail(order, 'buyer_id', order.buyer_id || ''))}</div></div>
+                <div class="complaint-meta-admin"><div class="small text-muted">卖家</div><strong>${escapeHtml(order.seller_name || '-')}</strong><div class="small text-muted">${escapeHtml(recordUserEmail(order, 'seller_id', order.seller_id || ''))}</div></div>
                 <div class="complaint-meta-admin"><div class="small text-muted">订单金额 / 冻结</div><strong>${money(order.price)}</strong><div class="small text-danger">冻结 ${money(order.frozen_amount || 0)}</div></div>
             </div>
             <div class="mb-3"><div class="small text-muted mb-1">投诉原因</div><div class="complaint-reason-admin">${escapeHtml(complaint.reason || '-')}</div></div>
@@ -773,13 +794,13 @@ function renderOrders() {
             <div class="table-responsive">
                 <table class="table">
                     <thead>
-                        <tr><th>交易号</th><th>用户ID</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
+                        <tr><th>交易号</th><th>用户邮箱</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
                     </thead>
                     <tbody>
                         ${orders.map(o => `
                             <tr>
                                 <td><code>${escapeHtml(o.trade_no || o.id)}</code></td>
-                                <td>${escapeHtml(o.user_id || '-')}</td>
+                                <td>${escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'))}</td>
                                 <td>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</td>
                                 <td><div class="fw-semibold">${escapeHtml(o.title || '-')}</div><div class="small text-muted">${escapeHtml(o.description || '')}</div></td>
                                 <td>${money(o.amount)}</td>
@@ -838,8 +859,8 @@ async function deletePaymentOrderAdmin(id) { if (!confirm('确定删除这条订
 async function deleteUnpaidOrdersAdmin() { if (!confirm('确定删除所有未支付订单吗？包含待处理、失败、已取消订单。')) return; const res = await request('payment.php?action=delete_unpaid_orders', 'POST'); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast(res.message || '已删除未支付订单', 'success'); await loadAdminData(); renderOrders(); }
 async function deleteAllOrdersAdmin() { if (!confirm('确定删除全部支付订单吗？此操作不可恢复。')) return; const res = await request('payment.php?action=delete_all_orders', 'POST'); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast(res.message || '已删除全部订单', 'success'); await loadAdminData(); renderOrders(); }
 function renderFinance() { setTitle('充值提现'); document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><h5>申请列表</h5><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div>${requestTable(Admin.cache.requests || [])}</div>`; }
-function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(r.username || r.user_id)}</strong><div class="small text-muted">${money(r.amount)} · ${dateText(r.created_at)}</div></div>${statusBadge(r.status)}</div>`).join(''); }
-function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(r.username || r.user_id)}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td>${r.status === 'pending' ? `<button class="btn btn-sm btn-success me-1" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : '-'}</td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
+function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</strong><div class="small text-muted">${money(r.amount)} · ${dateText(r.created_at)}</div></div>${statusBadge(r.status)}</div>`).join(''); }
+function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户邮箱</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td>${r.status === 'pending' ? `<button class="btn btn-sm btn-success me-1" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : '-'}</td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
 async function handleRequest(id, action) { const res = await request(`finance.php?action=${action}`, 'POST', { id }); if (!res.success) return showToast(res.message || '操作失败', 'error'); showToast(res.message || '操作成功', 'success'); await loadAdminData(); }
 function renderCards() {
     setTitle('卡密管理');
@@ -1020,7 +1041,7 @@ function membershipLevelRow(level = {}, index = 0) {
     const gradient = escapeHtml(level.gradient || 'linear-gradient(135deg, #6366f1, #8b5cf6)');
     const icon = escapeHtml(level.icon || 'bi-gem');
     const feeRate = (Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '');
-    const maxProducts = Number(level.max_products || 0) >= 9999 ? '无限商品' : `${Number(level.max_products || 0)} 个商品`;
+    const maxProducts = memberLimitText(level.max_products, '个商品');
     return `
         <div class="membership-admin-card membership-level-row ${level.enabled === false ? 'disabled' : ''}" data-index="${index}" onclick="openMembershipLevelEditor(${index})">
             <div class="membership-admin-head" style="--card-gradient: ${gradient};">
@@ -1043,7 +1064,7 @@ function membershipLevelRow(level = {}, index = 0) {
                 <input type="checkbox" class="ml-can-upgrade d-none" ${level.can_upgrade !== false ? 'checked' : ''}>
                 <div class="membership-admin-price">${Number(level.cost || 0) === 0 ? '<i class="bi bi-gift"></i> 免费' : '¥ ' + Number(level.cost || 0).toFixed(2)}</div>
                 <ul class="membership-admin-list">
-                    <li><i class="bi bi-check"></i> 单商品最大 ${Number(level.max_accounts_per_product || 0)} 账号</li>
+                    <li><i class="bi bi-check"></i> 单商品最大 ${memberLimitText(level.max_accounts_per_product, '账号')}</li>
                     <li><i class="bi bi-check"></i> ${maxProducts}</li>
                     <li><i class="bi bi-check"></i> 手续费 ${feeRate}%</li>
                     <li><i class="bi bi-check"></i> ${Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : '发布费 ¥' + Number(level.publish_fee_per_account || 0) + '/账号'}</li>
@@ -1077,8 +1098,8 @@ function openMembershipLevelEditor(index) {
                         <div class="col-md-4"><label class="form-label">排序权重</label><input id="editLevelPriority" type="number" class="form-control" value="${escapeHtml(value('.ml-priority'))}"></div>
                         <div class="col-md-4"><label class="form-label">开通价格</label><input id="editLevelCost" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-cost'))}"></div>
                         <div class="col-md-4"><label class="form-label">图标 class</label><input id="editLevelIcon" class="form-control" value="${escapeHtml(value('.ml-icon'))}"></div>
-                        <div class="col-md-3"><label class="form-label">单商品账号数</label><input id="editLevelMaxAccounts" type="number" class="form-control" value="${escapeHtml(value('.ml-max-accounts'))}"></div>
-                        <div class="col-md-3"><label class="form-label">最多商品数</label><input id="editLevelMaxProducts" type="number" class="form-control" value="${escapeHtml(value('.ml-max-products'))}"></div>
+                        <div class="col-md-3"><label class="form-label">单商品账号数</label><input id="editLevelMaxAccounts" type="number" min="0" class="form-control" value="${escapeHtml(value('.ml-max-accounts'))}"><div class="form-text">填 0 表示无限制</div></div>
+                        <div class="col-md-3"><label class="form-label">最多商品数</label><input id="editLevelMaxProducts" type="number" min="0" class="form-control" value="${escapeHtml(value('.ml-max-products'))}"><div class="form-text">填 0 表示无限制</div></div>
                         <div class="col-md-3"><label class="form-label">交易手续费 %</label><input id="editLevelFeeRate" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-fee-rate'))}"></div>
                         <div class="col-md-3"><label class="form-label">发布费/账号</label><input id="editLevelPublishFee" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-publish-fee'))}"></div>
                         <div class="col-md-12"><label class="form-label">卡片渐变 CSS</label><input id="editLevelGradient" class="form-control" value="${escapeHtml(value('.ml-gradient'))}"></div>
@@ -1410,7 +1431,7 @@ function renderReservedLoginSettings(targetId = 'settingsContent') {
     const qqCallback = c.oauth_qq_redirect_uri || oauthCallbackUrl('qq');
     const wechatCallback = c.oauth_wechat_redirect_uri || oauthCallbackUrl('wechat');
     const caihongCallback = c.oauth_caihong_redirect_uri || oauthCallbackUrl('caihong');
-    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>登录注册</h5><button class="btn btn-sm btn-primary" onclick="saveLoginSettings()">保存登录设置</button></div><div class="config-help mb-3">直接在下面卡片里填写对应平台参数。启用前必须填完整参数；未接入真实回调前建议保持关闭。</div><div class="row g-3">${oauthCard({ id: 'oauthQq', title: 'QQ 官方登录', desc: 'QQ 互联网站应用', enabled: c.oauth_qq_enabled, help: `回调地址：<code>${escapeHtml(qqCallback)}</code> <button class="btn btn-sm btn-outline-primary ms-2" type="button" onclick="copyText('${oauthCallbackUrl('qq')}')">复制默认</button>`, fields: [oauthField('oauthQqAppId', 'App ID', c.oauth_qq_app_id, '例如 1020xxxxx'), oauthField('oauthQqAppKey', 'App Key', '', c.oauth_qq_app_key ? '已配置，留空不修改' : '填写 QQ App Key', 'password'), oauthField('oauthQqRedirectUri', '回调地址', qqCallback)] })}${oauthCard({ id: 'oauthWechat', title: '微信官方登录', desc: '微信开放平台网站应用', enabled: c.oauth_wechat_enabled, help: `回调地址：<code>${escapeHtml(wechatCallback)}</code> <button class="btn btn-sm btn-outline-primary ms-2" type="button" onclick="copyText('${oauthCallbackUrl('wechat')}')">复制默认</button>`, fields: [oauthField('oauthWechatAppId', 'App ID', c.oauth_wechat_app_id, '例如 wx123456'), oauthField('oauthWechatAppSecret', 'App Secret', '', c.oauth_wechat_app_secret ? '已配置，留空不修改' : '填写 App Secret', 'password'), oauthField('oauthWechatRedirectUri', '回调地址', wechatCallback)] })}${oauthCard({ id: 'oauthCaihong', title: '彩虹聚合登录', desc: '聚合登录平台参数', enabled: c.oauth_caihong_enabled, help: '网关、商户 ID 和通信 Key 由聚合登录服务商提供。', fields: [oauthField('oauthCaihongApiUrl', '聚合登录网关', c.oauth_caihong_api_url, 'https://login.example.com/'), oauthField('oauthCaihongAppId', '商户 / App ID', c.oauth_caihong_app_id), oauthField('oauthCaihongKey', '通信 Key', '', c.oauth_caihong_key ? '已配置，留空不修改' : '填写通信 Key', 'password'), oauthField('oauthCaihongRedirectUri', '回调地址', caihongCallback)] })}</div></div>`;
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>登录注册</h5><button class="btn btn-sm btn-primary" onclick="saveLoginSettings()">保存登录设置</button></div><div class="config-help mb-3">直接在下面卡片里填写对应平台参数。启用前必须填完整参数；未接入真实回调前建议保持关闭。</div><div class="row g-3">${oauthCard({ id: 'oauthQq', title: 'QQ 官方登录', desc: 'QQ 互联网站应用', enabled: c.oauth_qq_enabled, help: `回调地址：<code>${escapeHtml(qqCallback)}</code> <button class="btn btn-sm btn-outline-primary ms-2" type="button" onclick="copyText('${oauthCallbackUrl('qq')}')">复制默认</button>`, fields: [oauthField('oauthQqAppId', 'App ID', c.oauth_qq_app_id, '例如 1020xxxxx'), oauthField('oauthQqAppKey', 'App Key', '', c.oauth_qq_app_key ? '已配置，留空不修改' : '填写 QQ App Key', 'password'), oauthField('oauthQqRedirectUri', '回调地址', qqCallback)] })}${oauthCard({ id: 'oauthWechat', title: '微信官方登录', desc: '微信开放平台网站应用', enabled: c.oauth_wechat_enabled, help: `回调地址：<code>${escapeHtml(wechatCallback)}</code> <button class="btn btn-sm btn-outline-primary ms-2" type="button" onclick="copyText('${oauthCallbackUrl('wechat')}')">复制默认</button>`, fields: [oauthField('oauthWechatAppId', 'App ID', c.oauth_wechat_app_id, '例如 wx123456'), oauthField('oauthWechatAppSecret', 'App Secret', '', c.oauth_wechat_app_secret ? '已配置，留空不修改' : '填写 App Secret', 'password'), oauthField('oauthWechatRedirectUri', '回调地址', wechatCallback)] })}${oauthCard({ id: 'oauthCaihong', title: '彩虹聚合登录', desc: '聚合登录平台参数', enabled: c.oauth_caihong_enabled, help: `网关、商户 ID 和通信 Key 由聚合登录服务商提供。<br>当前前台域名：<code>${escapeHtml(location.hostname)}</code><br><strong>注意：</strong>如果前台是 <code>shop.uzip.cn</code>，聚合平台白名单也要填 <code>shop.uzip.cn</code>，只填 <code>uzip.cn</code> 可能会被判定为回调域名未授权。`, fields: [oauthField('oauthCaihongApiUrl', '聚合登录网关', c.oauth_caihong_api_url, 'https://login.example.com/'), oauthField('oauthCaihongAppId', '商户 / App ID', c.oauth_caihong_app_id), oauthField('oauthCaihongKey', '通信 Key', '', c.oauth_caihong_key ? '已配置，留空不修改' : '填写通信 Key', 'password'), oauthField('oauthCaihongRedirectUri', '回调地址', caihongCallback)] })}</div></div>`;
     toggleOauthConfig();
 }
 async function saveLoginSettings() {

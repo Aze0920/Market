@@ -94,6 +94,30 @@ const API = {
         return this.request('auth.php?action=update_profile', 'POST', { username, email });
     },
 
+    savePaymentMethods(methods) {
+        return this.request('auth.php?action=save_payment_methods', 'POST', {
+            payment_methods: JSON.stringify(methods || {})
+        });
+    },
+
+    async uploadPaymentQrcode(file) {
+        const options = {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new FormData()
+        };
+        options.body.append('image', file);
+        try {
+            const response = await fetch(this.baseUrl + 'auth.php?action=upload_payment_qrcode', options);
+            const text = await response.text();
+            const result = text ? JSON.parse(text) : {};
+            return response.ok ? result : { success: false, message: result.message || '上传失败' };
+        } catch (error) {
+            console.error('Payment QR Upload Error:', error);
+            return { success: false, message: '收款码上传失败，请稍后重试' };
+        }
+    },
+
     sendProfileEmailCode() {
         return this.request('auth.php?action=send_profile_email_code', 'POST');
     },
