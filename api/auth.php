@@ -472,6 +472,42 @@ switch ($action) {
         apiLogRequest('info', $payload);
         jsonResponse(['success' => true]);
 
+    case 'geetest_register':
+        $config = $db->getSystemConfig();
+        if (empty($config['captcha_enabled']) || ($config['captcha_provider'] ?? '') !== 'geetest_v3') {
+            jsonResponse(['success' => false, 'message' => '极验人机验证未启用'], 400);
+        }
+        $captchaId = trim((string)($config['captcha_site_key'] ?? ''));
+        if ($captchaId === '') {
+            jsonResponse(['success' => false, 'message' => '极验 Captcha ID 未配置'], 400);
+        }
+        $query = http_build_query([
+            'gt' => $captchaId,
+            'new_captcha' => 1,
+            'client_type' => 'web',
+            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
+            't' => (string)time(),
+        ]);
+        $response = @file_get_contents('https://api.geetest.com/register.php?' . $query, false, stream_context_create(['http' => ['timeout' => 8]]));
+        if ($response === false || trim($response) === '') {
+            apiLogRequest('warning', ['event' => 'geetest_register_failed', 'reason' => 'empty_response']);
+            jsonResponse(['success' => false, 'message' => '极验初始化失败：无法连接 register.php'], 502);
+        }
+        $challenge = trim($response);
+        if (!preg_match('/^[a-z0-9]{32}$/i', $challenge)) {
+            apiLogRequest('warning', ['event' => 'geetest_register_failed', 'reason' => 'invalid_response', 'response' => substr($challenge, 0, 120)]);
+            jsonResponse(['success' => false, 'message' => '极验初始化失败：register.php 返回异常'], 502);
+        }
+        $_SESSION['geetest_challenge'] = $challenge;
+        apiLogRequest('info', ['event' => 'geetest_register_success', 'challenge_prefix' => substr($challenge, 0, 8)]);
+        jsonResponse([
+            'success' => true,
+            'gt' => $captchaId,
+            'challenge' => $challenge,
+            'new_captcha' => true,
+            'offline' => false,
+        ]);
+
     case 'update_profile':
         $userId = requireAuth();
         $user = $db->getUserById($userId);

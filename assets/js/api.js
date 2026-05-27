@@ -86,6 +86,10 @@ const API = {
         return this.request('auth.php?action=captcha_config');
     },
 
+    getGeetestRegister() {
+        return this.request('auth.php?action=geetest_register');
+    },
+
     captchaDebug(step, provider = '', message = '') {
         return this.request('auth.php?action=captcha_debug', 'POST', {
             step,

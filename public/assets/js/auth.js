@@ -277,11 +277,19 @@ async function runGeetestCaptcha(config) {
             return;
         }
         captchaDebugLog('geetest_init_start', 'geetest_v3', JSON.stringify({ has_site_key: !!config.site_key }));
+        captchaDebugLog('geetest_register_request_start', 'geetest_v3');
+        const registerResult = await API.getGeetestRegister();
+        if (!registerResult.success) {
+            captchaDebugLog('geetest_register_request_failed', 'geetest_v3', registerResult.message || '');
+            closeOverlay(new Error(registerResult.message || '极验初始化失败'), reject);
+            return;
+        }
+        captchaDebugLog('geetest_register_request_success', 'geetest_v3', JSON.stringify({ has_challenge: !!registerResult.challenge }));
         const initConfig = {
-            gt: config.site_key,
-            challenge: String(Date.now()),
-            offline: false,
-            new_captcha: true,
+            gt: registerResult.gt || config.site_key,
+            challenge: registerResult.challenge,
+            offline: !!registerResult.offline,
+            new_captcha: registerResult.new_captcha !== false,
             product: 'bind',
             width: '100%',
             lang: 'zh-cn',
@@ -334,7 +342,7 @@ async function runGeetestCaptcha(config) {
                 });
                 captchaObj.onClose(() => {
                     captchaDebugLog('geetest_close', 'geetest_v3');
-                    closeOverlay(new Error('captcha_cancelled'), reject);
+                    closeOverlay(new Error('已关闭极验验证，请完成验证后再发送验证码'), reject);
                 });
             });
         } catch (error) {
