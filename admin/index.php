@@ -1200,12 +1200,12 @@ function renderUpdates() {
 }
 function updateStatusHtml(status) {
     const hasUpdate = !!status.has_update;
-    const siteVersionText = status.local_commit ? escapeHtml((status.local_commit || '').slice(0, 12)) : '未记录';
+    const siteVersionText = status.site_version ? escapeHtml(status.site_version) : '未记录';
     const siteUpdatedText = status.site_updated_at ? `<div class="small text-muted mt-1">更新时间：${escapeHtml(status.site_updated_at)}</div>` : '<div class="small text-muted mt-1">首次使用后台更新后会自动记录</div>';
     return `
         <div class="row g-3">
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">远程提交</div><code>${escapeHtml((status.remote_commit || '').slice(0, 12) || '-')}</code></div></div>
-            <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">当前网站版本记录</div><code>${siteVersionText}</code>${siteUpdatedText}</div></div>
+            <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">当前网站版本号</div><code>${siteVersionText}</code>${siteUpdatedText}</div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">Git 状态</div>${status.git_available ? '<span class="badge-soft success">可用</span>' : '<span class="badge-soft danger">不可用</span>'}</div></div>
             <div class="col-md-6"><div class="border rounded-4 p-3"><div class="text-muted small">更新状态</div>${hasUpdate ? '<span class="badge-soft warning">发现更新</span>' : '<span class="badge-soft success">已是最新</span>'}</div></div>
         </div>`;

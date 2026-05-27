@@ -207,6 +207,10 @@ function adminRunCommand($command, $cwd = null) {
     return adminRunCommandRaw($command, $cwd);
 }
 
+function adminAppVersion() {
+    return 'V1.1.0';
+}
+
 function adminUpdaterVersion($config) {
     if (!is_file($config['version_file'])) {
         return [];
@@ -221,6 +225,7 @@ function adminSaveUpdaterVersion($config, $commit) {
         mkdir($dir, 0755, true);
     }
     $payload = [
+        'version' => adminAppVersion(),
         'commit' => $commit,
         'branch' => $config['branch'],
         'repo_url' => $config['repo_url'],
@@ -269,6 +274,7 @@ function adminUpdateStatus() {
         'work_dir' => $config['work_dir'],
         'site_dir' => $config['site_dir'],
         'version_file' => $config['version_file'],
+        'site_version' => $version['version'] ?? adminAppVersion(),
         'site_commit' => $version['commit'] ?? '',
         'site_updated_at' => $version['updated_at_text'] ?? '',
         'work_repo_exists' => is_dir($config['work_dir'] . DIRECTORY_SEPARATOR . '.git'),
@@ -503,7 +509,7 @@ function adminApplyUpdate() {
         $fetch['output'],
         $reset['output'],
         '变更文件：' . count($diff['files']) . ' 个',
-        '已记录版本：' . substr($targetCommitHash, 0, 12),
+        '已记录版本：' . adminAppVersion(),
         implode("\n", $applied['changed']),
         implode("\n", $applied['skipped']),
         implode("\n", $applied['failed'] ?? []),
