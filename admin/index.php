@@ -558,6 +558,24 @@ function renderOverview() {
     setTitle('后台总览');
     const users = Admin.cache.users || [], products = Admin.cache.products || [], orders = Admin.cache.payOrders || [], requests = Admin.cache.requests || [], cards = Admin.cache.cards || [], complaints = Admin.cache.complaints || [];
     const pending = requests.filter(r => r.status === 'pending').length;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStartTs = Math.floor(todayStart.getTime() / 1000);
+    const todayPaidOrders = orders.filter(o => (o.status || '') === 'paid' && Number(o.paid_at || o.created_at || 0) >= todayStartTs);
+    const todayReceipt = todayPaidOrders.reduce((sum, o) => {
+        const type = o.type || 'recharge';
+        if (['recharge', 'membership_upgrade', 'product_online_purchase'].includes(type)) {
+            return sum + Number(o.actual_amount ?? o.amount ?? 0);
+        }
+        return sum;
+    }, 0);
+    const todayProfit = todayPaidOrders.reduce((sum, o) => {
+        const type = o.type || 'recharge';
+        if (type === 'membership_upgrade') return sum + Number(o.amount || 0);
+        if (type === 'product_online_purchase' || type === 'recharge') return sum + Number(o.fee || 0);
+        if (type === 'publish_fee') return sum + Math.abs(Number(o.amount || 0));
+        return sum;
+    }, 0);
     document.getElementById('adminContent').innerHTML = `
         <div class="row g-3 mb-4">
             ${stat('bi-people-fill', '#dbeafe', '#1d4ed8', users.length, '用户总数')}
@@ -565,6 +583,8 @@ function renderOverview() {
             ${stat('bi-cash-stack', '#dcfce7', '#15803d', orders.length, '支付订单')}
             ${stat('bi-exclamation-octagon-fill', '#fee2e2', '#b91c1c', complaints.filter(o => (o.complaint?.status || '') === 'open').length, '进行中投诉')}
             ${stat('bi-hourglass-split', '#fef3c7', '#b45309', pending, '待处理申请')}
+            ${stat('bi-wallet2', '#e0f2fe', '#0369a1', money(todayReceipt), '今日收款')}
+            ${stat('bi-graph-up-arrow', '#f0fdf4', '#16a34a', money(todayProfit), '今日利润')}
         </div>
         <div class="row g-4">
             <div class="col-lg-7"><div class="panel"><div class="panel-title"><h5>最新用户</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('users')">查看全部</button></div>${userTable(users.slice(-6).reverse())}</div></div>
