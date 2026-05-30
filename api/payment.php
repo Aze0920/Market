@@ -297,8 +297,12 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
         return null;
     }
 
+    $buyerLabel = sanitizeString($buyer['username'] ?? '游客');
     foreach ($deliveryList as $delivery) {
-        $product['account_list'][$delivery['account_index']]['sold'] = true;
+        $idx = $delivery['account_index'];
+        $product['account_list'][$idx]['sold'] = true;
+        $product['account_list'][$idx]['buyer_name'] = $buyerLabel;
+        $product['account_list'][$idx]['buyer_id'] = (string)($buyer['id'] ?? '');
     }
     $product['stock'] -= $quantity;
     $product['sales'] += $quantity;
@@ -379,9 +383,29 @@ function finalizePaidPaymentOrder($order, $notifyData = null) {
     $order = array_merge($order, $update);
 
     $user = $db->getUserById($order['user_id']);
-    if (!$user) return null;
+    $isGuestOrder = !empty($order['guest_order']);
+    $orderType = $order['type'] ?? 'recharge';
 
-    if (($order['type'] ?? 'recharge') === 'membership_upgrade') {
+    if ($orderType === 'product_online_purchase') {
+        if (!$user && !$isGuestOrder) {
+            return null;
+        }
+        $lockHandle = acquireProductPurchaseLock($order['product_id'] ?? '');
+        $productOrder = completeOnlineProductPurchase($order, $order['pay_type'] ?? '');
+        releaseProductPurchaseLock($lockHandle);
+        if (!$productOrder) {
+            $failedOrder = $db->getPaymentOrder($order['id']) ?: $order;
+            $reason = $failedOrder['delivery_error'] ?? '库存不足，购买失败，款项已退回余额';
+            refundFailedProductPaymentOrder($failedOrder, $reason);
+        }
+        return $productOrder;
+    }
+
+    if (!$user) {
+        return null;
+    }
+
+    if ($orderType === 'membership_upgrade') {
         $targetLevel = $order['target_level'] ?? '';
         $levels = $db->getMembershipLevels();
         if ($targetLevel !== '' && isset($levels[$targetLevel])) {
@@ -393,18 +417,6 @@ function finalizePaidPaymentOrder($order, $notifyData = null) {
             }
         }
         return null;
-    }
-
-    if (($order['type'] ?? '') === 'product_online_purchase') {
-        $lockHandle = acquireProductPurchaseLock($order['product_id'] ?? '');
-        $productOrder = completeOnlineProductPurchase($order, $order['pay_type'] ?? '');
-        releaseProductPurchaseLock($lockHandle);
-        if (!$productOrder) {
-            $failedOrder = $db->getPaymentOrder($order['id']) ?: $order;
-            $reason = $failedOrder['delivery_error'] ?? '库存不足，购买失败，款项已退回余额';
-            refundFailedProductPaymentOrder($failedOrder, $reason);
-        }
-        return $productOrder;
     }
 
     if (empty($order['balance_applied'])) {
@@ -895,6 +907,12 @@ switch ($action) {
         $guestAllowed = !empty($order['guest_order']) && $guestToken !== '' && hash_equals((string)($order['guest_token'] ?? ''), hash('sha256', $guestToken));
         if (($order['user_id'] ?? '') !== $sessionUserId && (!$user || ($user['role'] ?? '') !== 'admin') && !$guestAllowed) {
             jsonResponse(['success' => false, 'message' => '无权查看该订单'], 403);
+        }
+        if (($order['status'] ?? '') === 'paid'
+            && ($order['type'] ?? '') === 'product_online_purchase'
+            && empty($order['related_id'])) {
+            finalizePaidPaymentOrder($order);
+            $order = $db->getPaymentOrder($id) ?: $order;
         }
         jsonResponse([
             'success' => true,

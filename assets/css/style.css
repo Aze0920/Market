@@ -1392,6 +1392,11 @@ a:hover {
     font-weight: 800;
 }
 
+.seller-stock-buyer {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .seller-stock-content {
     min-width: 0;
     flex: 1;

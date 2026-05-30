@@ -130,6 +130,51 @@ function productRatingStats($comments) {
     return ['good' => $good, 'bad' => $bad, 'total' => count($comments)];
 }
 
+function enrichSoldStockBuyers($productId, array &$stock) {
+    global $db;
+    $needsLookup = false;
+    foreach ($stock as $item) {
+        if (!empty($item['sold']) && empty($item['buyer_name'])) {
+            $needsLookup = true;
+            break;
+        }
+    }
+    if (!$needsLookup) {
+        return;
+    }
+
+    $contentToBuyer = [];
+    foreach ($db->getOrders() as $order) {
+        if (($order['product_id'] ?? '') !== $productId) {
+            continue;
+        }
+        $buyerName = trim((string)($order['buyer_name'] ?? ''));
+        if ($buyerName === '' && !empty($order['guest_order'])) {
+            $buyerName = '游客';
+        }
+        if ($buyerName === '') {
+            continue;
+        }
+        foreach (($order['delivery_info']['items'] ?? []) as $deliveryItem) {
+            $content = trim((string)($deliveryItem['content'] ?? ''));
+            if ($content !== '') {
+                $contentToBuyer[$content] = $buyerName;
+            }
+        }
+    }
+
+    foreach ($stock as &$item) {
+        if (empty($item['sold']) || !empty($item['buyer_name'])) {
+            continue;
+        }
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content !== '' && isset($contentToBuyer[$content])) {
+            $item['buyer_name'] = $contentToBuyer[$content];
+        }
+    }
+    unset($item);
+}
+
 function normalizeProductImage($image) {
     $image = trim((string)$image);
     if ($image === '') return '';
@@ -172,8 +217,12 @@ function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'bala
         return ['success' => false, 'message' => '该商品需要买家设置取卡密码'];
     }
 
+    $buyerLabel = sanitizeString($buyer['username'] ?? '游客');
     foreach ($deliveryList as $delivery) {
-        $product['account_list'][$delivery['account_index']]['sold'] = true;
+        $idx = $delivery['account_index'];
+        $product['account_list'][$idx]['sold'] = true;
+        $product['account_list'][$idx]['buyer_name'] = $buyerLabel;
+        $product['account_list'][$idx]['buyer_id'] = (string)($buyer['id'] ?? '');
     }
     $product['stock'] -= $quantity;
     $product['sales'] += $quantity;
@@ -599,8 +648,14 @@ switch ($action) {
             }
             $item['index'] = $index;
             $item['sold'] = !empty($item['sold']);
+            if (!empty($item['sold'])) {
+                $item['buyer_name'] = trim((string)($item['buyer_name'] ?? ''));
+            } else {
+                unset($item['buyer_name'], $item['buyer_id']);
+            }
             $stock[] = $item;
         }
+        enrichSoldStockBuyers($id, $stock);
         $safe = $product;
         unset($safe['account_list'], $safe['pickup_password']);
         jsonResponse([

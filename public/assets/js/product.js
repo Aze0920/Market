@@ -443,37 +443,51 @@ async function afterPurchase() {
 }
 
 async function viewDeliveryInfo(orderId, pickupPassword = '') {
-    const result = await API.getOrder(orderId, pickupPassword);
+    const password = pickupPassword || document.getElementById('pickupPasswordInput')?.value?.trim() || '';
+    const result = await API.getOrder(orderId, password);
     if (!result.success) {
-        Toast.error('订单不存在');
+        Toast.error(result.message || '订单不存在');
         return;
     }
 
     const order = result.order;
-    const d = order.delivery_info;
+    const needsPassword = !!order.pickup_password_required;
+    if (needsPassword && password) {
+        Toast.warning('取卡密码错误，请重试');
+    }
 
-    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    const d = order.delivery_info;
+    const modalEl = document.getElementById('purchaseConfirmModal');
     document.getElementById('purchaseBody').innerHTML = `
         <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
-        ${order.pickup_password_required ? `
+        ${needsPassword ? `
             <div class="alert alert-warning small">该订单设置了取卡密码，请输入你购买时填写的取卡密码后查看发货信息。</div>
             <div class="input-group mb-3">
-                <input type="password" class="form-control" id="pickupPasswordInput" placeholder="请输入取卡密码">
-                <button class="btn btn-primary" onclick="viewDeliveryInfo('${Security.escapeAttr(orderId)}', document.getElementById('pickupPasswordInput').value)">确认取卡</button>
+                <input type="password" class="form-control" id="pickupPasswordInput" placeholder="请输入取卡密码" autocomplete="off">
+                <button type="button" class="btn btn-primary" onclick="viewDeliveryInfo('${Security.escapeAttr(orderId)}', document.getElementById('pickupPasswordInput').value)">确认取卡</button>
             </div>
         ` : ''}
+        ${needsPassword ? '' : `
         <div class="delivery-card">
             <div class="small">
                 ${deliveryInfoHtml(d)}
             </div>
-        </div>
+        </div>`}
     `;
 
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
     `;
 
-    modal.show();
+    if (!modalEl.classList.contains('show')) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    } else {
+        setTimeout(cleanupBootstrapModalArtifacts, 80);
+    }
+
+    if (needsPassword) {
+        document.getElementById('pickupPasswordInput')?.focus();
+    }
 }
 
 async function openCommentModal(productId, orderId) {

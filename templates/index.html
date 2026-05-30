@@ -926,6 +926,8 @@
             const result = await API.getCurrentUser();
             if (result.success && result.logged_in) {
                 App.setUser(result.user);
+            } else {
+                App.clearUser();
             }
 
             const initialState = getInitialFrontendState();

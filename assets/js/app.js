@@ -967,25 +967,79 @@ async function queryGuestOrder(orderId = '') {
     if (box) box.innerHTML = renderGuestOrdersList([order]);
 }
 
+let guestDeliveryContext = { orderId: '', guestToken: '' };
+
+async function submitGuestPickupPassword() {
+    const password = document.getElementById('guestPickupPasswordInput')?.value?.trim() || '';
+    if (!password) {
+        Toast.warning('请输入取卡密码');
+        document.getElementById('guestPickupPasswordInput')?.focus();
+        return;
+    }
+    await renderGuestDeliveryModal(password);
+}
+
 async function viewGuestDeliveryInfo(orderId, guestToken = '', pickupPassword = '') {
-    const result = await API.getOrder(orderId, pickupPassword, guestToken || getGuestOrderToken());
-    if (!result.success) return Toast.error(result.message || '订单不存在');
+    guestDeliveryContext = {
+        orderId: orderId || '',
+        guestToken: guestToken || getGuestOrderToken()
+    };
+    await renderGuestDeliveryModal(pickupPassword);
+}
+
+async function renderGuestDeliveryModal(pickupPassword = '') {
+    const { orderId, guestToken } = guestDeliveryContext;
+    if (!orderId) return;
+
+    const result = await API.getOrder(orderId, pickupPassword, guestToken);
+    if (!result.success) {
+        Toast.error(result.message || '订单不存在');
+        return;
+    }
+
     const order = result.order;
+    const needsPassword = !!order.pickup_password_required;
+    if (needsPassword && pickupPassword) {
+        Toast.warning('取卡密码错误，请重试');
+    } else if (needsPassword && !pickupPassword) {
+        // 首次进入，仅展示取卡密码表单
+    }
+
     const d = order.delivery_info;
     document.getElementById('purchaseBody').innerHTML = `
         <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>游客订单发货信息</h6>
         <div class="alert alert-warning small">您尚未登录，请保存好订单号：<code>${Security.escapeHtml(order.id)}</code></div>
-        ${order.pickup_password_required ? `
+        ${needsPassword ? `
             <div class="alert alert-info small">该订单设置了取卡密码，请输入购买时填写的取卡密码。</div>
             <div class="input-group mb-3">
-                <input type="password" class="form-control" id="guestPickupPasswordInput" placeholder="请输入取卡密码">
-                <button class="btn btn-primary" onclick="viewGuestDeliveryInfo('${Security.escapeAttr(orderId)}', '${Security.escapeAttr(guestToken || getGuestOrderToken())}', document.getElementById('guestPickupPasswordInput').value)">确认取卡</button>
+                <input type="password" class="form-control" id="guestPickupPasswordInput" placeholder="请输入取卡密码" autocomplete="off">
+                <button type="button" class="btn btn-primary" onclick="submitGuestPickupPassword()">确认取卡</button>
             </div>
         ` : ''}
-        <div class="delivery-card"><div class="small">${deliveryInfoHtml(d)}</div></div>
+        ${needsPassword ? '' : `<div class="delivery-card"><div class="small">${deliveryInfoHtml(d)}</div></div>`}
     `;
-    document.getElementById('purchaseFooter').innerHTML = '<button class="btn btn-outline" onclick="openGuestOrdersModal()">返回订单</button><button class="btn btn-primary" data-bs-dismiss="modal">关闭</button>';
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('purchaseConfirmModal')).show();
+    document.getElementById('purchaseFooter').innerHTML = '<button type="button" class="btn btn-outline" onclick="openGuestOrdersModal()">返回订单</button><button type="button" class="btn btn-primary" data-bs-dismiss="modal">关闭</button>';
+
+    const modalEl = document.getElementById('purchaseConfirmModal');
+    if (!modalEl.classList.contains('show')) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    } else {
+        setTimeout(cleanupBootstrapModalArtifacts, 80);
+    }
+
+    if (needsPassword) {
+        const input = document.getElementById('guestPickupPasswordInput');
+        input?.focus();
+        if (input && !input.dataset.boundEnter) {
+            input.dataset.boundEnter = '1';
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    submitGuestPickupPassword();
+                }
+            });
+        }
+    }
 }
 
 async function loadBalanceTab(area) {
@@ -1475,6 +1529,7 @@ async function openStockManageModal(productId, page = currentStockManageState.pa
                     <div class="seller-stock-index">#${Number(item.index) + 1}</div>
                     <div class="seller-stock-content" title="${Security.escapeAttr(content)}">${Security.escapeHtml(content)}</div>
                     <span class="badge ${item.sold ? 'badge-secondary' : 'badge-success'}">${item.sold ? '已售' : '未售'}</span>
+                    ${item.sold && item.buyer_name ? `<span class="seller-stock-buyer text-muted small">买家：${Security.escapeHtml(item.buyer_name)}</span>` : ''}
                 </div>
                 <button class="btn btn-sm btn-outline-danger" onclick="deleteSellerStockItem('${Security.escapeAttr(productId)}', ${Number(item.index)})">
                     <i class="bi bi-trash me-1"></i>删除
@@ -3025,17 +3080,17 @@ function startPaymentPolling(orderId, options = {}) {
         const statusEl = document.getElementById('qrPaymentStatus');
         if (status === 'paid') {
             stopPaymentPolling();
+            hideModalSafely('qrPaymentModal');
+            setTimeout(cleanupBootstrapModalArtifacts, 120);
             if (options.guestOrder) {
                 const latestOrder = { ...(findGuestOrder(orderId) || {}), ...result.order, guest_token: options.guestToken || getGuestOrderToken() };
                 saveGuestOrder(latestOrder);
-                if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>支付成功。您尚未登录，请保存好订单号：<code>' + Security.escapeHtml(orderId) + '</code>';
                 Toast.success(options.successMessage || '支付成功，请保存好订单号');
-                setTimeout(() => openGuestOrdersModal(orderId), 800);
+                setTimeout(() => openGuestOrdersModal(orderId), 280);
                 return;
             }
-            if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>' + (options.successMessage || '支付成功，正在刷新...');
             Toast.success(options.successMessage || '支付成功');
-            setTimeout(() => window.location.reload(), 800);
+            setTimeout(() => window.location.reload(), 600);
             return;
         }
         if (['failed', 'cancelled', 'unpaid'].includes(status)) {
