@@ -1915,6 +1915,39 @@ async function loadProfileTab(area) {
     profileSecurityUnlocked = false;
     profileEmailVerifyPending = false;
     profilePaymentInitiallyConfigured = Object.values(paymentMethods).some(item => !!(item.account || item.qrcode));
+    const levelsResult = await API.getMembershipLevels();
+    const levelInfo = (levelsResult.success ? (levelsResult.levels || {}) : {})[user.membership_level || 'Free'] || {};
+    const canUseCustomLabel = !!user.can_use_custom_label;
+    const customLabelPreviewGradient = user.custom_label_gradient || levelInfo.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)';
+    const customLabelSection = canUseCustomLabel ? `
+            <div class="col-12">
+                <div class="profile-card-soft">
+                    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+                        <div>
+                            <h6 class="fw-bold mb-1"><i class="bi bi-tags me-2 text-primary"></i>自定义标签</h6>
+                            <div class="text-muted small">你的会员等级已开通自定义标签，可设置 1-10 个字符，会显示在商品卡片卖家名称后面。</div>
+                        </div>
+                        <div id="customLabelPreview">${typeof renderGradientBadge === 'function' ? renderGradientBadge(user.custom_label_text || '预览', user.custom_label_icon || 'bi-tag', customLabelPreviewGradient, 'custom-label-badge') : ''}</div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">标签文字</label>
+                            <input class="form-control" id="customLabelText" maxlength="10" value="${Security.escapeAttr(user.custom_label_text || '')}" placeholder="1-10 个字符" oninput="updateCustomLabelPreview()">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">图标 class</label>
+                            <input class="form-control" id="customLabelIcon" value="${Security.escapeAttr(user.custom_label_icon || 'bi-tag')}" placeholder="例如 bi-star-fill" oninput="updateCustomLabelPreview()">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">背景渐变 CSS</label>
+                            <input class="form-control" id="customLabelGradient" value="${Security.escapeAttr(user.custom_label_gradient || levelInfo.gradient || '')}" placeholder="linear-gradient(135deg, #6366f1, #8b5cf6)" oninput="updateCustomLabelPreview()">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-primary" onclick="saveCustomLabel()"><i class="bi bi-check2-circle me-1"></i>保存自定义标签</button>
+                        </div>
+                    </div>
+                </div>
+            </div>` : '';
     if (isAdmin) {
         const configResult = await API.getSystemConfig();
         const config = configResult.success ? (configResult.config || {}) : {};
@@ -2054,9 +2087,32 @@ async function loadProfileTab(area) {
                 </div>
             </div>
             ${adminConfigHtml}
+            ${customLabelSection}
         </div>
     `;
     setTimeout(startMerchantReadTimer, 50);
+}
+
+function updateCustomLabelPreview() {
+    const preview = document.getElementById('customLabelPreview');
+    if (!preview || typeof renderGradientBadge !== 'function') return;
+    const text = document.getElementById('customLabelText')?.value.trim() || '预览';
+    const icon = document.getElementById('customLabelIcon')?.value.trim() || 'bi-tag';
+    const gradient = document.getElementById('customLabelGradient')?.value.trim() || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)';
+    preview.innerHTML = renderGradientBadge(text, icon, gradient, 'custom-label-badge');
+}
+
+async function saveCustomLabel() {
+    const text = document.getElementById('customLabelText')?.value.trim() || '';
+    const icon = document.getElementById('customLabelIcon')?.value.trim() || 'bi-tag';
+    const gradient = document.getElementById('customLabelGradient')?.value.trim() || '';
+    if (!text) return Toast.warning('请填写 1-10 个字符的标签文字');
+    if (text.length > 10) return Toast.warning('标签文字不能超过 10 个字符');
+    const result = await API.saveCustomLabel(text, icon, gradient);
+    if (!result.success) return Toast.error(result.message || '保存失败');
+    Toast.success(result.message || '自定义标签已保存');
+    if (result.user) App.setUser(result.user);
+    updateCustomLabelPreview();
 }
 
 async function handleAvatarSelect(event) {

@@ -33,6 +33,77 @@ function getCurrentUser() {
     return $db->getUserById($_SESSION['user_id']);
 }
 
+function normalizeBootstrapIcon($icon, $fallback = 'bi-tag') {
+    $icon = trim((string)$icon);
+    if ($icon === '' || !preg_match('/^bi(-[a-z0-9-]+)+$/', $icon)) {
+        return $fallback;
+    }
+    return $icon;
+}
+
+function normalizeBadgeGradient($gradient, $fallback = 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)') {
+    $gradient = trim((string)$gradient);
+    if ($gradient === '' || preg_match('/[<>"\']/', $gradient)) {
+        return $fallback;
+    }
+    return substr($gradient, 0, 255);
+}
+
+function attachSellerBadgeMeta(array &$target, $seller, array $levels, array $config = []) {
+    if (!is_array($seller)) {
+        $freeLevel = $levels['Free'] ?? ['priority' => 0, 'icon' => 'bi-person', 'gradient' => 'linear-gradient(135deg, #6c757d 0%, #495057 100%)'];
+        $target['seller_role'] = 'user';
+        $target['seller_membership_level'] = 'Free';
+        $target['seller_membership_priority'] = intval($freeLevel['priority'] ?? 0);
+        $target['seller_badge_icon'] = $freeLevel['icon'] ?? 'bi-person';
+        $target['seller_badge_gradient'] = normalizeBadgeGradient($freeLevel['gradient'] ?? '', 'linear-gradient(135deg, #6c757d 0%, #495057 100%)');
+        $target['seller_badge_text'] = 'Free';
+        $target['seller_custom_label'] = null;
+        $target['seller_is_vip'] = false;
+        return;
+    }
+
+    if (($seller['role'] ?? '') === 'admin') {
+        $target['seller_role'] = 'admin';
+        $target['seller_membership_level'] = $seller['membership_level'] ?? 'Free';
+        $target['seller_membership_priority'] = 9999;
+        $target['seller_badge_icon'] = normalizeBootstrapIcon($config['admin_badge_icon'] ?? 'bi-shield-fill-check', 'bi-shield-fill-check');
+        $target['seller_badge_gradient'] = normalizeBadgeGradient($config['admin_badge_gradient'] ?? '', 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)');
+        $target['seller_badge_text'] = trim((string)($config['admin_badge_text'] ?? '管理员')) ?: '管理员';
+        $target['seller_custom_label'] = null;
+        $target['seller_is_vip'] = true;
+        return;
+    }
+
+    $levelName = $seller['membership_level'] ?? 'Free';
+    $level = $levels[$levelName] ?? ($levels['Free'] ?? []);
+    $freeLevel = $levels['Free'] ?? ['priority' => 0];
+    $levelPriority = intval($level['priority'] ?? 0);
+    $freePriority = intval($freeLevel['priority'] ?? 0);
+
+    $target['seller_role'] = 'user';
+    $target['seller_membership_level'] = $levelName;
+    $target['seller_membership_priority'] = $levelPriority;
+    $target['seller_badge_icon'] = normalizeBootstrapIcon($level['icon'] ?? 'bi-person', 'bi-person');
+    $target['seller_badge_gradient'] = normalizeBadgeGradient($level['gradient'] ?? '', 'linear-gradient(135deg, #6c757d 0%, #495057 100%)');
+    $target['seller_badge_text'] = $levelName;
+    $target['seller_is_vip'] = $levelPriority > $freePriority || strcasecmp($levelName, 'Free') !== 0;
+
+    $customLabel = null;
+    if (!empty($level['custom_label_enabled'])) {
+        $text = trim((string)($seller['custom_label_text'] ?? ''));
+        $textLen = function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text);
+        if ($text !== '' && $textLen >= 1 && $textLen <= 10) {
+            $customLabel = [
+                'text' => $text,
+                'icon' => normalizeBootstrapIcon($seller['custom_label_icon'] ?? 'bi-tag', 'bi-tag'),
+                'gradient' => normalizeBadgeGradient($seller['custom_label_gradient'] ?? '', $target['seller_badge_gradient']),
+            ];
+        }
+    }
+    $target['seller_custom_label'] = $customLabel;
+}
+
 function userHasMerchantCertification($user) {
     $methods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
     $paymentComplete = false;
@@ -330,21 +401,15 @@ switch ($action) {
         ];
         $products = $db->getProducts($filters);
         $levels = $db->getMembershipLevels();
+        $config = $db->getSystemConfig();
         $sellerCache = [];
-        $freeLevel = $levels['Free'] ?? ['priority' => 0];
         foreach ($products as &$p) {
             $sellerId = $p['seller_id'] ?? '';
             if ($sellerId !== '' && !array_key_exists($sellerId, $sellerCache)) {
                 $sellerCache[$sellerId] = $db->getUserById($sellerId);
             }
             $seller = $sellerCache[$sellerId] ?? null;
-            $levelName = $seller['membership_level'] ?? 'Free';
-            $level = $levels[$levelName] ?? $freeLevel;
-            $levelPriority = intval($level['priority'] ?? 0);
-            $freePriority = intval($freeLevel['priority'] ?? 0);
-            $p['seller_membership_level'] = $levelName;
-            $p['seller_membership_priority'] = $levelPriority;
-            $p['seller_is_vip'] = $levelPriority > $freePriority || strcasecmp($levelName, 'Free') !== 0;
+            attachSellerBadgeMeta($p, $seller, $levels, $config);
             $stats = productRatingStats($db->getComments($p['id']));
             $p['rating_good'] = $stats['good'];
             $p['rating_bad'] = $stats['bad'];
@@ -384,11 +449,9 @@ switch ($action) {
         }
         $safe = $product;
         $levels = $db->getMembershipLevels();
+        $config = $db->getSystemConfig();
         $seller = $db->getUserById($safe['seller_id'] ?? '');
-        $levelName = $seller['membership_level'] ?? 'Free';
-        $level = $levels[$levelName] ?? ($levels['Free'] ?? ['priority' => 0]);
-        $safe['seller_membership_level'] = $levelName;
-        $safe['seller_membership_priority'] = intval($level['priority'] ?? 0);
+        attachSellerBadgeMeta($safe, $seller, $levels, $config);
         unset($safe['account_list'], $safe['pickup_password']);
         $comments = $db->getComments($id);
         $safe['rating_stats'] = productRatingStats($comments);

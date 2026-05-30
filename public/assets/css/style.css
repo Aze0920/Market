@@ -1613,6 +1613,21 @@ a:hover {
     font-weight: 700;
     line-height: 1;
     white-space: nowrap;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+    text-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+}
+
+.seller-level-badge.custom-label-badge {
+    margin-left: 0.25rem;
+}
+
+.seller-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
 }
 
 .seller-level-badge.vip {

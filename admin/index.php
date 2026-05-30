@@ -1686,13 +1686,34 @@ async function copyTextToClipboard(text) {
 }
 function renderMembershipAdmin() {
     setTitle('会员等级');
+    const config = Admin.cache.sysConfig || {};
     document.getElementById('adminContent').innerHTML = `
+        <div class="panel mb-3">
+            <div class="panel-title"><h5>管理员专属标识</h5><button class="btn btn-sm btn-primary" onclick="saveAdminBadgeStyle()">保存管理员标识</button></div>
+            <div class="config-help mb-3">管理员账号在商品卡片上会显示专属标识，颜色和图标可单独配置，与普通会员等级无关。</div>
+            <div class="row g-3">
+                <div class="col-md-3"><label class="form-label">显示文字</label><input id="adminBadgeText" class="form-control" value="${escapeHtml(config.admin_badge_text || '管理员')}"></div>
+                <div class="col-md-3"><label class="form-label">图标 class</label><input id="adminBadgeIcon" class="form-control" value="${escapeHtml(config.admin_badge_icon || 'bi-shield-fill-check')}"></div>
+                <div class="col-md-6"><label class="form-label">背景渐变 CSS</label><input id="adminBadgeGradient" class="form-control" value="${escapeHtml(config.admin_badge_gradient || 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)')}"></div>
+            </div>
+        </div>
         <div class="panel">
             <div class="panel-title"><h5>会员等级配置</h5><div><button class="btn btn-sm btn-outline-primary me-2" onclick="addMembershipLevelRow()">新增等级</button><button class="btn btn-sm btn-primary" onclick="saveMembershipLevels()">保存配置</button></div></div>
-            <div class="config-help mb-3">点击卡片即可编辑等级。后台启用几个，前台会员中心就显示几个；卡片样式与前台保持一致。</div>
+            <div class="config-help mb-3">点击卡片即可编辑等级。可为每个等级设置图标、渐变颜色；勾选“允许自定义标签”后，该等级用户可在个人中心设置 1-10 字个性化标签。</div>
             <div id="membershipAdminList" class="membership-admin-grid">加载中...</div>
         </div>`;
     loadMembershipLevelsAdmin();
+}
+async function saveAdminBadgeStyle() {
+    const res = await request('finance.php?action=update_system_config', 'POST', {
+        admin_badge_text: fieldValue('adminBadgeText'),
+        admin_badge_icon: fieldValue('adminBadgeIcon'),
+        admin_badge_gradient: fieldValue('adminBadgeGradient')
+    });
+    if (!res.success) return showToast(res.message || '保存失败', 'error');
+    showToast('管理员标识已保存', 'success');
+    await loadAdminData();
+    renderMembershipAdmin();
 }
 async function loadMembershipLevelsAdmin() {
     const res = await request('admin.php?action=membership_levels');
@@ -1735,6 +1756,7 @@ function membershipLevelRow(level = {}, index = 0) {
                 <input type="hidden" class="ml-gradient" value="${gradient}">
                 <input type="checkbox" class="ml-enabled d-none" ${level.enabled !== false ? 'checked' : ''}>
                 <input type="checkbox" class="ml-can-upgrade d-none" ${level.can_upgrade !== false ? 'checked' : ''}>
+                <input type="checkbox" class="ml-custom-label-enabled d-none" ${level.custom_label_enabled ? 'checked' : ''}>
                 <div class="membership-admin-price">${Number(level.cost || 0) === 0 ? '<i class="bi bi-gift"></i> 免费' : '¥ ' + Number(level.cost || 0).toFixed(2)}</div>
                 <ul class="membership-admin-list">
                     <li><i class="bi bi-check"></i> 单商品最大 ${memberLimitText(level.max_accounts_per_product, '账号')}</li>
@@ -1744,7 +1766,7 @@ function membershipLevelRow(level = {}, index = 0) {
                 </ul>
                 <div class="d-flex justify-content-between align-items-center mt-3 small text-muted">
                     <span>${level.enabled !== false ? '已启用' : '已隐藏'}</span>
-                    <span>${level.can_upgrade !== false ? '允许升级' : '禁止升级'}</span>
+                    <span>${level.custom_label_enabled ? '可自定义标签' : '无自定义标签'}</span>
                 </div>
             </div>
         </div>`;
@@ -1776,8 +1798,9 @@ function openMembershipLevelEditor(index) {
                         <div class="col-md-3"><label class="form-label">交易手续费 %</label><input id="editLevelFeeRate" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-fee-rate'))}"></div>
                         <div class="col-md-3"><label class="form-label">发布费/账号</label><input id="editLevelPublishFee" type="number" step="0.01" class="form-control" value="${escapeHtml(value('.ml-publish-fee'))}"></div>
                         <div class="col-md-12"><label class="form-label">卡片渐变 CSS</label><input id="editLevelGradient" class="form-control" value="${escapeHtml(value('.ml-gradient'))}"></div>
-                        <div class="col-md-6"><div class="form-check"><input id="editLevelEnabled" class="form-check-input" type="checkbox" ${checked('.ml-enabled') ? 'checked' : ''}><label class="form-check-label">启用显示</label></div></div>
-                        <div class="col-md-6"><div class="form-check"><input id="editLevelCanUpgrade" class="form-check-input" type="checkbox" ${checked('.ml-can-upgrade') ? 'checked' : ''}><label class="form-check-label">允许前台升级</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input id="editLevelEnabled" class="form-check-input" type="checkbox" ${checked('.ml-enabled') ? 'checked' : ''}><label class="form-check-label">启用显示</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input id="editLevelCanUpgrade" class="form-check-input" type="checkbox" ${checked('.ml-can-upgrade') ? 'checked' : ''}><label class="form-check-label">允许前台升级</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input id="editLevelCustomLabelEnabled" class="form-check-input" type="checkbox" ${checked('.ml-custom-label-enabled') ? 'checked' : ''}><label class="form-check-label">允许自定义标签</label></div></div>
                     </div>
                 </div>
                 <div class="modal-footer d-flex justify-content-between">
@@ -1805,6 +1828,7 @@ function applyMembershipLevelEditor() {
     row.querySelector('.ml-gradient').value = document.getElementById('editLevelGradient').value.trim();
     row.querySelector('.ml-enabled').checked = document.getElementById('editLevelEnabled').checked;
     row.querySelector('.ml-can-upgrade').checked = document.getElementById('editLevelCanUpgrade').checked;
+    row.querySelector('.ml-custom-label-enabled').checked = document.getElementById('editLevelCustomLabelEnabled').checked;
     bootstrap.Modal.getInstance(document.getElementById('membershipLevelEditorModal'))?.hide();
     renderMembershipLevelRows(collectMembershipLevels());
 }
@@ -1842,7 +1866,8 @@ function collectMembershipLevels() {
         publish_fee_per_account: Math.max(0, toFloatInputValue(row.querySelector('.ml-publish-fee').value, 0)),
         gradient: row.querySelector('.ml-gradient').value.trim(),
         enabled: row.querySelector('.ml-enabled').checked,
-        can_upgrade: row.querySelector('.ml-can-upgrade').checked
+        can_upgrade: row.querySelector('.ml-can-upgrade').checked,
+        custom_label_enabled: row.querySelector('.ml-custom-label-enabled').checked
     })).filter(level => level.name);
 }
 function addMembershipLevelRow() {

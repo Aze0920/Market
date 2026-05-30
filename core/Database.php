@@ -99,12 +99,22 @@ class Database {
             `can_upgrade` tinyint(1) NOT NULL DEFAULT 1,
             `icon` varchar(50) NOT NULL DEFAULT 'bi-gem',
             `gradient` varchar(255) NOT NULL DEFAULT '',
+            `custom_label_enabled` tinyint(1) NOT NULL DEFAULT 0,
             `created_at` int unsigned NOT NULL DEFAULT 0,
             `updated_at` int unsigned NOT NULL DEFAULT 0,
             PRIMARY KEY (`name`),
             KEY `idx_membership_priority` (`priority`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         $this->pdo->exec($membershipSql);
+        $this->ensureColumn('kn_membership_levels', 'custom_label_enabled', 'tinyint(1) NOT NULL DEFAULT 0');
+    }
+
+    private function ensureColumn($table, $column, $definition) {
+        $stmt = $this->pdo->prepare('SHOW COLUMNS FROM `' . str_replace('`', '', $table) . '` LIKE ?');
+        $stmt->execute([$column]);
+        if (!$stmt->fetch()) {
+            $this->pdo->exec('ALTER TABLE `' . str_replace('`', '', $table) . '` ADD COLUMN `' . str_replace('`', '', $column) . '` ' . $definition);
+        }
     }
 
     private function loadAll() {
@@ -234,7 +244,8 @@ class Database {
             'enabled' => !empty($level['enabled']),
             'can_upgrade' => array_key_exists('can_upgrade', $level) ? !empty($level['can_upgrade']) : true,
             'icon' => preg_replace('/[^a-zA-Z0-9\- ]/', '', (string)($level['icon'] ?? 'bi-gem')) ?: 'bi-gem',
-            'gradient' => substr(trim((string)($level['gradient'] ?? '')), 0, 255),
+            'gradient' => substr(trim((string)($level['gradient'] ?? '')), 0, 255) ?: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            'custom_label_enabled' => !empty($level['custom_label_enabled']),
         ];
     }
 
@@ -257,9 +268,9 @@ class Database {
         }
         $now = time();
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_membership_levels (name, description, max_accounts_per_product, max_products, priority, fee_rate, cost, publish_fee_per_account, enabled, can_upgrade, icon, gradient, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE description = VALUES(description), max_accounts_per_product = VALUES(max_accounts_per_product), max_products = VALUES(max_products), priority = VALUES(priority), fee_rate = VALUES(fee_rate), cost = VALUES(cost), publish_fee_per_account = VALUES(publish_fee_per_account), enabled = VALUES(enabled), can_upgrade = VALUES(can_upgrade), icon = VALUES(icon), gradient = VALUES(gradient), updated_at = VALUES(updated_at)'
+            'INSERT INTO kn_membership_levels (name, description, max_accounts_per_product, max_products, priority, fee_rate, cost, publish_fee_per_account, enabled, can_upgrade, icon, gradient, custom_label_enabled, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), max_accounts_per_product = VALUES(max_accounts_per_product), max_products = VALUES(max_products), priority = VALUES(priority), fee_rate = VALUES(fee_rate), cost = VALUES(cost), publish_fee_per_account = VALUES(publish_fee_per_account), enabled = VALUES(enabled), can_upgrade = VALUES(can_upgrade), icon = VALUES(icon), gradient = VALUES(gradient), custom_label_enabled = VALUES(custom_label_enabled), updated_at = VALUES(updated_at)'
         );
         return $stmt->execute([
             $level['name'],
@@ -274,6 +285,7 @@ class Database {
             $level['can_upgrade'] ? 1 : 0,
             $level['icon'],
             $level['gradient'],
+            !empty($level['custom_label_enabled']) ? 1 : 0,
             $now,
             $now
         ]);
@@ -290,8 +302,8 @@ class Database {
                 }
                 $now = time();
                 $stmt = $this->pdo->prepare(
-                    'INSERT INTO kn_membership_levels (name, description, max_accounts_per_product, max_products, priority, fee_rate, cost, publish_fee_per_account, enabled, can_upgrade, icon, gradient, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    'INSERT INTO kn_membership_levels (name, description, max_accounts_per_product, max_products, priority, fee_rate, cost, publish_fee_per_account, enabled, can_upgrade, icon, gradient, custom_label_enabled, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                 );
                 $stmt->execute([
                     $level['name'],
@@ -306,6 +318,7 @@ class Database {
                     $level['can_upgrade'] ? 1 : 0,
                     $level['icon'],
                     $level['gradient'],
+                    !empty($level['custom_label_enabled']) ? 1 : 0,
                     $now,
                     $now
                 ]);
@@ -523,7 +536,10 @@ class Database {
             'user_agreement_title' => 'KeyNest 用户服务协议',
             'user_agreement_content' => "# KeyNest 用户服务协议\n\n欢迎使用 KeyNest 虚拟商品交易平台。注册或使用本平台，即表示你已阅读并同意本协议。\n\n## 1. 账号与安全\n\n- 你应使用真实、有效的信息注册账号，并妥善保管账号和密码。\n- 因账号保管不善造成的损失，由账号使用者自行承担。\n- 不得冒用他人身份、恶意注册、批量注册或从事影响平台正常运行的行为。\n\n## 2. 交易规则\n\n- 你应在交易前仔细确认商品标题、描述、库存说明、发货方式和售后规则。\n- 虚拟商品具有即时交付、易复制等特性，购买后请及时核验交付内容。\n- 如出现商品不符、无法使用等问题，应优先通过平台投诉或沟通流程处理。\n\n## 3. 禁止行为\n\n- 禁止发布或购买违法违规、侵权、诈骗、赌博、色情、木马病毒、黑灰产等内容。\n- 禁止利用平台洗钱、套现、刷单、恶意投诉、恶意退款或扰乱交易秩序。\n- 平台有权对违规账号、商品、订单采取限制、下架、冻结、封禁等措施。\n\n## 4. 风险提示\n\n- 虚拟商品交易存在账号失效、服务变更、第三方平台限制等风险。\n- 平台将尽力维护交易秩序，但不对用户之间私下约定或脱离平台的交易承担责任。\n\n## 5. 协议变更\n\n平台可根据业务和法律要求更新本协议，更新后将通过页面展示或公告方式提示。继续使用平台即视为接受更新后的协议。",
             'merchant_agreement_title' => 'KeyNest 商家守则、免责声明与商家质保',
-            'merchant_agreement_content' => "# KeyNest 商家守则、免责声明与商家质保\n\n当你申请开通商家、发布商品、添加库存或作为卖家收款时，即表示你已阅读并同意本守则。\n\n## 1. 商家守则\n\n- 商家应确保商品来源合法、描述真实、库存有效、交付内容可正常使用。\n- 商品标题、图片、描述、价格、库存和售后说明不得夸大、误导或隐瞒重要信息。\n- 禁止发布违法违规、侵权盗版、诈骗钓鱼、黑灰产、恶意软件、个人隐私数据等商品。\n- 商家应及时处理订单、发货、售后和用户咨询，不得恶意拖延、诱导站外交易或逃避平台规则。\n\n## 2. 免责声明\n\n- 商家确认已充分了解虚拟商品交易风险，并自行承担因商品来源、授权、交付、售后等产生的责任。\n- 因商家商品描述不清、违规发布、无法交付、售后拒绝处理等造成的纠纷、退款、赔付或法律责任，由商家自行承担。\n- 平台可根据投诉、风控或监管要求对商品、订单、资金和商家资格采取限制、冻结、下架或关闭等必要措施。\n\n## 3. 商家质保\n\n- 商家承诺对所售商品提供明确、有效的质量保障和售后说明，并按承诺处理补发、换货、退款或技术支持。\n- 如商品存在不可用、与描述不符、重复销售、失效等问题，商家应优先保障买家权益并积极配合平台处理。\n- 商家连续出现高投诉、拒不售后或严重违规时，平台有权取消商家资格，后续重新开通需人工审核。\n\n## 4. 开通确认\n\n本人确认已阅读并同意以上商家守则、免责声明与商家质保，自愿申请开通商家功能，并承诺遵守平台全部规则。"
+            'merchant_agreement_content' => "# KeyNest 商家守则、免责声明与商家质保\n\n当你申请开通商家、发布商品、添加库存或作为卖家收款时，即表示你已阅读并同意本守则。\n\n## 1. 商家守则\n\n- 商家应确保商品来源合法、描述真实、库存有效、交付内容可正常使用。\n- 商品标题、图片、描述、价格、库存和售后说明不得夸大、误导或隐瞒重要信息。\n- 禁止发布违法违规、侵权盗版、诈骗钓鱼、黑灰产、恶意软件、个人隐私数据等商品。\n- 商家应及时处理订单、发货、售后和用户咨询，不得恶意拖延、诱导站外交易或逃避平台规则。\n\n## 2. 免责声明\n\n- 商家确认已充分了解虚拟商品交易风险，并自行承担因商品来源、授权、交付、售后等产生的责任。\n- 因商家商品描述不清、违规发布、无法交付、售后拒绝处理等造成的纠纷、退款、赔付或法律责任，由商家自行承担。\n- 平台可根据投诉、风控或监管要求对商品、订单、资金和商家资格采取限制、冻结、下架或关闭等必要措施。\n\n## 3. 商家质保\n\n- 商家承诺对所售商品提供明确、有效的质量保障和售后说明，并按承诺处理补发、换货、退款或技术支持。\n- 如商品存在不可用、与描述不符、重复销售、失效等问题，商家应优先保障买家权益并积极配合平台处理。\n- 商家连续出现高投诉、拒不售后或严重违规时，平台有权取消商家资格，后续重新开通需人工审核。\n\n## 4. 开通确认\n\n本人确认已阅读并同意以上商家守则、免责声明与商家质保，自愿申请开通商家功能，并承诺遵守平台全部规则。",
+            'admin_badge_icon' => 'bi-shield-fill-check',
+            'admin_badge_gradient' => 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
+            'admin_badge_text' => '管理员',
         ];
     }
 
@@ -927,7 +943,7 @@ class Database {
             $userId = $updates['id'];
         }
 
-        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar', 'merchant_rules_accepted', 'merchant_rules_accepted_at', 'merchant_status', 'merchant_opened_once', 'merchant_approved_at', 'merchant_reapply_at'];
+        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar', 'merchant_rules_accepted', 'merchant_rules_accepted_at', 'merchant_status', 'merchant_opened_once', 'merchant_approved_at', 'merchant_reapply_at', 'custom_label_text', 'custom_label_icon', 'custom_label_gradient'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
                 unset($updates[$key]);
@@ -970,6 +986,9 @@ class Database {
             if ($key === 'merchant_status') {
                 $status = trim((string)$value);
                 $updates[$key] = in_array($status, ['none', 'pending', 'approved', 'rejected'], true) ? $status : 'none';
+            }
+            if (in_array($key, ['custom_label_text', 'custom_label_icon', 'custom_label_gradient'], true)) {
+                $updates[$key] = trim((string)$value);
             }
         }
 

@@ -149,6 +149,10 @@ const API = {
         });
     },
 
+    saveCustomLabel(text, icon, gradient) {
+        return this.request('auth.php?action=save_custom_label', 'POST', { text, icon, gradient });
+    },
+
     async uploadPaymentQrcode(file, method = '', emailCode = '', account = '') {
         const options = {
             method: 'POST',

@@ -314,6 +314,7 @@ function safeUser($user) {
     if (!is_array($user)) {
         return null;
     }
+    global $db;
     $paymentMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
     $paymentComplete = false;
     foreach ($paymentMethods as $method) {
@@ -326,6 +327,9 @@ function safeUser($user) {
     $merchantRulesAccepted = !empty($user['merchant_rules_accepted']);
     $qqBound = !empty($user['qq_openid']);
     $merchantVerified = $qqBound && $paymentComplete && $merchantRulesAccepted && $merchantStatus === 'approved';
+    $levels = $db->getMembershipLevels();
+    $levelInfo = $levels[$user['membership_level'] ?? 'Free'] ?? null;
+    $canUseCustomLabel = ($user['role'] ?? '') !== 'admin' && !empty($levelInfo['custom_label_enabled']);
     return [
         'id' => $user['id'] ?? '',
         'username' => $user['username'] ?? '',
@@ -344,6 +348,10 @@ function safeUser($user) {
         'merchant_rules_accepted' => $merchantRulesAccepted,
         'merchant_rules_accepted_at' => intval($user['merchant_rules_accepted_at'] ?? 0),
         'merchant_opened_once' => !empty($user['merchant_opened_once']),
+        'can_use_custom_label' => $canUseCustomLabel,
+        'custom_label_text' => trim((string)($user['custom_label_text'] ?? '')),
+        'custom_label_icon' => trim((string)($user['custom_label_icon'] ?? '')),
+        'custom_label_gradient' => trim((string)($user['custom_label_gradient'] ?? '')),
         'created_at' => $user['created_at'] ?? 0,
         'last_login' => $user['last_login'] ?? 0,
     ];
@@ -900,6 +908,44 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '密码修改失败'], 500);
         }
         jsonResponse(['success' => true, 'message' => '密码修改成功，请牢记新密码']);
+
+    case 'save_custom_label':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        if (($user['role'] ?? '') === 'admin') {
+            jsonResponse(['success' => false, 'message' => '管理员使用专属标识，不支持自定义标签'], 400);
+        }
+        $levels = $db->getMembershipLevels();
+        $levelInfo = $levels[$user['membership_level'] ?? 'Free'] ?? null;
+        if (empty($levelInfo['custom_label_enabled'])) {
+            jsonResponse(['success' => false, 'message' => '你当前的会员等级未开通自定义标签功能'], 403);
+        }
+        $text = trim((string)($_POST['text'] ?? ''));
+        $icon = trim((string)($_POST['icon'] ?? ''));
+        $gradient = trim((string)($_POST['gradient'] ?? ''));
+        $textLen = function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text);
+        if ($text === '' || $textLen < 1 || $textLen > 10) {
+            jsonResponse(['success' => false, 'message' => '自定义标签文字需为 1-10 个字符'], 400);
+        }
+        if ($icon !== '' && !preg_match('/^bi(-[a-z0-9-]+)+$/', $icon)) {
+            jsonResponse(['success' => false, 'message' => '图标格式不正确，请填写 bi- 开头的 Bootstrap Icons class'], 400);
+        }
+        if ($gradient !== '' && preg_match('/[<>"\']/', $gradient)) {
+            jsonResponse(['success' => false, 'message' => '标签背景渐变格式不正确'], 400);
+        }
+        $updates = [
+            'custom_label_text' => $text,
+            'custom_label_icon' => $icon !== '' ? $icon : 'bi-tag',
+            'custom_label_gradient' => substr($gradient, 0, 255),
+        ];
+        if (!$db->updateUser($userId, $updates)) {
+            jsonResponse(['success' => false, 'message' => '自定义标签保存失败'], 500);
+        }
+        $updatedUser = $db->getUserById($userId);
+        jsonResponse(['success' => true, 'message' => '自定义标签已保存', 'user' => safeUser($updatedUser)]);
 
     case 'unbind_qq':
         $userId = requireAuth();

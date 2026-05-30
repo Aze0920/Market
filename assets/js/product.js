@@ -50,13 +50,32 @@ function productImageHtml(image, className = '') {
     return Security.escapeHtml(String(image || '').trim() || '📦');
 }
 
+function normalizeBiIconClass(icon, fallback = 'bi-person') {
+    const value = String(icon || '').trim();
+    if (!value) return fallback;
+    const normalized = value.startsWith('bi-') ? value : `bi-${value.replace(/^bi\s+/, '')}`;
+    return /^bi(-[a-z0-9-]+)+$/.test(normalized) ? normalized : fallback;
+}
+
+function renderGradientBadge(text, icon, gradient, extraClass = '') {
+    const safeGradient = Security.escapeAttr(gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)');
+    const safeIcon = Security.escapeAttr(normalizeBiIconClass(icon));
+    return `<span class="seller-level-badge ${extraClass}" style="background:${safeGradient};"><i class="bi ${safeIcon}"></i>${Security.escapeHtml(text || '')}</span>`;
+}
+
 function sellerMembershipBadge(product = {}) {
-    const level = String(product.seller_membership_level || 'Free').trim() || 'Free';
-    const priority = Number(product.seller_membership_priority || 0);
-    if (priority <= 0 && level.toLowerCase() === 'free') {
-        return '<span class="seller-level-badge free"><i class="bi bi-person"></i>Free</span>';
+    const badges = [];
+    badges.push(renderGradientBadge(
+        product.seller_badge_text || product.seller_membership_level || 'Free',
+        product.seller_badge_icon || 'bi-person',
+        product.seller_badge_gradient || 'linear-gradient(135deg, #6c757d 0%, #495057 100%)',
+        product.seller_role === 'admin' ? 'admin-badge' : ''
+    ));
+    const custom = product.seller_custom_label;
+    if (custom && custom.text) {
+        badges.push(renderGradientBadge(custom.text, custom.icon || 'bi-tag', custom.gradient || product.seller_badge_gradient, 'custom-label-badge'));
     }
-    return `<span class="seller-level-badge vip"><i class="bi bi-gem"></i>${Security.escapeHtml(level)}</span>`;
+    return badges.join('');
 }
 
 async function loadProducts(options = {}) {
