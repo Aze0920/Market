@@ -71,6 +71,7 @@ keynest_require_installed(false);
         .order-status-pill.pending { background: #fef3c7; color: #92400e; }
         .order-status-pill.paid { background: #dcfce7; color: #166534; }
         .order-status-pill.failed, .order-status-pill.cancelled, .order-status-pill.unpaid { background: #fee2e2; color: #991b1b; }
+        .order-delivery-error { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border-radius: 10px; padding: 5px 8px; background: #fff1f2; color: #be123c; font-size: .76rem; font-weight: 700; line-height: 1.35; }
         .order-status-editor-row td { padding-top: 0; border-top: 0; }
         .order-status-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 18px; background: #f8fafc; }
         .order-status-editor-card .order-status-editor { margin-top: 12px; }
@@ -1041,11 +1042,25 @@ function orderTypeLabel(type, payType) {
         membership_upgrade: '在线会员升级',
         membership_upgrade_balance: '余额会员升级',
         product_purchase: '余额购买商品',
+        product_online_purchase: '在线支付商品订单',
+        product_purchase_refund: '购买失败退款',
         product_sale_income: '商品销售收入',
         publish_fee: '发布扣费',
         admin_balance_adjust: '后台调整'
     };
     return map[type] || payType || type || '-';
+}
+function orderDeliveryNotice(order) {
+    if ((order.delivery_status || '') !== 'failed' && !order.delivery_error) return '';
+    const refundText = order.refund_applied ? `，已退回余额 ${money(order.refunded_amount || order.actual_amount || order.amount || 0)}` : '';
+    return `<div class="order-delivery-error mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>${escapeHtml(order.delivery_error || '发货失败')}${refundText}</div>`;
+}
+function orderStatusDisplay(order) {
+    if ((order.delivery_status || '') === 'failed') {
+        const refundText = order.refund_applied ? '已退款' : '待退款';
+        return `<span class="order-status-pill failed" title="${escapeHtml(order.delivery_error || '发货失败')}">库存不够 / ${refundText}</span>`;
+    }
+    return orderStatusPill(order);
 }
 function findAdminUserById(id) {
     return (Admin.cache.users || []).find(u => String(u.id || '') === String(id || '')) || null;
@@ -1172,11 +1187,11 @@ function paymentOrderAdminCard(o) {
                             <div class="admin-order-title">${escapeHtml(o.title || orderTypeLabel(o.type, o.pay_type) || '支付订单')}</div>
                             <div class="admin-order-trade">${tradeNo}</div>
                         </div>
-                        ${orderStatusPill(o)}
+                        ${orderStatusDisplay(o)}
                     </div>
                 </div>
             </div>
-            <div class="admin-order-desc">${escapeHtml(o.description || '-')}</div>
+            <div class="admin-order-desc">${escapeHtml(o.description || '-')} ${orderDeliveryNotice(o)}</div>
             <div class="admin-order-grid">
                 <div><span>用户邮箱</span><strong>${userEmail}</strong></div>
                 <div><span>类型</span><strong>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</strong></div>
@@ -1200,7 +1215,7 @@ function renderOrders() {
     const state = Admin.listState.orders || (Admin.listState.orders = { page: 1, pageSize: 10 });
     state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('orderPageSizeSelect')?.value || state.pageSize || 10)));
     const orders = keyword ? allOrders.filter(o => [
-        o.id, o.trade_no, o.user_id, recordUserEmail(o, 'user_id', ''), o.pay_type, o.type, orderTypeLabel(o.type, o.pay_type), o.title, o.description, o.status, orderStatusMeta(o.status).label
+        o.id, o.trade_no, o.user_id, recordUserEmail(o, 'user_id', ''), o.pay_type, o.type, orderTypeLabel(o.type, o.pay_type), o.title, o.description, o.status, orderStatusMeta(o.status).label, o.delivery_status, o.delivery_error
     ].some(v => String(v || '').toLowerCase().includes(keyword))) : allOrders;
     const totalPages = Math.max(1, Math.ceil(orders.length / state.pageSize));
     state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
@@ -1248,10 +1263,10 @@ function renderOrders() {
                                 <td><code>${escapeHtml(o.trade_no || o.id)}</code></td>
                                 <td>${escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'))}</td>
                                 <td>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</td>
-                                <td><div class="fw-semibold">${escapeHtml(o.title || '-')}</div><div class="small text-muted">${escapeHtml(o.description || '')}</div></td>
+                                <td><div class="fw-semibold">${escapeHtml(o.title || '-')}</div><div class="small text-muted">${escapeHtml(o.description || '')}</div>${orderDeliveryNotice(o)}</td>
                                 <td>${money(o.amount)}</td>
                                 <td>${money(o.actual_amount)}</td>
-                                <td>${orderStatusPill(o)}</td>
+                                <td>${orderStatusDisplay(o)}</td>
                                 <td>${dateText(o.created_at)}</td>
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></td>
                             </tr>

@@ -149,8 +149,102 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
     return $update;
 }
 
+function releaseProductPurchaseLock($handle) {
+    if (is_resource($handle)) {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+    }
+}
+
+function acquireProductPurchaseLock($productId) {
+    $lockDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'keynest_product_locks';
+    if (!is_dir($lockDir)) {
+        @mkdir($lockDir, 0777, true);
+    }
+    $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', (string)$productId);
+    $handle = fopen($lockDir . DIRECTORY_SEPARATOR . $safeId . '.lock', 'c');
+    if (!$handle) {
+        return null;
+    }
+    if (!flock($handle, LOCK_EX)) {
+        fclose($handle);
+        return null;
+    }
+    return $handle;
+}
+
+function refundFailedProductPaymentOrder($order, $reason = '库存不足，购买失败，款项已退回余额') {
+    global $db;
+    if (!empty($order['guest_order'])) {
+        $db->updatePaymentOrder($order['id'], [
+            'status' => 'failed',
+            'delivery_status' => 'failed',
+            'delivery_error' => $reason . '，游客订单请联系管理员处理退款',
+            'refund_applied' => false,
+            'refunded_amount' => 0,
+            'refunded_at' => null
+        ]);
+        return false;
+    }
+    if (method_exists($db, 'reloadTable')) {
+        $db->reloadTable('users');
+        $db->reloadTable('payment_orders');
+    }
+    $latestOrder = $db->getPaymentOrder($order['id'] ?? '');
+    if ($latestOrder) {
+        $order = $latestOrder;
+    }
+    if (!empty($order['refund_applied'])) {
+        return false;
+    }
+    $user = $db->getUserById($order['user_id'] ?? '');
+    if (!$user) {
+        return false;
+    }
+    $refundAmount = floatval($order['actual_amount'] ?? 0);
+    if ($refundAmount <= 0) {
+        $refundAmount = floatval($order['amount'] ?? 0);
+    }
+    if ($refundAmount <= 0) {
+        return false;
+    }
+
+    $db->updateUser($user['id'], [
+        'balance' => floatval($user['balance'] ?? 0) + $refundAmount
+    ]);
+    $db->updatePaymentOrder($order['id'], [
+        'status' => 'failed',
+        'delivery_status' => 'failed',
+        'delivery_error' => $reason,
+        'refund_applied' => true,
+        'refunded_amount' => $refundAmount,
+        'refunded_at' => time()
+    ]);
+    $db->createPaymentOrder([
+        'trade_no' => 'REF' . date('YmdHis') . rand(1000, 9999),
+        'user_id' => $user['id'],
+        'payment_config_id' => 'balance',
+        'pay_type' => 'balance_refund',
+        'amount' => $refundAmount,
+        'actual_amount' => $refundAmount,
+        'fee' => 0,
+        'status' => 'paid',
+        'type' => 'product_purchase_refund',
+        'title' => '购买失败退款',
+        'description' => ($order['title'] ?? '商品订单') . '：' . $reason,
+        'related_id' => $order['id'],
+        'paid_at' => time()
+    ]);
+    return true;
+}
+
 function completeOnlineProductPurchase($order, $payMethod = '') {
     global $db;
+    if (method_exists($db, 'reloadTable')) {
+        $db->reloadTable('products');
+        $db->reloadTable('payment_orders');
+        $db->reloadTable('users');
+    }
     $freshOrder = $db->getPaymentOrder($order['id'] ?? '');
     if ($freshOrder) $order = $freshOrder;
     if (!empty($order['related_id'])) {
@@ -160,9 +254,18 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
 
     $product = $db->getProductById($order['product_id'] ?? '');
     $buyer = $db->getUserById($order['user_id'] ?? '');
+    $isGuestOrder = !empty($order['guest_order']);
+    if (!$buyer && $isGuestOrder) {
+        $guestSuffix = substr((string)($order['id'] ?? ''), -6);
+        $buyer = [
+            'id' => $order['user_id'] ?? '',
+            'username' => $order['buyer_name'] ?? ('游客' . $guestSuffix),
+            'balance' => 0
+        ];
+    }
     $quantity = max(1, intval($order['quantity'] ?? 1));
     $pickupPasswordHash = (string)($order['pickup_password_hash'] ?? '');
-    if (!$product || !$buyer || ($product['stock'] ?? 0) < $quantity || ($product['seller_id'] ?? '') === ($buyer['id'] ?? '')) {
+    if (!$product || !$buyer || ($product['stock'] ?? 0) < $quantity || (!$isGuestOrder && ($product['seller_id'] ?? '') === ($buyer['id'] ?? ''))) {
         $db->updatePaymentOrder($order['id'], ['delivery_status' => 'failed', 'delivery_error' => '商品不存在、库存不足或不能购买自己的商品']);
         return null;
     }
@@ -209,6 +312,8 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
         'id' => 'id_' . time() . '_' . bin2hex(random_bytes(6)),
         'buyer_id' => $buyer['id'],
         'buyer_name' => sanitizeString($buyer['username']),
+        'guest_order' => $isGuestOrder,
+        'guest_token' => $order['guest_token'] ?? '',
         'seller_id' => $product['seller_id'],
         'seller_name' => sanitizeString($product['seller_name']),
         'product_id' => $product['id'],
@@ -291,7 +396,15 @@ function finalizePaidPaymentOrder($order, $notifyData = null) {
     }
 
     if (($order['type'] ?? '') === 'product_online_purchase') {
-        return completeOnlineProductPurchase($order, $order['pay_type'] ?? '');
+        $lockHandle = acquireProductPurchaseLock($order['product_id'] ?? '');
+        $productOrder = completeOnlineProductPurchase($order, $order['pay_type'] ?? '');
+        releaseProductPurchaseLock($lockHandle);
+        if (!$productOrder) {
+            $failedOrder = $db->getPaymentOrder($order['id']) ?: $order;
+            $reason = $failedOrder['delivery_error'] ?? '库存不足，购买失败，款项已退回余额';
+            refundFailedProductPaymentOrder($failedOrder, $reason);
+        }
+        return $productOrder;
     }
 
     if (empty($order['balance_applied'])) {
@@ -641,13 +754,23 @@ switch ($action) {
         ]);
 
     case 'create_product_order':
-        $userId = requireAuth();
+        $sessionUserId = $_SESSION['user_id'] ?? '';
+        $guestToken = trim((string)($_POST['guest_token'] ?? ''));
+        $isGuestOrder = $sessionUserId === '';
+        if ($isGuestOrder && !preg_match('/^[a-f0-9]{32,64}$/i', $guestToken)) {
+            jsonResponse(['success' => false, 'message' => '游客订单标识无效，请刷新页面后重试'], 400);
+        }
+        $userId = $isGuestOrder ? ('guest_' . substr(hash('sha256', $guestToken), 0, 24)) : $sessionUserId;
         $configId = $_POST['payment_config_id'] ?? '';
         $productId = $_POST['product_id'] ?? '';
         $quantity = max(1, min(100, intval($_POST['quantity'] ?? 1)));
         $payType = sanitizeString($_POST['pay_type'] ?? 'alipay');
         $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
-        $user = $db->getUserById($userId);
+        $user = $isGuestOrder ? null : $db->getUserById($userId);
+
+        if (!$isGuestOrder && !$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
 
         if (!validateId($productId)) {
             jsonResponse(['success' => false, 'message' => '无效的商品ID'], 400);
@@ -659,7 +782,7 @@ switch ($action) {
         if (($product['stock'] ?? 0) < $quantity) {
             jsonResponse(['success' => false, 'message' => '库存不足'], 400);
         }
-        if (($product['seller_id'] ?? '') === $userId) {
+        if (!$isGuestOrder && ($product['seller_id'] ?? '') === $userId) {
             jsonResponse(['success' => false, 'message' => '不能购买自己的商品'], 400);
         }
         if (!empty($product['pickup_password_enabled']) && $pickupPassword === '') {
@@ -692,13 +815,16 @@ switch ($action) {
             'product_id' => $productId,
             'quantity' => $quantity,
             'pickup_password_hash' => !empty($product['pickup_password_enabled']) ? password_hash($pickupPassword, PASSWORD_DEFAULT) : '',
+            'guest_token' => $isGuestOrder ? hash('sha256', $guestToken) : '',
+            'guest_order' => $isGuestOrder,
+            'buyer_name' => $isGuestOrder ? '游客买家' : ($user['username'] ?? ''),
             'title' => '在线支付商品订单',
             'description' => '购买商品：' . ($product['title'] ?? '') . ' × ' . $quantity
         ]);
 
         $yipay = new YiPay($config);
         $notifyUrl = baseUrl() . '/api/payment.php?action=notify';
-        $returnUrl = baseUrl() . '/#page=dashboard&tab=orders';
+        $returnUrl = $isGuestOrder ? (baseUrl() . '/#guest_orders=1') : (baseUrl() . '/#page=dashboard&tab=orders');
         $paymentData = $yipay->createOrder($order['trade_no'], $actualAmount, $payType, $notifyUrl, $returnUrl, '购买商品');
 
         jsonResponse([
@@ -754,7 +880,8 @@ switch ($action) {
         exit;
 
     case 'get_order_status':
-        $userId = requireAuth();
+        $sessionUserId = $_SESSION['user_id'] ?? '';
+        $guestToken = trim((string)($_GET['guest_token'] ?? $_POST['guest_token'] ?? ''));
         $id = trim((string)($_GET['id'] ?? $_POST['id'] ?? ''));
         if ($id === '') {
             jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
@@ -764,8 +891,9 @@ switch ($action) {
         if (!$order) {
             jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
         }
-        $user = $db->getUserById($userId);
-        if (($order['user_id'] ?? '') !== $userId && (!$user || ($user['role'] ?? '') !== 'admin')) {
+        $user = $sessionUserId !== '' ? $db->getUserById($sessionUserId) : null;
+        $guestAllowed = !empty($order['guest_order']) && $guestToken !== '' && hash_equals((string)($order['guest_token'] ?? ''), hash('sha256', $guestToken));
+        if (($order['user_id'] ?? '') !== $sessionUserId && (!$user || ($user['role'] ?? '') !== 'admin') && !$guestAllowed) {
             jsonResponse(['success' => false, 'message' => '无权查看该订单'], 403);
         }
         jsonResponse([
@@ -779,7 +907,11 @@ switch ($action) {
                 'amount' => $order['amount'] ?? 0,
                 'actual_amount' => $order['actual_amount'] ?? 0,
                 'paid_at' => $order['paid_at'] ?? null,
-                'created_at' => $order['created_at'] ?? null
+                'created_at' => $order['created_at'] ?? null,
+                'related_id' => $order['related_id'] ?? '',
+                'delivery_status' => $order['delivery_status'] ?? '',
+                'delivery_error' => $order['delivery_error'] ?? '',
+                'guest_order' => !empty($order['guest_order'])
             ]
         ]);
 

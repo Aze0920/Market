@@ -636,6 +636,9 @@ class Database {
             'product_id' => $orderData['product_id'] ?? '',
             'quantity' => $orderData['quantity'] ?? 0,
             'pickup_password_hash' => $orderData['pickup_password_hash'] ?? '',
+            'guest_token' => $orderData['guest_token'] ?? '',
+            'guest_order' => $orderData['guest_order'] ?? false,
+            'buyer_name' => $orderData['buyer_name'] ?? '',
             'related_id' => $orderData['related_id'] ?? '',
             'created_at' => time(),
             'paid_at' => $orderData['paid_at'] ?? null
@@ -1078,6 +1081,15 @@ class Database {
         });
 
         return array_values($products);
+    }
+
+    public function reloadTable($name) {
+        $name = $this->normalizeTableName($name);
+        if (!in_array($name, $this->tables, true)) {
+            return [];
+        }
+        $this->data[$name] = $this->loadTable($name);
+        return $this->data[$name];
     }
 
     public function getProductById($id) {

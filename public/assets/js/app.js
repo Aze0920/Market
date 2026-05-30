@@ -85,6 +85,8 @@ window.App = {
 
         if (this.currentUser) {
             if (guestArea) guestArea.classList.add('hidden');
+            const guestOrderLink = document.getElementById('navGuestOrderLink');
+            if (guestOrderLink) guestOrderLink.classList.add('hidden');
             if (userArea) userArea.classList.remove('hidden');
             if (dashboardLink) dashboardLink.classList.remove('hidden');
             if (publishLink) publishLink.classList.remove('hidden');
@@ -110,6 +112,8 @@ window.App = {
             }
         } else {
             if (guestArea) guestArea.classList.remove('hidden');
+            const guestOrderLink = document.getElementById('navGuestOrderLink');
+            if (guestOrderLink) guestOrderLink.classList.remove('hidden');
             if (userArea) userArea.classList.add('hidden');
             if (dashboardLink) dashboardLink.classList.add('hidden');
             if (publishLink) publishLink.classList.add('hidden');
@@ -817,6 +821,7 @@ function paymentOrderTitle(order = {}) {
         membership_upgrade: '开通会员',
         product_online_purchase: '购买商品',
         product_purchase: '购买商品',
+        product_purchase_refund: '购买失败退款',
         product_sale_income: '商品销售收入',
         publish_fee: '发布商品扣费',
         admin_balance_adjust: amount >= 0 ? '后台加款' : '后台扣款'
@@ -829,6 +834,10 @@ function paymentOrderTitle(order = {}) {
 function paymentOrderStatusText(order = {}) {
     const status = String(order.status || 'pending');
     const type = String(order.type || '');
+    if ((order.delivery_status || '') === 'failed') {
+        return order.refund_applied ? '库存不够已退款' : '库存不够';
+    }
+    if (type === 'product_purchase_refund') return '已退款';
     if (status === 'paid') {
         if (['product_purchase', 'product_online_purchase', 'publish_fee', 'membership_upgrade'].includes(type) || Number(order.amount || 0) < 0) {
             return '已完成';
@@ -842,9 +851,141 @@ function paymentOrderStatusText(order = {}) {
 
 function paymentOrderStatusClass(order = {}) {
     const status = String(order.status || 'pending');
+    if ((order.delivery_status || '') === 'failed') return 'danger';
+    if (String(order.type || '') === 'product_purchase_refund') return 'success';
     if (status === 'paid') return 'success';
     if (status === 'pending') return 'warning';
     return 'danger';
+}
+
+function getGuestOrderToken() {
+    let token = localStorage.getItem('keynest_guest_order_token') || '';
+    if (!/^[a-f0-9]{32,64}$/i.test(token)) {
+        const bytes = new Uint8Array(24);
+        if (window.crypto?.getRandomValues) {
+            window.crypto.getRandomValues(bytes);
+            token = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        } else {
+            token = (Date.now().toString(16) + Math.random().toString(16).slice(2)).padEnd(32, '0');
+        }
+        localStorage.setItem('keynest_guest_order_token', token);
+    }
+    return token;
+}
+
+function guestOrders() {
+    try {
+        const list = JSON.parse(localStorage.getItem('keynest_guest_orders') || '[]');
+        return Array.isArray(list) ? list.filter(o => o && o.id) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveGuestOrder(order) {
+    if (!order || !order.id) return;
+    const token = order.guest_token || getGuestOrderToken();
+    const list = guestOrders().filter(item => item.id !== order.id);
+    list.unshift({ ...order, guest_token: token, saved_at: Date.now() });
+    localStorage.setItem('keynest_guest_orders', JSON.stringify(list.slice(0, 30)));
+}
+
+function findGuestOrder(orderId) {
+    return guestOrders().find(item => String(item.id || '') === String(orderId || '') || String(item.trade_no || '') === String(orderId || '')) || null;
+}
+
+function guestOrderStatusText(order = {}) {
+    if ((order.delivery_status || '') === 'failed') return order.delivery_error || '库存不够，购买失败';
+    const status = String(order.status || 'pending');
+    if (status === 'paid') return order.related_id ? '已支付，已发货' : '已支付，等待发货';
+    if (status === 'pending') return '待支付';
+    if (status === 'unpaid') return '未支付';
+    return '订单失败';
+}
+
+async function refreshGuestPaymentOrder(orderId, token) {
+    const result = await API.getPaymentOrderStatus(orderId, token || getGuestOrderToken());
+    if (result.success && result.order) {
+        const cached = findGuestOrder(orderId) || {};
+        saveGuestOrder({ ...cached, ...result.order, guest_token: token || cached.guest_token || getGuestOrderToken() });
+    }
+    return result;
+}
+
+async function openGuestOrdersModal(orderId = '') {
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('purchaseConfirmModal'));
+    const orders = guestOrders();
+    const inputValue = orderId || orders[0]?.id || '';
+    document.getElementById('purchaseBody').innerHTML = `
+        <h5 class="fw-bold mb-3"><i class="bi bi-search me-1"></i>查询订单</h5>
+        <div class="alert alert-info small">该入口专门用于未登录购买。系统会优先读取当前电脑缓存的游客订单；如果换了设备，请输入订单号查询。</div>
+        <div class="input-group mb-3">
+            <input class="form-control" id="guestOrderQueryInput" value="${Security.escapeAttr(inputValue)}" placeholder="请输入订单号">
+            <button class="btn btn-primary" onclick="queryGuestOrder()">查询</button>
+        </div>
+        <div id="guestOrderResultBox">
+            ${orders.length ? renderGuestOrdersList(orders) : '<div class="text-muted text-center py-4">当前电脑暂无缓存订单</div>'}
+        </div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = '<button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>';
+    modal.show();
+}
+
+function renderGuestOrdersList(orders) {
+    return `<div class="guest-order-list">${orders.map(order => `
+        <div class="guest-order-card border rounded-3 p-3 mb-2">
+            <div class="d-flex justify-content-between gap-2 flex-wrap">
+                <div>
+                    <div class="fw-bold">${Security.escapeHtml(order.product_title || order.title || '游客订单')}</div>
+                    <div class="small text-muted">订单号：<code>${Security.escapeHtml(order.id)}</code></div>
+                    ${order.trade_no ? `<div class="small text-muted">交易号：${Security.escapeHtml(order.trade_no)}</div>` : ''}
+                </div>
+                <span class="badge badge-${paymentOrderStatusClass(order)} align-self-start">${Security.escapeHtml(guestOrderStatusText(order))}</span>
+            </div>
+            <div class="d-flex gap-2 flex-wrap mt-2">
+                <button class="btn btn-sm btn-outline-primary" onclick="queryGuestOrder('${Security.escapeAttr(order.id)}')">刷新状态</button>
+                ${order.related_id ? `<button class="btn btn-sm btn-primary" onclick="viewGuestDeliveryInfo('${Security.escapeAttr(order.related_id)}', '${Security.escapeAttr(order.guest_token || getGuestOrderToken())}')">查看发货</button>` : ''}
+                <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(order.id)}')">复制订单号</button>
+            </div>
+        </div>
+    `).join('')}</div>`;
+}
+
+async function queryGuestOrder(orderId = '') {
+    const id = orderId || document.getElementById('guestOrderQueryInput')?.value?.trim() || '';
+    const box = document.getElementById('guestOrderResultBox');
+    if (!id) return Toast.warning('请输入订单号');
+    if (box) box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    const cached = findGuestOrder(id) || {};
+    const token = cached.guest_token || getGuestOrderToken();
+    const result = await refreshGuestPaymentOrder(id, token);
+    if (!result.success) {
+        if (box) box.innerHTML = `<div class="alert alert-danger">${Security.escapeHtml(result.message || '订单不存在或无权查看')}</div>`;
+        return;
+    }
+    const order = findGuestOrder(id) || result.order;
+    if (box) box.innerHTML = renderGuestOrdersList([order]);
+}
+
+async function viewGuestDeliveryInfo(orderId, guestToken = '', pickupPassword = '') {
+    const result = await API.getOrder(orderId, pickupPassword, guestToken || getGuestOrderToken());
+    if (!result.success) return Toast.error(result.message || '订单不存在');
+    const order = result.order;
+    const d = order.delivery_info;
+    document.getElementById('purchaseBody').innerHTML = `
+        <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>游客订单发货信息</h6>
+        <div class="alert alert-warning small">您尚未登录，请保存好订单号：<code>${Security.escapeHtml(order.id)}</code></div>
+        ${order.pickup_password_required ? `
+            <div class="alert alert-info small">该订单设置了取卡密码，请输入购买时填写的取卡密码。</div>
+            <div class="input-group mb-3">
+                <input type="password" class="form-control" id="guestPickupPasswordInput" placeholder="请输入取卡密码">
+                <button class="btn btn-primary" onclick="viewGuestDeliveryInfo('${Security.escapeAttr(orderId)}', '${Security.escapeAttr(guestToken || getGuestOrderToken())}', document.getElementById('guestPickupPasswordInput').value)">确认取卡</button>
+            </div>
+        ` : ''}
+        <div class="delivery-card"><div class="small">${deliveryInfoHtml(d)}</div></div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = '<button class="btn btn-outline" onclick="openGuestOrdersModal()">返回订单</button><button class="btn btn-primary" data-bs-dismiss="modal">关闭</button>';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('purchaseConfirmModal')).show();
 }
 
 async function loadBalanceTab(area) {
@@ -2878,12 +3019,20 @@ function startPaymentPolling(orderId, options = {}) {
     let attempts = 0;
     paymentPollingTimer = setInterval(async () => {
         attempts += 1;
-        const result = await API.getPaymentOrderStatus(orderId);
+        const result = await API.getPaymentOrderStatus(orderId, options.guestToken || '');
         if (!result.success || !result.order) return;
         const status = result.order.status;
         const statusEl = document.getElementById('qrPaymentStatus');
         if (status === 'paid') {
             stopPaymentPolling();
+            if (options.guestOrder) {
+                const latestOrder = { ...(findGuestOrder(orderId) || {}), ...result.order, guest_token: options.guestToken || getGuestOrderToken() };
+                saveGuestOrder(latestOrder);
+                if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>支付成功。您尚未登录，请保存好订单号：<code>' + Security.escapeHtml(orderId) + '</code>';
+                Toast.success(options.successMessage || '支付成功，请保存好订单号');
+                setTimeout(() => openGuestOrdersModal(orderId), 800);
+                return;
+            }
             if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>' + (options.successMessage || '支付成功，正在刷新...');
             Toast.success(options.successMessage || '支付成功');
             setTimeout(() => window.location.reload(), 800);

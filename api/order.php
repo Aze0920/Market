@@ -131,7 +131,9 @@ switch ($action) {
         jsonResponse(['success' => true, 'orders' => $orders]);
 
     case 'get':
-        $userId = requireAuth();
+        $sessionUserId = $_SESSION['user_id'] ?? '';
+        $guestToken = trim((string)($_GET['guest_token'] ?? $_POST['guest_token'] ?? ''));
+        $userId = $sessionUserId;
         $id = $_GET['id'] ?? '';
         if (!validateId($id)) {
             jsonResponse(['success' => false, 'message' => '无效的ID'], 400);
@@ -141,12 +143,13 @@ switch ($action) {
         if (!$order) {
             jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
         }
-        if ($order['buyer_id'] !== $userId && $order['seller_id'] !== $userId) {
+        $guestAllowed = !empty($order['guest_order']) && $guestToken !== '' && hash_equals((string)($order['guest_token'] ?? ''), hash('sha256', $guestToken));
+        if (($sessionUserId === '' || ($order['buyer_id'] !== $userId && $order['seller_id'] !== $userId)) && !$guestAllowed) {
             jsonResponse(['success' => false, 'message' => '无权查看'], 403);
         }
 
         $pickupPassword = trim((string)($_GET['pickup_password'] ?? $_POST['pickup_password'] ?? ''));
-        if (!empty($order['delivery_info']['pickup_password_enabled']) && $order['buyer_id'] === $userId) {
+        if (!empty($order['delivery_info']['pickup_password_enabled']) && ($order['buyer_id'] === $userId || $guestAllowed)) {
             $hash = (string)($order['delivery_info']['pickup_password_hash'] ?? '');
             if ($hash === '' || $pickupPassword === '' || !password_verify($pickupPassword, $hash)) {
                 $order['delivery_info'] = maskDeliveryInfo($order['delivery_info'] ?? []);

@@ -145,7 +145,7 @@ async function openProductDetail(id) {
                 <p><small>库存: <strong>${Security.escapeHtml(product.stock)}</strong> | 已售: <strong>${Security.escapeHtml(product.sales)}</strong> | 卖家: <strong>${Security.escapeHtml(product.seller_name)}</strong></small></p>
                 <div class="mb-2">${sellerMembershipBadge(product)}</div>
                 <p class="small mb-2"><span class="text-success">好评 ${Security.escapeHtml(stats.good || 0)}</span><span class="text-danger ms-3">差评 ${Security.escapeHtml(stats.bad || 0)}</span></p>
-                ${App.currentUser && App.currentUser.id !== product.seller_id ? `
+                ${(!App.currentUser || App.currentUser.id !== product.seller_id) ? `
                     <div class="purchase-quantity-box mb-3">
                         <label class="form-label">购买数量</label>
                         <input type="number" id="buyQuantity" class="form-control" min="1" max="${Security.escapeAttr(product.stock)}" value="1" oninput="updatePurchaseQuantityTotal()">
@@ -173,7 +173,7 @@ async function openProductDetail(id) {
 
     // 控制购买按钮显示
     const buyBtn = document.getElementById('btnBuyNow');
-    if (!App.currentUser || App.currentUser.id === product.seller_id) {
+    if (App.currentUser && App.currentUser.id === product.seller_id) {
         buyBtn.classList.add('hidden');
     } else {
         buyBtn.classList.remove('hidden');
@@ -226,12 +226,6 @@ async function handleBuyNow() {
         buyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>处理中...';
     }
     try {
-        if (!App.currentUser) {
-            Toast.warning('请先登录');
-            openLoginModal();
-            return;
-        }
-
         if (!App.currentDetailProduct) return;
 
         if (App.currentDetailProduct.stock <= 0) {
@@ -239,7 +233,7 @@ async function handleBuyNow() {
             return;
         }
 
-        if (App.currentUser.id === App.currentDetailProduct.seller_id) {
+        if (App.currentUser && App.currentUser.id === App.currentDetailProduct.seller_id) {
             Toast.warning('不能购买自己的商品');
             return;
         }
@@ -248,7 +242,7 @@ async function handleBuyNow() {
         const quantity = Math.max(1, Math.min(App.currentDetailProduct.stock, parseInt(quantityInput?.value || '1', 10)));
         const totalPrice = App.currentDetailProduct.price * quantity;
 
-        const balanceEnough = Number(App.currentUser.balance || 0) >= totalPrice;
+        const balanceEnough = App.currentUser && Number(App.currentUser.balance || 0) >= totalPrice;
         const configsResult = await API.getPaymentConfigs();
         const onlineOptions = [];
         if (configsResult.success && Array.isArray(configsResult.configs)) {
@@ -272,13 +266,13 @@ async function handleBuyNow() {
                 });
         }
         purchasePaymentOptions = [
-            {
+            ...(App.currentUser ? [{
                 value: 'balance',
                 type: 'balance',
                 label: '余额',
                 desc: balanceEnough ? `可用 ¥${Number(App.currentUser.balance || 0).toFixed(2)}` : `余额不足 ¥${Number(App.currentUser.balance || 0).toFixed(2)}`,
                 disabled: !balanceEnough
-            },
+            }] : []),
             ...onlineOptions
         ];
         selectedPurchasePaymentValue = purchasePaymentOptions.find(item => !item.disabled)?.value || '';
@@ -293,7 +287,7 @@ async function handleBuyNow() {
                 <h6 class="fw-bold">${Security.escapeHtml(App.currentDetailProduct.title)}</h6>
                 <p class="text-muted small mb-1">单价：¥${Security.escapeHtml(App.currentDetailProduct.price.toFixed(2))} × ${Security.escapeHtml(quantity)}</p>
                 <p class="text-danger fs-5 fw-bold mb-1">¥${Security.escapeHtml(totalPrice.toFixed(2))}</p>
-                <p class="text-muted small mb-0">当前余额: ¥${Security.escapeHtml(App.currentUser.balance.toFixed(2))}</p>
+                <p class="text-muted small mb-0">${App.currentUser ? `当前余额: ¥${Security.escapeHtml(App.currentUser.balance.toFixed(2))}` : '游客购买仅支持在线支付，支付后请保存订单号'}</p>
             </div>
         </div>
         ${App.currentDetailProduct.pickup_password_enabled ? `
@@ -362,21 +356,37 @@ async function confirmPurchase(quantity = 1) {
         }
 
         if (selectedOption.value !== 'balance') {
+            const guestToken = App.currentUser ? '' : getGuestOrderToken();
             const result = await API.createProductPaymentOrder(
                 selectedOption.configId,
                 App.currentDetailProduct.id,
                 quantity,
                 selectedOption.payType,
-                pickupPassword
+                pickupPassword,
+                guestToken
             );
             if (!result.success) {
                 Toast.error(result.message || '创建支付订单失败');
                 return;
             }
+            if (!App.currentUser) {
+                saveGuestOrder({
+                    id: result.order?.id || '',
+                    trade_no: result.order?.trade_no || '',
+                    guest_token: guestToken,
+                    product_title: App.currentDetailProduct.title || '',
+                    quantity,
+                    amount: result.order?.actual_amount || result.order?.amount || 0,
+                    created_at: result.order?.created_at || Math.floor(Date.now() / 1000),
+                    pickup_password_enabled: !!App.currentDetailProduct.pickup_password_enabled
+                });
+            }
             hideModalSafely('purchaseConfirmModal');
             showQrPaymentModal(result, {
                 methodLabel: selectedOption.label,
-                successMessage: '支付成功，商品已发货，页面即将刷新'
+                guestToken,
+                guestOrder: !App.currentUser,
+                successMessage: App.currentUser ? '支付成功，商品已发货，页面即将刷新' : '支付成功，商品已发货，请保存好订单号'
             });
             return;
         }

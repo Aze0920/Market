@@ -22,6 +22,9 @@
                     <a class="nav-link active" href="#" onclick="showHome(); return false;">
                         <i class="bi bi-shop"></i>市场
                     </a>
+                    <a class="nav-link hidden" id="navGuestOrderLink" href="#" onclick="openGuestOrdersModal(); return false;">
+                        <i class="bi bi-search"></i>查询订单
+                    </a>
                     <a class="nav-link hidden" id="navDashboardLink" href="#" onclick="showDashboard(); return false;">
                         <i class="bi bi-speedometer2"></i>控制台
                     </a>
@@ -942,6 +945,10 @@
 
             App.updateUnreadBadge();
             updateAnnouncementButton();
+            const guestHash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+            if (!App.currentUser && guestHash.get('guest_orders') === '1' && typeof openGuestOrdersModal === 'function') {
+                setTimeout(() => openGuestOrdersModal(), 300);
+            }
             setTimeout(maybeShowAnnouncementPopup, 500);
         }
 

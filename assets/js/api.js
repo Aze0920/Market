@@ -293,8 +293,8 @@ const API = {
         return this.request('order.php?action=my_sales');
     },
 
-    getOrder(id, pickupPassword = '') {
-        return this.request('order.php?action=get&id=' + encodeURIComponent(id) + (pickupPassword ? '&pickup_password=' + encodeURIComponent(pickupPassword) : ''));
+    getOrder(id, pickupPassword = '', guestToken = '') {
+        return this.request('order.php?action=get&id=' + encodeURIComponent(id) + (pickupPassword ? '&pickup_password=' + encodeURIComponent(pickupPassword) : '') + (guestToken ? '&guest_token=' + encodeURIComponent(guestToken) : ''));
     },
 
     complainOrder(orderId, email, reason) {
@@ -429,18 +429,19 @@ const API = {
         });
     },
 
-    createProductPaymentOrder(paymentConfigId, productId, quantity, payType, pickupPassword = '') {
+    createProductPaymentOrder(paymentConfigId, productId, quantity, payType, pickupPassword = '', guestToken = '') {
         return this.request('payment.php?action=create_product_order', 'POST', {
             payment_config_id: paymentConfigId,
             product_id: productId,
             quantity,
             pay_type: payType,
-            pickup_password: pickupPassword
+            pickup_password: pickupPassword,
+            guest_token: guestToken
         });
     },
 
-    getPaymentOrderStatus(id) {
-        return this.request('payment.php?action=get_order_status&id=' + encodeURIComponent(id));
+    getPaymentOrderStatus(id, guestToken = '') {
+        return this.request('payment.php?action=get_order_status&id=' + encodeURIComponent(id) + (guestToken ? '&guest_token=' + encodeURIComponent(guestToken) : ''));
     },
 
     getPaymentOrders() {
