@@ -1729,11 +1729,95 @@ a:hover {
 
 @media (max-width: 768px) {
     .navbar {
-        padding: 0.5rem 0;
+        padding: 0.55rem 0 0.65rem;
+    }
+
+    .navbar .container {
+        flex-wrap: wrap;
+        gap: 0.45rem 0.5rem;
+        align-items: center;
     }
 
     .navbar-brand {
-        font-size: 1.2rem;
+        font-size: 1.15rem;
+        max-width: 36vw;
+        min-height: 40px;
+    }
+
+    .navbar-brand span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .nav-actions {
+        margin-left: auto;
+        max-width: calc(64vw - 0.5rem);
+    }
+
+    #navUserArea {
+        gap: 0.35rem !important;
+    }
+
+    #navBalance,
+    #navUsername {
+        display: none !important;
+    }
+
+    .nav-actions .btn,
+    .nav-icon-btn,
+    .nav-avatar-clickable {
+        min-width: 38px;
+        min-height: 38px;
+    }
+
+    .nav-center {
+        order: 3;
+        flex: 0 0 100%;
+        width: 100%;
+        justify-content: flex-start;
+        gap: 0.5rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 0.2rem 0 0.05rem;
+        scrollbar-width: none;
+    }
+
+    .nav-center::-webkit-scrollbar {
+        display: none;
+    }
+
+    .nav-center .nav-link {
+        min-width: auto;
+        min-height: 40px;
+        flex: 0 0 auto;
+        padding: 0.55rem 0.85rem !important;
+        border-radius: 999px;
+        background: rgba(99, 102, 241, 0.06);
+        border: 1px solid rgba(99, 102, 241, 0.08);
+        font-size: 0.88rem;
+    }
+
+    .nav-center .nav-link.active {
+        background: var(--primary-light);
+        border-color: rgba(99, 102, 241, 0.22);
+    }
+
+    .main-content {
+        padding-top: 1rem;
+    }
+
+    #homePage > .d-flex:first-child {
+        margin-top: 0.35rem;
+        margin-bottom: 1rem !important;
+        padding: 0.9rem 1rem;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+    }
+
+    #homePage > .d-flex:first-child h3 {
+        font-size: 1.15rem;
     }
 
     .product-card .product-image {
