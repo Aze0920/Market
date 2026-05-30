@@ -58,18 +58,21 @@ function normalizeBiIconClass(icon, fallback = 'bi-person') {
 }
 
 function renderGradientBadge(text, icon, gradient, extraClass = '') {
-    const safeGradient = Security.escapeAttr(gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)');
-    const safeIcon = Security.escapeAttr(normalizeBiIconClass(icon));
-    return `<span class="seller-level-badge ${extraClass}" style="background:${safeGradient};"><i class="bi ${safeIcon}"></i>${Security.escapeHtml(text || '')}</span>`;
+    const safeGradient = String(gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)').replace(/"/g, '');
+    const safeIcon = normalizeBiIconClass(icon);
+    const safeText = Security.escapeHtml(text || '');
+    const safeClass = Security.escapeAttr(extraClass || '');
+    return `<span class="seller-level-badge ${safeClass}" style="background:${safeGradient};"><i class="bi ${Security.escapeAttr(safeIcon)}"></i>${safeText}</span>`;
 }
 
 function sellerMembershipBadge(product = {}) {
+    const isAdmin = product.seller_role === 'admin' || product.seller_is_admin === true || product.seller_is_admin === 1 || product.seller_is_admin === '1';
     const badges = [];
     badges.push(renderGradientBadge(
-        product.seller_badge_text || product.seller_membership_level || 'Free',
-        product.seller_badge_icon || 'bi-person',
-        product.seller_badge_gradient || 'linear-gradient(135deg, #6c757d 0%, #495057 100%)',
-        product.seller_role === 'admin' ? 'admin-badge' : ''
+        product.seller_badge_text || (isAdmin ? '管理员' : (product.seller_membership_level || 'Free')),
+        product.seller_badge_icon || (isAdmin ? 'bi-shield-fill-check' : 'bi-person'),
+        product.seller_badge_gradient || (isAdmin ? 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' : 'linear-gradient(135deg, #6c757d 0%, #495057 100%)'),
+        isAdmin ? 'admin-badge' : ''
     ));
     const custom = product.seller_custom_label;
     if (custom && custom.text) {

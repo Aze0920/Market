@@ -274,7 +274,7 @@ function getInitialFrontendState() {
     const tab = hash.get('tab') || localStorage.getItem('keynest_front_tab') || 'overview';
     return {
         page: ['home', 'dashboard'].includes(page) ? page : 'home',
-        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'profile', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
+        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'profile', 'customlabel', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
     };
 }
 
@@ -362,6 +362,9 @@ function renderDashboardTab(tabName) {
         case 'profile':
             loadProfileTab(contentArea);
             break;
+        case 'customlabel':
+            loadCustomLabelTab(contentArea);
+            break;
         case 'messages':
             loadMessagesTab(contentArea);
             break;
@@ -421,6 +424,9 @@ function renderDashboard(tabName = null) {
     sidebarHtml += `
         <div class="sidebar-nav-item" data-tab="profile">
             <i class="bi bi-person-circle"></i><span>个人中心</span>
+        </div>
+        <div class="sidebar-nav-item" data-tab="customlabel">
+            <i class="bi bi-tags"></i><span>自定义标签</span>
         </div>
         <div class="sidebar-nav-item" data-tab="messages">
             <i class="bi bi-chat-dots"></i><span>私信</span>
@@ -1915,39 +1921,6 @@ async function loadProfileTab(area) {
     profileSecurityUnlocked = false;
     profileEmailVerifyPending = false;
     profilePaymentInitiallyConfigured = Object.values(paymentMethods).some(item => !!(item.account || item.qrcode));
-    const levelsResult = await API.getMembershipLevels();
-    const levelInfo = (levelsResult.success ? (levelsResult.levels || {}) : {})[user.membership_level || 'Free'] || {};
-    const canUseCustomLabel = !!user.can_use_custom_label;
-    const customLabelPreviewGradient = user.custom_label_gradient || levelInfo.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)';
-    const customLabelSection = canUseCustomLabel ? `
-            <div class="col-12">
-                <div class="profile-card-soft">
-                    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-                        <div>
-                            <h6 class="fw-bold mb-1"><i class="bi bi-tags me-2 text-primary"></i>自定义标签</h6>
-                            <div class="text-muted small">你的会员等级已开通自定义标签，可设置 1-10 个字符，会显示在商品卡片卖家名称后面。</div>
-                        </div>
-                        <div id="customLabelPreview">${typeof renderGradientBadge === 'function' ? renderGradientBadge(user.custom_label_text || '预览', user.custom_label_icon || 'bi-tag', customLabelPreviewGradient, 'custom-label-badge') : ''}</div>
-                    </div>
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label">标签文字</label>
-                            <input class="form-control" id="customLabelText" maxlength="10" value="${Security.escapeAttr(user.custom_label_text || '')}" placeholder="1-10 个字符" oninput="updateCustomLabelPreview()">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">图标 class</label>
-                            <input class="form-control" id="customLabelIcon" value="${Security.escapeAttr(user.custom_label_icon || 'bi-tag')}" placeholder="例如 bi-star-fill" oninput="updateCustomLabelPreview()">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">背景渐变 CSS</label>
-                            <input class="form-control" id="customLabelGradient" value="${Security.escapeAttr(user.custom_label_gradient || levelInfo.gradient || '')}" placeholder="linear-gradient(135deg, #6366f1, #8b5cf6)" oninput="updateCustomLabelPreview()">
-                        </div>
-                        <div class="col-12">
-                            <button class="btn btn-primary" onclick="saveCustomLabel()"><i class="bi bi-check2-circle me-1"></i>保存自定义标签</button>
-                        </div>
-                    </div>
-                </div>
-            </div>` : '';
     if (isAdmin) {
         const configResult = await API.getSystemConfig();
         const config = configResult.success ? (configResult.config || {}) : {};
@@ -2013,6 +1986,10 @@ async function loadProfileTab(area) {
                         </div>
                     </div>
                     <div class="profile-info-row"><span>会员等级</span><strong>${Security.escapeHtml(user.membership_level || 'Free')}</strong></div>
+                    <div class="profile-info-row align-items-center gap-2 flex-wrap">
+                        <span>自定义标签</span>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="renderDashboardTab('customlabel')">去设置</button>
+                    </div>
                     <div class="profile-info-row"><span>账户余额</span><strong>¥ ${Number(user.balance || 0).toFixed(2)}</strong></div>
                     <div class="profile-info-row"><span>QQ 绑定</span><strong class="${qqBound ? 'text-success' : 'text-muted'}">${qqBound ? Security.escapeHtml(user.qq_nickname || '已绑定') : '未绑定'}</strong></div>
                     <div class="profile-info-row align-items-center gap-2 flex-wrap">
@@ -2087,10 +2064,76 @@ async function loadProfileTab(area) {
                 </div>
             </div>
             ${adminConfigHtml}
-            ${customLabelSection}
         </div>
     `;
     setTimeout(startMerchantReadTimer, 50);
+}
+
+async function loadCustomLabelTab(area) {
+    const userResult = await API.getCurrentUser();
+    if (userResult.success && userResult.logged_in && userResult.user) {
+        App.setUser(userResult.user);
+    }
+    const user = App.currentUser || {};
+    const levelsResult = await API.getMembershipLevels();
+    const levelInfo = (levelsResult.success ? (levelsResult.levels || {}) : {})[user.membership_level || 'Free'] || {};
+    const canUseCustomLabel = user.role !== 'admin' && !!(levelInfo.custom_label_enabled || user.can_use_custom_label);
+
+    if (user.role === 'admin') {
+        area.innerHTML = `
+            <h5 class="fw-bold mb-4"><i class="bi bi-tags me-2 text-primary"></i>自定义标签</h5>
+            <div class="profile-card-soft">
+                <div class="alert alert-info mb-0">
+                    管理员账号显示<strong>专属标识</strong>，不使用会员自定义标签。<br>
+                    请到后台 <strong>会员等级</strong> 页面顶部配置「管理员专属标识」的文字、图标和渐变颜色。
+                </div>
+            </div>`;
+        return;
+    }
+
+    if (!canUseCustomLabel) {
+        area.innerHTML = `
+            <h5 class="fw-bold mb-4"><i class="bi bi-tags me-2 text-primary"></i>自定义标签</h5>
+            <div class="profile-card-soft">
+                <div class="alert alert-warning mb-3">
+                    你当前的会员等级 <strong>${Security.escapeHtml(user.membership_level || 'Free')}</strong> 尚未开通自定义标签。
+                </div>
+                <div class="text-muted small">
+                    请让管理员到后台 <strong>会员等级</strong> → 编辑对应等级 → 勾选 <strong>「允许自定义标签」</strong> → 保存配置后，重新进入本页面即可设置。
+                </div>
+            </div>`;
+        return;
+    }
+
+    const previewGradient = user.custom_label_gradient || levelInfo.gradient || 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)';
+    area.innerHTML = `
+        <h5 class="fw-bold mb-4"><i class="bi bi-tags me-2 text-primary"></i>自定义标签</h5>
+        <div class="profile-card-soft">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+                <div>
+                    <div class="text-muted small">设置后会显示在商品卡片「卖家名称」后面，文字 1-10 个字符，可自定义 bi-xx 图标和渐变背景。</div>
+                </div>
+                <div id="customLabelPreview">${typeof renderGradientBadge === 'function' ? renderGradientBadge(user.custom_label_text || '预览', user.custom_label_icon || 'bi-tag', previewGradient, 'custom-label-badge') : ''}</div>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">标签文字</label>
+                    <input class="form-control" id="customLabelText" maxlength="10" value="${Security.escapeAttr(user.custom_label_text || '')}" placeholder="1-10 个字符" oninput="updateCustomLabelPreview()">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">图标 class</label>
+                    <input class="form-control" id="customLabelIcon" value="${Security.escapeAttr(user.custom_label_icon || 'bi-tag')}" placeholder="例如 bi-star-fill" oninput="updateCustomLabelPreview()">
+                    <div class="form-text">填写 Bootstrap Icons 名称，如 bi-star-fill</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">背景渐变 CSS</label>
+                    <input class="form-control" id="customLabelGradient" value="${Security.escapeAttr(user.custom_label_gradient || levelInfo.gradient || '')}" placeholder="linear-gradient(135deg, #6366f1, #8b5cf6)" oninput="updateCustomLabelPreview()">
+                </div>
+                <div class="col-12">
+                    <button type="button" class="btn btn-primary" onclick="saveCustomLabel()"><i class="bi bi-check2-circle me-1"></i>保存自定义标签</button>
+                </div>
+            </div>
+        </div>`;
 }
 
 function updateCustomLabelPreview() {

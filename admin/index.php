@@ -1764,8 +1764,9 @@ function membershipLevelRow(level = {}, index = 0) {
                     <li><i class="bi bi-check"></i> 手续费 ${feeRate}%</li>
                     <li><i class="bi bi-check"></i> ${Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : '发布费 ¥' + Number(level.publish_fee_per_account || 0) + '/账号'}</li>
                 </ul>
-                <div class="d-flex justify-content-between align-items-center mt-3 small text-muted">
+                <div class="d-flex justify-content-between align-items-center mt-3 small text-muted flex-wrap gap-2">
                     <span>${level.enabled !== false ? '已启用' : '已隐藏'}</span>
+                    <span>${level.can_upgrade !== false ? '允许升级' : '禁止升级'}</span>
                     <span>${level.custom_label_enabled ? '可自定义标签' : '无自定义标签'}</span>
                 </div>
             </div>

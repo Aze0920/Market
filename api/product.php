@@ -53,6 +53,7 @@ function attachSellerBadgeMeta(array &$target, $seller, array $levels, array $co
     if (!is_array($seller)) {
         $freeLevel = $levels['Free'] ?? ['priority' => 0, 'icon' => 'bi-person', 'gradient' => 'linear-gradient(135deg, #6c757d 0%, #495057 100%)'];
         $target['seller_role'] = 'user';
+        $target['seller_is_admin'] = false;
         $target['seller_membership_level'] = 'Free';
         $target['seller_membership_priority'] = intval($freeLevel['priority'] ?? 0);
         $target['seller_badge_icon'] = $freeLevel['icon'] ?? 'bi-person';
@@ -65,6 +66,7 @@ function attachSellerBadgeMeta(array &$target, $seller, array $levels, array $co
 
     if (($seller['role'] ?? '') === 'admin') {
         $target['seller_role'] = 'admin';
+        $target['seller_is_admin'] = true;
         $target['seller_membership_level'] = $seller['membership_level'] ?? 'Free';
         $target['seller_membership_priority'] = 9999;
         $target['seller_badge_icon'] = normalizeBootstrapIcon($config['admin_badge_icon'] ?? 'bi-shield-fill-check', 'bi-shield-fill-check');
@@ -82,6 +84,7 @@ function attachSellerBadgeMeta(array &$target, $seller, array $levels, array $co
     $freePriority = intval($freeLevel['priority'] ?? 0);
 
     $target['seller_role'] = 'user';
+    $target['seller_is_admin'] = false;
     $target['seller_membership_level'] = $levelName;
     $target['seller_membership_priority'] = $levelPriority;
     $target['seller_badge_icon'] = normalizeBootstrapIcon($level['icon'] ?? 'bi-person', 'bi-person');
