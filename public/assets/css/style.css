@@ -2456,6 +2456,191 @@ a:hover {
     }
 }
 
+@media (max-width: 767.98px) {
+    .auth-modal .modal-dialog {
+        width: calc(100vw - 1.5rem);
+        max-width: calc(100vw - 1.5rem);
+        margin: 0.75rem auto;
+    }
+
+    .auth-modal .modal-content,
+    .auth-modal-content {
+        width: 100%;
+        max-width: 100%;
+        max-height: calc(100dvh - 1.5rem);
+        min-height: 0;
+        border-radius: 22px;
+        overflow: hidden;
+    }
+
+    .auth-art-pane {
+        position: absolute;
+        inset: 0;
+        display: block;
+        min-height: 0;
+        height: 100%;
+        padding: 0;
+        border-radius: 22px;
+    }
+
+    .auth-form-shell,
+    .auth-modal-content.is-register .auth-form-shell {
+        position: relative;
+        z-index: 4;
+        width: 100%;
+        min-height: 0;
+        max-height: calc(100dvh - 1.5rem);
+        border-radius: 22px;
+        overflow: hidden;
+        transform: none;
+    }
+
+    .auth-form-track {
+        width: 200%;
+        min-height: 0;
+        max-height: calc(100dvh - 1.5rem);
+        align-items: stretch;
+    }
+
+    .auth-form-pane {
+        width: 50%;
+        min-height: 0;
+        max-height: calc(100dvh - 1.5rem);
+        justify-content: flex-start;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .auth-form-pane .modal-header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding: 1rem 1rem 0.55rem;
+        background: linear-gradient(180deg, rgba(15, 23, 42, .42), rgba(15, 23, 42, 0));
+    }
+
+    .auth-form-pane .modal-body {
+        padding: 0.35rem 1rem 1rem;
+        overflow: visible;
+    }
+
+    .auth-form-pane .form-group {
+        margin-bottom: 0.62rem;
+    }
+
+    .auth-form-pane .form-label {
+        margin-bottom: 0.28rem;
+        font-size: 0.82rem;
+    }
+
+    .auth-form-pane .form-control {
+        min-height: 42px;
+        border-radius: 13px;
+        font-size: 0.88rem;
+        padding: 0.56rem 0.85rem;
+    }
+
+    .auth-form-pane .input-group {
+        flex-wrap: nowrap;
+    }
+
+    .auth-form-pane .input-group .form-control {
+        min-width: 0;
+    }
+
+    .auth-form-pane .input-group .btn {
+        flex: 0 0 auto;
+        min-width: 94px;
+        padding-inline: 0.65rem;
+        font-size: 0.78rem;
+        justify-content: center;
+    }
+
+    .agreement-check-wrap {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.55rem;
+        margin: 0.5rem 0 0.75rem !important;
+        padding: 0.65rem 0.72rem;
+        border-radius: 13px;
+        background: rgba(15, 23, 42, .24);
+        backdrop-filter: blur(8px);
+    }
+
+    .agreement-check-wrap .form-check-input {
+        flex: 0 0 auto;
+        margin: 0.15rem 0 0;
+        width: 1.05rem;
+        height: 1.05rem;
+    }
+
+    .agreement-check-wrap .form-check-label {
+        flex: 1 1 auto;
+        min-width: 0;
+        line-height: 1.55;
+        white-space: normal;
+        word-break: break-word;
+        font-size: 0.82rem;
+    }
+
+    .auth-main-btn {
+        min-height: 42px;
+        border-radius: 13px;
+    }
+
+    .auth-form-pane .text-center.mt-3 {
+        margin-top: 0.65rem !important;
+        padding: 0.55rem 0.65rem;
+        border-radius: 13px;
+        background: rgba(15, 23, 42, .22);
+        backdrop-filter: blur(8px);
+        line-height: 1.45;
+    }
+
+    .auth-art-caption {
+        display: none !important;
+    }
+}
+
+@media (max-width: 380px), (max-height: 700px) {
+    .auth-modal .modal-dialog {
+        width: calc(100vw - 1rem);
+        max-width: calc(100vw - 1rem);
+        margin: 0.5rem auto;
+    }
+
+    .auth-modal .modal-content,
+    .auth-modal-content,
+    .auth-form-shell,
+    .auth-modal-content.is-register .auth-form-shell,
+    .auth-form-track,
+    .auth-form-pane {
+        max-height: calc(100dvh - 1rem);
+    }
+
+    .auth-form-pane .modal-header {
+        padding: 0.78rem 0.9rem 0.35rem;
+    }
+
+    .auth-form-pane .modal-body {
+        padding: 0.25rem 0.9rem 0.85rem;
+    }
+
+    .auth-form-pane .form-group {
+        margin-bottom: 0.48rem;
+    }
+
+    .auth-form-pane .form-control,
+    .auth-main-btn {
+        min-height: 39px;
+    }
+
+    .agreement-check-wrap {
+        padding: 0.55rem 0.62rem;
+        margin-bottom: 0.6rem !important;
+    }
+}
+
 .hidden { display: none !important; }
 .visible { display: block !important; }
 
