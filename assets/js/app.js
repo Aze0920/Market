@@ -778,8 +778,11 @@ async function loadMyProductsTab(area) {
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start gap-3">
                                 <div class="flex-grow-1 min-width-0">
-                                    <div class="d-flex align-items-center gap-2 mb-2">
+                                    <div class="d-flex align-items-center gap-2 mb-2 seller-product-actions">
                                         <span class="badge badge-primary">${Security.escapeHtml(p.category || '其他')}</span>
+                                        <button class="btn btn-sm btn-outline-primary seller-stock-action" onclick="event.stopPropagation(); openStockManageModal('${Security.escapeAttr(p.id)}')" title="库存管理">
+                                            <i class="bi bi-archive me-1"></i>库存管理
+                                        </button>
                                         <button class="btn btn-sm btn-outline-primary seller-stock-action" onclick="event.stopPropagation(); openAddStockModal('${Security.escapeAttr(p.id)}')" title="添加库存">
                                             <i class="bi bi-plus-circle me-1"></i>添加库存
                                         </button>
@@ -1289,6 +1292,64 @@ async function openSellerProductManage(productId) {
     initEditProductImageDropZone();
 }
 
+async function openStockManageModal(productId) {
+    const result = await API.getProductStock(productId);
+    if (!result.success) {
+        Toast.error(result.message || '库存读取失败');
+        return;
+    }
+    const product = result.product || {};
+    const stock = Array.isArray(result.stock) ? result.stock : [];
+    const unsoldCount = Number(result.unsold_count || stock.filter(item => !item.sold).length || 0);
+    const soldCount = Number(result.sold_count || stock.filter(item => item.sold).length || 0);
+    const rowsHtml = stock.length ? stock.map(item => {
+        const content = [item.email, item.password, item.client_id, item.fresh_token].filter(Boolean).join(' | ') || item.content || '-';
+        return `
+            <div class="seller-stock-row ${item.sold ? 'sold' : ''}">
+                <div class="seller-stock-main">
+                    <div class="seller-stock-index">#${Number(item.index) + 1}</div>
+                    <div class="seller-stock-content">${Security.escapeHtml(content)}</div>
+                    <span class="badge ${item.sold ? 'badge-secondary' : 'badge-success'}">${item.sold ? '已售' : '未售'}</span>
+                </div>
+                <button class="btn btn-sm btn-outline-danger" ${item.sold ? 'disabled title="已售库存不能删除"' : ''} onclick="deleteSellerStockItem('${Security.escapeAttr(productId)}', ${Number(item.index)})">
+                    <i class="bi bi-trash me-1"></i>删除
+                </button>
+            </div>
+        `;
+    }).join('') : '<div class="text-muted text-center py-4">暂无库存</div>';
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+            <div>
+                <h5 class="fw-bold mb-1"><i class="bi bi-archive me-1"></i>库存管理</h5>
+                <div class="text-muted small">${Security.escapeHtml(product.title || '-')}</div>
+            </div>
+            <button class="btn btn-sm btn-outline-primary" onclick="openAddStockModal('${Security.escapeAttr(productId)}')"><i class="bi bi-plus-circle me-1"></i>添加库存</button>
+        </div>
+        <div class="seller-stock-summary mb-3">
+            <div><strong>${Security.escapeHtml(stock.length)}</strong><span>总库存</span></div>
+            <div><strong>${Security.escapeHtml(unsoldCount)}</strong><span>未售</span></div>
+            <div><strong>${Security.escapeHtml(soldCount)}</strong><span>已售</span></div>
+        </div>
+        <div class="alert alert-light border small">只能删除未售库存；已售库存关联历史订单，不能删除。</div>
+        <div class="seller-stock-list">${rowsHtml}</div>
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+    `;
+    modal.show();
+}
+
+async function deleteSellerStockItem(productId, stockIndex) {
+    if (!confirm('确定删除这条未售库存吗？删除后不可恢复。')) return;
+    const result = await API.deleteProductStock(productId, stockIndex);
+    if (!result.success) return Toast.error(result.message || '删除库存失败');
+    Toast.success(result.message || '库存已删除');
+    await openStockManageModal(productId);
+    renderDashboardTab('myproducts');
+    if (typeof loadProducts === 'function') loadProducts();
+}
+
 async function openAddStockModal(productId) {
     const productResult = await API.getProduct(productId);
     if (!productResult.success) {
@@ -1563,9 +1624,21 @@ function renderPaymentMethodUploadCard(key, item) {
                 <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" ${isLocked ? 'disabled' : `onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')"`}>
                 <input type="hidden" id="paymentQr_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.qrcode || '')}">
                 <div class="payment-upload-preview" id="paymentQrPreview_${Security.escapeAttr(key)}">
-                    ${hasQr ? `<img src="${Security.escapeAttr(imageUrl)}" alt="${Security.escapeAttr(item.label)}收款码"><div class="payment-upload-lock"><i class="bi ${isLocked ? 'bi-lock-fill' : 'bi-unlock-fill'}"></i>${isLocked ? '已锁定，验证后可重新上传' : '已解锁，可重新上传'}</div>` : renderPaymentQrPlaceholder()}
+                    ${hasQr ? `<img src="${Security.escapeAttr(imageUrl)}" alt="${Security.escapeAttr(item.label)}收款码" onerror="handlePaymentQrImageError(this, '${Security.escapeAttr(item.label)}')"><div class="payment-upload-lock"><i class="bi ${isLocked ? 'bi-lock-fill' : 'bi-unlock-fill'}"></i>${isLocked ? '已锁定，验证后可重新上传' : '已解锁，可重新上传'}</div>` : renderPaymentQrPlaceholder()}
                 </div>
             </label>
+        </div>
+    `;
+}
+
+function handlePaymentQrImageError(img, label = '收款码') {
+    const preview = img?.closest('.payment-upload-preview');
+    if (!preview) return;
+    preview.innerHTML = `
+        <div class="payment-upload-error">
+            <i class="bi bi-image-alt"></i>
+            <strong>${Security.escapeHtml(label)}图片不存在</strong>
+            <small>原收款码文件未找到，请验证后重新上传</small>
         </div>
     `;
 }

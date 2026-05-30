@@ -250,6 +250,14 @@ const API = {
         return this.request('product.php?action=add_stock', 'POST', { id, account_list: accountList });
     },
 
+    getProductStock(id) {
+        return this.request('product.php?action=stock&id=' + encodeURIComponent(id));
+    },
+
+    deleteProductStock(id, stockIndex) {
+        return this.request('product.php?action=delete_stock', 'POST', { id, stock_index: stockIndex });
+    },
+
     deleteProduct(id) {
         return this.request('product.php?action=delete', 'POST', { id });
     },

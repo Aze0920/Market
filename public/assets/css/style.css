@@ -1316,6 +1316,88 @@ a:hover {
     box-shadow: 0 8px 20px rgba(239, 68, 68, 0.18);
 }
 
+.seller-product-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .45rem;
+}
+
+.seller-stock-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .75rem;
+}
+
+.seller-stock-summary > div {
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: #f8fafc;
+    padding: .75rem;
+    text-align: center;
+}
+
+.seller-stock-summary strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    line-height: 1.1;
+}
+
+.seller-stock-summary span {
+    color: var(--text-muted);
+    font-size: .8rem;
+}
+
+.seller-stock-list {
+    display: grid;
+    gap: .65rem;
+    max-height: min(58vh, 520px);
+    overflow-y: auto;
+    padding-right: .2rem;
+}
+
+.seller-stock-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: #fff;
+    padding: .75rem;
+}
+
+.seller-stock-row.sold {
+    background: #f8fafc;
+    opacity: .78;
+}
+
+.seller-stock-main {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    flex: 1;
+}
+
+.seller-stock-index {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: .78rem;
+    font-weight: 800;
+}
+
+.seller-stock-content {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: .84rem;
+    color: var(--text-primary);
+}
+
 .review-modal-head {
     padding: 0.5rem 0 0.25rem;
 }
@@ -3118,6 +3200,25 @@ svg {
         align-items: flex-start;
         flex-direction: column;
         gap: 0.25rem;
+    }
+
+    .seller-stock-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .seller-stock-row,
+    .seller-stock-main {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .seller-stock-row .btn {
+        width: 100%;
+    }
+
+    .seller-stock-content {
+        white-space: normal;
+        word-break: break-all;
     }
 }
 

@@ -558,12 +558,73 @@ switch ($action) {
             ]);
         }
         $product['account_list'] = array_merge($oldAccounts, $newAccounts);
-        $product['stock'] = intval($product['stock'] ?? 0) + count($newAccounts);
+        $product['stock'] = count(array_filter($product['account_list'], fn($item) => empty($item['sold'])));
         $product['updated_at'] = time();
         $db->updateProduct($product);
         $safe = $product;
         unset($safe['account_list'], $safe['pickup_password']);
         jsonResponse(['success' => true, 'message' => '库存已添加 +' . count($newAccounts), 'product' => $safe]);
+
+    case 'stock':
+        $userId = requireAuth();
+        $id = $_GET['id'] ?? '';
+        if (!validateId($id)) {
+            jsonResponse(['success' => false, 'message' => '无效的商品ID'], 400);
+        }
+        $product = $db->getProductById($id);
+        if (!$product) {
+            jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        if (($product['seller_id'] ?? '') !== $userId && ($_SESSION['user_role'] ?? '') !== 'admin') {
+            jsonResponse(['success' => false, 'message' => '无权查看该商品库存'], 403);
+        }
+        $stock = [];
+        $accountList = is_array($product['account_list'] ?? null) ? $product['account_list'] : [];
+        foreach ($accountList as $index => $item) {
+            $item = is_array($item) ? $item : ['content' => (string)$item];
+            $item['index'] = $index;
+            $item['sold'] = !empty($item['sold']);
+            $stock[] = $item;
+        }
+        $safe = $product;
+        unset($safe['account_list'], $safe['pickup_password']);
+        jsonResponse([
+            'success' => true,
+            'product' => $safe,
+            'stock' => $stock,
+            'unsold_count' => count(array_filter($stock, fn($item) => empty($item['sold']))),
+            'sold_count' => count(array_filter($stock, fn($item) => !empty($item['sold']))),
+        ]);
+
+    case 'delete_stock':
+        $userId = requireAuth();
+        $id = $_POST['id'] ?? '';
+        $stockIndex = filter_var($_POST['stock_index'] ?? null, FILTER_VALIDATE_INT);
+        if (!validateId($id) || $stockIndex === false || $stockIndex < 0) {
+            jsonResponse(['success' => false, 'message' => '库存参数无效'], 400);
+        }
+        $product = $db->getProductById($id);
+        if (!$product) {
+            jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        if (($product['seller_id'] ?? '') !== $userId && ($_SESSION['user_role'] ?? '') !== 'admin') {
+            jsonResponse(['success' => false, 'message' => '无权删除该商品库存'], 403);
+        }
+        $accountList = is_array($product['account_list'] ?? null) ? array_values($product['account_list']) : [];
+        if (!isset($accountList[$stockIndex])) {
+            jsonResponse(['success' => false, 'message' => '库存不存在或已删除'], 404);
+        }
+        if (!empty($accountList[$stockIndex]['sold'])) {
+            jsonResponse(['success' => false, 'message' => '已售库存不能删除'], 400);
+        }
+        array_splice($accountList, $stockIndex, 1);
+        $product['account_list'] = array_values($accountList);
+        $product['stock'] = count(array_filter($product['account_list'], fn($item) => empty($item['sold'])));
+        $product['updated_at'] = time();
+        $db->updateProduct($product);
+        $safe = $product;
+        unset($safe['account_list'], $safe['pickup_password']);
+        jsonResponse(['success' => true, 'message' => '库存已删除', 'product' => $safe]);
 
     case 'delete':
         $userId = requireAuth();
