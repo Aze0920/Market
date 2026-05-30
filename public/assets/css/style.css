@@ -1317,9 +1317,14 @@ a:hover {
 }
 
 .seller-product-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
     gap: .45rem;
+}
+
+.stock-manage-actions {
+    justify-content: flex-end;
 }
 
 .seller-stock-summary {
@@ -3204,6 +3209,16 @@ svg {
 
     .seller-stock-summary {
         grid-template-columns: 1fr;
+    }
+
+    .seller-product-actions {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+    .stock-manage-actions,
+    .stock-manage-actions .btn {
+        width: 100%;
     }
 
     .seller-stock-row,

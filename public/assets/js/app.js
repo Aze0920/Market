@@ -780,11 +780,11 @@ async function loadMyProductsTab(area) {
                                 <div class="flex-grow-1 min-width-0">
                                     <div class="d-flex align-items-center gap-2 mb-2 seller-product-actions">
                                         <span class="badge badge-primary">${Security.escapeHtml(p.category || '其他')}</span>
-                                        <button class="btn btn-sm btn-outline-primary seller-stock-action" onclick="event.stopPropagation(); openStockManageModal('${Security.escapeAttr(p.id)}')" title="库存管理">
-                                            <i class="bi bi-archive me-1"></i>库存管理
-                                        </button>
                                         <button class="btn btn-sm btn-outline-primary seller-stock-action" onclick="event.stopPropagation(); openAddStockModal('${Security.escapeAttr(p.id)}')" title="添加库存">
                                             <i class="bi bi-plus-circle me-1"></i>添加库存
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary seller-stock-action" onclick="event.stopPropagation(); openStockManageModal('${Security.escapeAttr(p.id)}')" title="库存管理">
+                                            <i class="bi bi-archive me-1"></i>库存管理
                                         </button>
                                     </div>
                                     <h6 class="fw-bold seller-product-title mb-2">${Security.escapeHtml(p.title || '-')}</h6>
@@ -1319,12 +1319,15 @@ async function openStockManageModal(productId) {
     }).join('') : '<div class="text-muted text-center py-4">暂无库存</div>';
     const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
     document.getElementById('purchaseBody').innerHTML = `
-        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3 flex-wrap">
             <div>
                 <h5 class="fw-bold mb-1"><i class="bi bi-archive me-1"></i>库存管理</h5>
                 <div class="text-muted small">${Security.escapeHtml(product.title || '-')}</div>
             </div>
-            <button class="btn btn-sm btn-outline-primary" onclick="openAddStockModal('${Security.escapeAttr(productId)}')"><i class="bi bi-plus-circle me-1"></i>添加库存</button>
+            <div class="d-flex gap-2 flex-wrap stock-manage-actions">
+                <button class="btn btn-sm btn-outline-danger" ${unsoldCount <= 0 ? 'disabled title="没有可清空的未售库存"' : ''} onclick="clearSellerUnsoldStock('${Security.escapeAttr(productId)}')"><i class="bi bi-trash3 me-1"></i>清空库存</button>
+                <button class="btn btn-sm btn-outline-primary" onclick="openAddStockModal('${Security.escapeAttr(productId)}')"><i class="bi bi-plus-circle me-1"></i>添加库存</button>
+            </div>
         </div>
         <div class="seller-stock-summary mb-3">
             <div><strong>${Security.escapeHtml(stock.length)}</strong><span>总库存</span></div>
@@ -1345,6 +1348,16 @@ async function deleteSellerStockItem(productId, stockIndex) {
     const result = await API.deleteProductStock(productId, stockIndex);
     if (!result.success) return Toast.error(result.message || '删除库存失败');
     Toast.success(result.message || '库存已删除');
+    await openStockManageModal(productId);
+    renderDashboardTab('myproducts');
+    if (typeof loadProducts === 'function') loadProducts();
+}
+
+async function clearSellerUnsoldStock(productId) {
+    if (!confirm('确定清空该商品所有未售库存吗？已售库存不会删除，此操作不可恢复。')) return;
+    const result = await API.clearProductStock(productId);
+    if (!result.success) return Toast.error(result.message || '清空库存失败');
+    Toast.success(result.message || '未售库存已清空');
     await openStockManageModal(productId);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
@@ -1537,6 +1550,9 @@ function hasConfiguredPaymentMethods(user = App.currentUser || {}) {
 
 function merchantStatusInfo(user = App.currentUser || {}) {
     const status = user.merchant_status || 'none';
+    if (!user.qq_bound) {
+        return { ok: false, label: '未完成', badge: 'warning', desc: '请先绑定 QQ，绑定后才可申请开通商家' };
+    }
     if (user.merchant_verified === true || user.merchant_verified === '1') {
         return { ok: true, label: '已完成', badge: 'success', desc: '商家已开通，可正常发布商品和收款' };
     }
@@ -1583,7 +1599,7 @@ function scrollToMerchantCertification() {
     if (target) {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-    Toast.info('请完成收款方式，并阅读同意商家守则声明后开通商家');
+    Toast.info(App.currentUser?.qq_bound ? '请完成收款方式，并阅读同意商家守则声明后开通商家' : '请先绑定 QQ，绑定后才可申请开通商家');
 }
 
 function paymentMethodNeedsEmailCode(key) {
@@ -1855,7 +1871,13 @@ function renderMerchantCertificationBox(user = App.currentUser || {}) {
     const merchant = merchantStatusInfo(user);
     const agreementText = merchantAgreementDefaultText();
     const openedOnce = user.merchant_opened_once === true || user.merchant_opened_once === '1';
+    const qqBound = !!user.qq_bound;
     const saveText = merchant.ok ? '更新认证资料' : (openedOnce ? '提交重新开通审核' : '同意并开通商家');
+    const blockHtml = qqBound ? '' : `
+        <div class="alert alert-warning small mb-3">
+            <i class="bi bi-tencent-qq me-1"></i>开通商家前必须先绑定 QQ，用于身份确认和后续风控。请先点击左侧个人信息中的“绑定第三方账号”。
+        </div>
+    `;
     return `
         <div class="profile-card-soft border" style="box-shadow:none;" data-merchant-status="${Security.escapeAttr(user.merchant_status || 'none')}">
             <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
@@ -1866,6 +1888,7 @@ function renderMerchantCertificationBox(user = App.currentUser || {}) {
                 <span class="badge badge-${merchant.badge}">${Security.escapeHtml(merchant.label)}</span>
             </div>
             <div class="alert alert-light border small mb-3">${Security.escapeHtml(merchant.desc)}</div>
+            ${blockHtml}
             <label class="form-label fw-semibold">商家守则、免责声明与商家质保</label>
             <textarea class="form-control" id="merchantAgreementText" rows="9" readonly onscroll="handleMerchantAgreementScroll()">${Security.escapeHtml(agreementText)}</textarea>
             <div class="form-text" id="merchantReadTimerText">请至少阅读 5 秒后再勾选同意。</div>
@@ -1874,7 +1897,7 @@ function renderMerchantCertificationBox(user = App.currentUser || {}) {
                 <label class="form-check-label" for="merchantRulesAccepted">我已阅读并同意商家守则、免责声明与商家质保，申请开通商家功能</label>
             </div>
             <div class="mt-3 d-flex gap-2 flex-wrap">
-                <button class="btn btn-primary" id="merchantCertificationSaveHintBtn" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>${saveText}</button>
+                <button class="btn btn-primary" id="merchantCertificationSaveHintBtn" onclick="savePaymentMethods()" ${qqBound ? '' : 'disabled title="请先绑定 QQ 后再开通商家"'}><i class="bi bi-check2-circle me-1"></i>${saveText}</button>
             </div>
         </div>
     `;
@@ -2144,6 +2167,9 @@ function warnPaymentMethods(message) {
 }
 
 async function savePaymentMethods() {
+    if (!App.currentUser?.qq_bound) {
+        return warnPaymentMethods('请先绑定 QQ 后再申请开通商家');
+    }
     if (profilePaymentInitiallyConfigured && !profileSecurityUnlocked) {
         return warnPaymentMethods('请先输入6位邮箱验证码完成验证后再保存收款方式');
     }

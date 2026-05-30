@@ -42,7 +42,8 @@ function userHasMerchantCertification($user) {
             break;
         }
     }
-    return $paymentComplete
+    return !empty($user['qq_openid'])
+        && $paymentComplete
         && !empty($user['merchant_rules_accepted'])
         && ($user['merchant_status'] ?? 'none') === 'approved';
 }
@@ -56,6 +57,7 @@ function merchantCertificationMessage($user) {
             break;
         }
     }
+    if (empty($user['qq_openid'])) return '您还未绑定 QQ，请先到控制台个人中心绑定 QQ 后再开通商家';
     if (!$paymentComplete) return '您还未完成商家认证，请先到控制台完善收款方式';
     if (empty($user['merchant_rules_accepted'])) return '请先阅读并同意商家守则、免责声明与商家质保';
     if (($user['merchant_status'] ?? 'none') === 'pending') return '您的商家重新开通申请正在审核中，请等待管理员审核';
@@ -625,6 +627,33 @@ switch ($action) {
         $safe = $product;
         unset($safe['account_list'], $safe['pickup_password']);
         jsonResponse(['success' => true, 'message' => '库存已删除', 'product' => $safe]);
+
+    case 'clear_stock':
+        $userId = requireAuth();
+        $id = $_POST['id'] ?? '';
+        if (!validateId($id)) {
+            jsonResponse(['success' => false, 'message' => '无效的商品ID'], 400);
+        }
+        $product = $db->getProductById($id);
+        if (!$product) {
+            jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        if (($product['seller_id'] ?? '') !== $userId && ($_SESSION['user_role'] ?? '') !== 'admin') {
+            jsonResponse(['success' => false, 'message' => '无权清空该商品库存'], 403);
+        }
+        $accountList = is_array($product['account_list'] ?? null) ? array_values($product['account_list']) : [];
+        $soldAccounts = array_values(array_filter($accountList, fn($item) => !empty($item['sold'])));
+        $deletedCount = count($accountList) - count($soldAccounts);
+        if ($deletedCount <= 0) {
+            jsonResponse(['success' => false, 'message' => '没有可清空的未售库存'], 400);
+        }
+        $product['account_list'] = $soldAccounts;
+        $product['stock'] = 0;
+        $product['updated_at'] = time();
+        $db->updateProduct($product);
+        $safe = $product;
+        unset($safe['account_list'], $safe['pickup_password']);
+        jsonResponse(['success' => true, 'message' => '已清空未售库存 ' . $deletedCount . ' 条', 'product' => $safe, 'deleted_count' => $deletedCount]);
 
     case 'delete':
         $userId = requireAuth();

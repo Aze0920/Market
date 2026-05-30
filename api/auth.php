@@ -324,7 +324,8 @@ function safeUser($user) {
     }
     $merchantStatus = $user['merchant_status'] ?? 'none';
     $merchantRulesAccepted = !empty($user['merchant_rules_accepted']);
-    $merchantVerified = $paymentComplete && $merchantRulesAccepted && $merchantStatus === 'approved';
+    $qqBound = !empty($user['qq_openid']);
+    $merchantVerified = $qqBound && $paymentComplete && $merchantRulesAccepted && $merchantStatus === 'approved';
     return [
         'id' => $user['id'] ?? '',
         'username' => $user['username'] ?? '',
@@ -705,6 +706,9 @@ switch ($action) {
         if (!is_array($decoded)) {
             jsonResponse(['success' => false, 'message' => '收款方式数据格式不正确'], 400);
         }
+        if (empty($user['qq_openid'])) {
+            jsonResponse(['success' => false, 'message' => '请先绑定 QQ 后再申请开通商家'], 400);
+        }
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
         $merchantRulesAccepted = filter_var($_POST['merchant_rules_accepted'] ?? false, FILTER_VALIDATE_BOOLEAN);
@@ -912,7 +916,7 @@ switch ($action) {
 
     case 'unbind_qq':
         $userId = requireAuth();
-        $ok = $db->updateUser($userId, ['qq_openid' => '', 'qq_nickname' => '', 'qq_bound_at' => 0]);
+        $ok = $db->updateUser($userId, ['qq_openid' => '', 'qq_nickname' => '', 'qq_bound_at' => 0, 'merchant_status' => 'none']);
         if (!$ok) {
             jsonResponse(['success' => false, 'message' => '解绑失败'], 500);
         }

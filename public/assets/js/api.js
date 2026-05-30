@@ -258,6 +258,10 @@ const API = {
         return this.request('product.php?action=delete_stock', 'POST', { id, stock_index: stockIndex });
     },
 
+    clearProductStock(id) {
+        return this.request('product.php?action=clear_stock', 'POST', { id });
+    },
+
     deleteProduct(id) {
         return this.request('product.php?action=delete', 'POST', { id });
     },
