@@ -137,7 +137,10 @@ keynest_require_installed(false);
         .log-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
         .log-viewer { background: #0f172a; color: #dbeafe; border-radius: 18px; padding: 16px; min-height: 220px; max-height: min(52vh, 520px); overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: Consolas, Monaco, "Courier New", monospace; font-size: 12px; line-height: 1.65; }
         .log-viewer.logs-page-viewer { height: clamp(320px, calc(100vh - 420px), 520px); min-height: 320px; max-height: calc(100vh - 320px); }
-        .complaint-card-admin { border: 1px solid var(--border); border-radius: 18px; padding: 16px; background: #fff; box-shadow: 0 10px 28px rgba(15,23,42,.05); margin-bottom: 14px; }
+        .complaint-row-toggle { cursor: pointer; transition: background .15s ease; }
+        .complaint-row-toggle:hover, .complaint-row-toggle.expanded { background: #f8fafc; }
+        .complaint-detail-row td { padding: 0 16px 16px !important; border-top: none; background: #f8fafc; }
+        .complaint-detail-panel { padding: 4px 0 8px; }
         .complaint-reason-admin { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 14px; padding: 12px; white-space: pre-wrap; word-break: break-word; color: #334155; }
         .complaint-grid-admin { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
         .complaint-meta-admin { background: #f8fafc; border-radius: 14px; padding: 12px; }
@@ -287,7 +290,7 @@ keynest_require_installed(false);
 </section>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 } } };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 } } };
 const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
 const apiBase = '/api/';
 
@@ -1097,35 +1100,81 @@ function renderComplaints() {
     if (keyword) {
         complaints = complaints.filter(o => [o.id, o.product_title, o.buyer_name, o.seller_name, o.complaint?.reason].some(v => String(v || '').toLowerCase().includes(keyword)));
     }
+    const allCount = Admin.cache.complaints?.length || 0;
     const openCount = (Admin.cache.complaints || []).filter(o => (o.complaint?.status || '') === 'open').length;
+    const state = Admin.listState.complaints || (Admin.listState.complaints = { page: 1, pageSize: 10 });
+    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('complaintPageSizeSelect')?.value || state.pageSize || 10)));
+    const totalPages = Math.max(1, Math.ceil(complaints.length / state.pageSize));
+    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
+    const pageComplaints = complaints.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
-                <div><h5>投诉管理</h5><div class="small text-muted mt-1">共 ${Admin.cache.complaints?.length || 0} 条，进行中 ${openCount} 条</div></div>
+                <div>
+                    <h5>投诉管理</h5>
+                    <div class="small text-muted mt-1">${keyword || status !== 'all' ? '已筛选 ' + complaints.length + ' / ' + allCount + ' 条' : '共 ' + allCount + ' 条'}，进行中 ${openCount} 条，当前显示 ${pageComplaints.length} 条</div>
+                </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
-            <div class="row g-2 mb-3">
-                <div class="col-md-4"><input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="renderComplaints()"></div>
+            <div class="row g-2 mb-3 align-items-center">
+                <div class="col-md-5 col-lg-4">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="Admin.listState.complaints.page=1;renderComplaints()" autocomplete="off">
+                    </div>
+                </div>
                 <div class="col-md-3">
-                    <select id="complaintStatusFilter" class="form-select" onchange="renderComplaints()">
+                    <select id="complaintStatusFilter" class="form-select" onchange="Admin.listState.complaints.page=1;renderComplaints()">
                         ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','已解决'],['rejected','已驳回']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
                     </select>
                 </div>
+                <div class="col-md-auto">
+                    <button class="btn btn-outline-secondary" onclick="clearComplaintSearch()" ${keyword ? '' : 'disabled'}>清空</button>
+                </div>
+                <div class="col-md-auto ms-md-auto">
+                    ${adminPageSizeSelect('complaintPageSizeSelect', state.pageSize, 'setComplaintsPageSize(this.value)')}
+                </div>
             </div>
-            ${complaints.length ? complaints.map(renderComplaintAdminCard).join('') : '<div class="text-muted text-center py-5">暂无投诉记录</div>'}
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr><th>商品 / 订单</th><th>买家</th><th>卖家</th><th>金额 / 冻结</th><th>状态</th><th>投诉时间</th><th style="width:44px"></th></tr>
+                    </thead>
+                    <tbody>${complaintAdminTableRows(pageComplaints)}</tbody>
+                </table>
+            </div>
+            ${adminPaginationHtml(state.page, state.pageSize, complaints.length, 'setComplaintsPage', '条投诉')}
         </div>`;
+    if (keyword) {
+        const input = document.getElementById('complaintSearchInput');
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+    }
 }
-function renderComplaintAdminCard(order) {
+function complaintAdminTableRows(orders) {
+    if (!orders.length) return '<tr><td colspan="7" class="text-center text-muted py-4">暂无投诉记录</td></tr>';
+    return orders.map(order => {
+        const complaint = order.complaint || {};
+        const id = escapeHtml(order.id || '');
+        return `
+            <tr class="complaint-row-toggle" data-complaint-id="${id}" onclick="toggleComplaintDetail('${id}')">
+                <td><strong>${escapeHtml(order.product_title || '-')}</strong><div class="small text-muted"><code>${id}</code></div></td>
+                <td>${escapeHtml(order.buyer_name || '-')}<div class="small text-muted">${escapeHtml(recordUserEmail(order, 'buyer_id', order.buyer_id || ''))}</div></td>
+                <td>${escapeHtml(order.seller_name || '-')}<div class="small text-muted">${escapeHtml(recordUserEmail(order, 'seller_id', order.seller_id || ''))}</div></td>
+                <td>${money(order.price)}<div class="small text-danger">冻结 ${money(order.frozen_amount || 0)}</div></td>
+                <td>${complaintStatusBadge(complaint.status)}</td>
+                <td>${dateText(complaint.created_at)}</td>
+                <td class="text-end text-muted"><i class="bi bi-chevron-down"></i></td>
+            </tr>
+            <tr id="complaintDetail-${id}" class="complaint-detail-row hidden">
+                <td colspan="7">${complaintAdminDetailHtml(order)}</td>
+            </tr>`;
+    }).join('');
+}
+function complaintAdminDetailHtml(order) {
     const complaint = order.complaint || {};
     return `
-        <div class="complaint-card-admin">
-            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
-                <div>
-                    <div class="fw-bold fs-6">${escapeHtml(order.product_title || '-')}</div>
-                    <div class="text-muted small">订单ID：${escapeHtml(order.id || '-')} · 投诉时间：${dateText(complaint.created_at)}</div>
-                </div>
-                ${complaintStatusBadge(complaint.status)}
-            </div>
+        <div class="complaint-detail-panel" onclick="event.stopPropagation()">
             <div class="complaint-grid-admin mb-3">
                 <div class="complaint-meta-admin"><div class="small text-muted">买家</div><strong>${escapeHtml(order.buyer_name || '-')}</strong><div class="small text-muted">${escapeHtml(recordUserEmail(order, 'buyer_id', order.buyer_id || ''))}</div></div>
                 <div class="complaint-meta-admin"><div class="small text-muted">卖家</div><strong>${escapeHtml(order.seller_name || '-')}</strong><div class="small text-muted">${escapeHtml(recordUserEmail(order, 'seller_id', order.seller_id || ''))}</div></div>
@@ -1141,6 +1190,30 @@ function renderComplaintAdminCard(order) {
                 ${['open','processing','resolved','rejected'].map(s => `<button class="btn btn-sm ${complaint.status === s ? 'btn-primary' : 'btn-outline-secondary'}" onclick="updateAdminComplaintStatus('${escapeHtml(order.id)}','${s}')">${complaintStatusText(s)}</button>`).join('')}
             </div>
         </div>`;
+}
+function toggleComplaintDetail(orderId, forceOpen = null) {
+    const row = document.getElementById('complaintDetail-' + orderId);
+    const summaryRow = document.querySelector(`tr[data-complaint-id="${orderId}"]`);
+    const shouldOpen = forceOpen === null ? (row ? row.classList.contains('hidden') : true) : forceOpen;
+    document.querySelectorAll('.complaint-detail-row').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.complaint-row-toggle').forEach(el => el.classList.remove('expanded'));
+    if (row) row.classList.toggle('hidden', !shouldOpen);
+    if (shouldOpen && summaryRow) summaryRow.classList.add('expanded');
+}
+function setComplaintsPage(page) {
+    Admin.listState.complaints.page = Number(page) || 1;
+    renderComplaints();
+}
+function setComplaintsPageSize(size) {
+    Admin.listState.complaints.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
+    Admin.listState.complaints.page = 1;
+    renderComplaints();
+}
+function clearComplaintSearch() {
+    const input = document.getElementById('complaintSearchInput');
+    if (input) input.value = '';
+    Admin.listState.complaints.page = 1;
+    renderComplaints();
 }
 function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '已解决', rejected: '已驳回' })[status] || status; }
 async function saveAdminComplaintReply(orderId) {
