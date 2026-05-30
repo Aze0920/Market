@@ -61,7 +61,9 @@ const API = {
         try {
             const response = await fetch(this.baseUrl + 'auth.php?action=get_current_user');
             const data = await response.json();
-            // CSRF token由后端在init.php中设置
+            if (data && data.csrf_token) {
+                this.csrfToken = data.csrf_token;
+            }
         } catch (error) {
             console.error('Failed to initialize CSRF:', error);
         }
@@ -72,9 +74,9 @@ const API = {
         return this.request('auth.php?action=login', 'POST', { username, password, captcha_token });
     },
 
-    register(username, email, password, password_confirm, email_code = '', captcha_token = '') {
+    register(username, email, password, password_confirm, email_code = '', captcha_token = '', agreement_accepted = false) {
         return this.request('auth.php?action=register', 'POST', {
-            username, email, password, password_confirm, email_code, captcha_token
+            username, email, password, password_confirm, email_code, captcha_token, agreement_accepted: agreement_accepted ? '1' : '0'
         });
     },
 
@@ -118,6 +120,9 @@ const API = {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             body: new FormData()
         };
+        if (this.csrfToken) {
+            options.headers['X-CSRF-Token'] = this.csrfToken;
+        }
         options.body.append('image', file);
         try {
             const response = await fetch(this.baseUrl + 'auth.php?action=upload_avatar', options);
@@ -136,11 +141,40 @@ const API = {
         }
     },
 
-    savePaymentMethods(methods, emailCode = '') {
+    savePaymentMethods(methods, emailCode = '', merchantRulesAccepted = false, merchantSignature = '') {
         return this.request('auth.php?action=save_payment_methods', 'POST', {
             payment_methods: JSON.stringify(methods || {}),
-            email_code: emailCode
+            email_code: emailCode,
+            merchant_rules_accepted: merchantRulesAccepted ? '1' : '0',
+            merchant_signature: merchantSignature || ''
         });
+    },
+
+    async uploadMerchantSignature(file) {
+        const options = {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new FormData()
+        };
+        if (this.csrfToken) {
+            options.headers['X-CSRF-Token'] = this.csrfToken;
+        }
+        options.body.append('image', file);
+        try {
+            const response = await fetch(this.baseUrl + 'auth.php?action=upload_merchant_signature', options);
+            const text = await response.text();
+            let result = {};
+            try {
+                result = text ? JSON.parse(text) : {};
+            } catch (parseError) {
+                const preview = text ? text.slice(0, 300) : '空响应';
+                return { success: false, message: `服务器返回异常（HTTP ${response.status}）：${preview}` };
+            }
+            return response.ok ? result : { success: false, message: result.message || `上传失败（HTTP ${response.status}）`, ...result };
+        } catch (error) {
+            console.error('Merchant Signature Upload Error:', error);
+            return { success: false, message: '电子签名上传失败，请检查网络或服务器状态：' + (error.message || error) };
+        }
     },
 
     async uploadPaymentQrcode(file, method = '', emailCode = '', account = '') {
@@ -149,6 +183,9 @@ const API = {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             body: new FormData()
         };
+        if (this.csrfToken) {
+            options.headers['X-CSRF-Token'] = this.csrfToken;
+        }
         options.body.append('image', file);
         options.body.append('method', method);
         options.body.append('email_code', emailCode);
@@ -200,6 +237,9 @@ const API = {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             body: new FormData()
         };
+        if (this.csrfToken) {
+            options.headers['X-CSRF-Token'] = this.csrfToken;
+        }
         options.body.append('image', file);
         try {
             const response = await fetch(this.baseUrl + 'product.php?action=upload_image', options);
@@ -246,8 +286,8 @@ const API = {
         return this.request('product.php?action=my_products');
     },
 
-    buyProduct(id, quantity = 1) {
-        return this.request('product.php?action=buy', 'POST', { id, quantity });
+    buyProduct(id, quantity = 1, pickupPassword = '') {
+        return this.request('product.php?action=buy', 'POST', { id, quantity, pickup_password: pickupPassword });
     },
 
     addComment(productId, orderId, rating, content) {
@@ -401,12 +441,13 @@ const API = {
         });
     },
 
-    createProductPaymentOrder(paymentConfigId, productId, quantity, payType) {
+    createProductPaymentOrder(paymentConfigId, productId, quantity, payType, pickupPassword = '') {
         return this.request('payment.php?action=create_product_order', 'POST', {
             payment_config_id: paymentConfigId,
             product_id: productId,
             quantity,
-            pay_type: payType
+            pay_type: payType,
+            pickup_password: pickupPassword
         });
     },
 

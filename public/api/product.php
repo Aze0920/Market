@@ -1,2 +1,1 @@
-<?php
-require dirname(__DIR__, 2) . '/api/product.php';
+<?php require dirname(__DIR__, 2) . '/api/product.php';

@@ -156,7 +156,11 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
     $product = $db->getProductById($order['product_id'] ?? '');
     $buyer = $db->getUserById($order['user_id'] ?? '');
     $quantity = max(1, intval($order['quantity'] ?? 1));
+    $pickupPasswordHash = (string)($order['pickup_password_hash'] ?? '');
     if (!$product || !$buyer || ($product['stock'] ?? 0) < $quantity || ($product['seller_id'] ?? '') === ($buyer['id'] ?? '')) {
+        return null;
+    }
+    if (!empty($product['pickup_password_enabled']) && $pickupPasswordHash === '') {
         return null;
     }
 
@@ -217,8 +221,10 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
                     'format' => $deliveryInfo['format'] ?? 'pipe'
                 ];
             }, $deliveryList),
-            'locked' => !empty($product['pickup_password_enabled']),
-            'password_required' => !empty($product['pickup_password_enabled'])
+            'locked' => false,
+            'password_required' => false,
+            'pickup_password_enabled' => !empty($product['pickup_password_enabled']),
+            'pickup_password_hash' => !empty($product['pickup_password_enabled']) ? $pickupPasswordHash : ''
         ]
     ];
     $db->addOrder($productOrder);
@@ -588,6 +594,7 @@ switch ($action) {
         $productId = $_POST['product_id'] ?? '';
         $quantity = max(1, min(100, intval($_POST['quantity'] ?? 1)));
         $payType = sanitizeString($_POST['pay_type'] ?? 'alipay');
+        $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
         $user = $db->getUserById($userId);
 
         if (!validateId($productId)) {
@@ -602,6 +609,12 @@ switch ($action) {
         }
         if (($product['seller_id'] ?? '') === $userId) {
             jsonResponse(['success' => false, 'message' => '不能购买自己的商品'], 400);
+        }
+        if (!empty($product['pickup_password_enabled']) && $pickupPassword === '') {
+            jsonResponse(['success' => false, 'message' => '请填写取卡密码，后续查看发货需要使用'], 400);
+        }
+        if (mb_strlen($pickupPassword) > 100) {
+            jsonResponse(['success' => false, 'message' => '取卡密码最多100字符'], 400);
         }
 
         $config = $db->getPaymentConfig($configId);
@@ -626,6 +639,7 @@ switch ($action) {
             'type' => 'product_online_purchase',
             'product_id' => $productId,
             'quantity' => $quantity,
+            'pickup_password_hash' => !empty($product['pickup_password_enabled']) ? password_hash($pickupPassword, PASSWORD_DEFAULT) : '',
             'title' => '在线支付商品订单',
             'description' => '购买商品：' . ($product['title'] ?? '') . ' × ' . $quantity
         ]);

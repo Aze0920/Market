@@ -139,18 +139,40 @@ register_shutdown_function(function() {
     }
 });
 
-// CSRF Token验证（如果请求中有token）
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $sentToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
-    $sessionToken = $_SESSION['csrf_token'] ?? '';
-    if (!empty($sessionToken) && empty($sentToken)) {
-        apiLogRequest('warning', ['event' => 'csrf_token_missing']);
-    }
-}
-
 // 生成CSRF token（如果还没有）
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// CSRF Token验证：只对已登录会话的普通 POST 强制校验，避免影响登录、注册、支付回调等流程
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $scriptName = basename($_SERVER['SCRIPT_NAME'] ?? '');
+    $actionName = (string)($_REQUEST['action'] ?? '');
+    $sentToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
+    $sessionToken = $_SESSION['csrf_token'] ?? '';
+    $csrfExemptActions = [
+        'login',
+        'register',
+        'send_email_code',
+        'captcha_debug',
+        'geetest_register',
+        'notify'
+    ];
+    $requiresCsrf = isset($_SESSION['user_id'])
+        && $scriptName !== 'oauth.php'
+        && !in_array($actionName, $csrfExemptActions, true);
+
+    if ($requiresCsrf && ($sessionToken === '' || $sentToken === '' || !hash_equals($sessionToken, $sentToken))) {
+        apiLogRequest('warning', ['event' => 'csrf_token_invalid']);
+        http_response_code(403);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => false, 'message' => '请求已过期，请刷新页面后重试', 'csrf_token' => $sessionToken], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if (!empty($sessionToken) && empty($sentToken)) {
+        apiLogRequest('warning', ['event' => 'csrf_token_missing']);
+    }
 }
 
 // 安全辅助函数

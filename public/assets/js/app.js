@@ -277,7 +277,10 @@ function getInitialFrontendState() {
 function resetMarketFilters() {
     const searchInput = document.getElementById('searchInput');
     const categoryFilter = document.getElementById('categoryFilter');
-    if (searchInput) searchInput.value = '';
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.defaultValue = '';
+    }
     if (categoryFilter) categoryFilter.value = 'all';
 }
 
@@ -449,6 +452,7 @@ async function loadOverviewTab(area) {
     const o = result.overview;
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-speedometer2 me-2 text-primary"></i>控制台概览</h5>
+        ${accountStatusCardsHtml(App.currentUser)}
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="stat-card primary">
@@ -663,6 +667,42 @@ async function openSellerComplaintModal(orderId) {
     const order = result.order;
     const complaint = order.complaint || {};
     const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    const messages = Array.isArray(complaint.messages) && complaint.messages.length
+        ? complaint.messages
+        : [
+            complaint.reason ? { role: 'buyer', username: complaint.buyer_name || order.buyer_name || '买家', content: complaint.reason, created_at: complaint.created_at } : null,
+            complaint.seller_reply ? { role: 'seller', username: order.seller_name || '卖家', content: complaint.seller_reply, created_at: complaint.seller_replied_at || complaint.updated_at } : null
+        ].filter(Boolean);
+    const sellerStatusInfo = (() => {
+        const map = {
+            open: ['warning', '待处理'],
+            processing: ['primary', '处理中'],
+            following: ['info', '跟进中'],
+            resolved: ['success', '已解决'],
+            rejected: ['danger', '已驳回'],
+            withdrawn: ['secondary', '已撤诉']
+        };
+        return map[complaint.status || 'open'] || ['info', complaint.status || '已记录'];
+    })();
+    const sellerComplaintActive = !['resolved', 'rejected', 'withdrawn'].includes(complaint.status || 'open');
+    const sellerAdminProgressHtml = (complaint.admin_reply || complaint.admin_status_by || complaint.admin_replied_by) ? `
+        <div class="alert alert-info py-2 small mb-3">
+            <div class="d-flex justify-content-between gap-2 mb-1">
+                <strong><i class="bi bi-headset me-1"></i>平台处理状态：${Security.escapeHtml(sellerStatusInfo[1])}</strong>
+                <span class="text-muted">${Utils.formatDate(complaint.admin_status_at || complaint.admin_replied_at || complaint.updated_at)}</span>
+            </div>
+            ${complaint.admin_reply ? `<div><strong>平台回复：</strong>${Security.escapeHtml(complaint.admin_reply)}</div>` : '<div class="text-muted">平台已更新处理状态，请留意后续处理结果。</div>'}
+        </div>
+    ` : '';
+    const messagesHtml = messages.map(msg => `
+        <div class="complaint-thread-item ${msg.role === 'seller' ? 'seller' : 'buyer'}">
+            <div class="d-flex justify-content-between gap-2 mb-1">
+                <strong>${msg.role === 'seller' ? '卖家' : '买家'}：${Security.escapeHtml(msg.username || '')}</strong>
+                <small class="text-muted">${Utils.formatDate(msg.created_at)}</small>
+            </div>
+            <div>${Security.escapeHtml(msg.content || '')}</div>
+        </div>
+    `).join('');
     document.getElementById('purchaseBody').innerHTML = `
         <h6 class="fw-bold mb-3"><i class="bi bi-exclamation-circle me-1"></i>订单投诉</h6>
         <div class="bg-light rounded-3 p-3 mb-3 small">
@@ -670,34 +710,43 @@ async function openSellerComplaintModal(orderId) {
             <div><strong>买家：</strong>${Security.escapeHtml(order.buyer_name || '-')}</div>
             <div><strong>冻结金额：</strong>¥${Number(order.frozen_amount || 0).toFixed(2)}</div>
             <div><strong>投诉时间：</strong>${Utils.formatDate(complaint.created_at)}</div>
+            <div><strong>当前状态：</strong><span class="badge badge-${sellerStatusInfo[0]}">${Security.escapeHtml(sellerStatusInfo[1])}</span></div>
+            <div><strong>最近更新：</strong>${Utils.formatDate(complaint.updated_at || complaint.created_at)}</div>
         </div>
+        ${sellerAdminProgressHtml}
         <div class="mb-3">
-            <label class="form-label">买家投诉内容</label>
-            <div class="complaint-reason-box">${Security.escapeHtml(complaint.reason || '-')}</div>
+            <label class="form-label">投诉沟通记录</label>
+            <div class="complaint-thread-list">${messagesHtml || '<div class="text-muted small">暂无沟通记录</div>'}</div>
         </div>
+        ${sellerComplaintActive ? `
         <div class="mb-3">
-            <label class="form-label">卖家回复</label>
-            <textarea class="form-control" id="sellerComplaintReply" rows="4" maxlength="500" placeholder="请填写处理说明或解决方案">${Security.escapeHtml(complaint.seller_reply || '')}</textarea>
+            <label class="form-label">继续回复</label>
+            <textarea class="form-control" id="sellerComplaintReply" rows="4" maxlength="500" placeholder="继续沟通处理进度、解决方案或说明"></textarea>
             <small class="text-muted">最多 500 字</small>
         </div>
+        ` : '<div class="alert alert-secondary py-2 small mb-0">该投诉已结束，不能继续回复。</div>'}
     `;
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
-        <button class="btn btn-primary" onclick="submitSellerComplaintReply('${Security.escapeAttr(orderId)}')">提交回复</button>
+        ${sellerComplaintActive ? `<button class="btn btn-primary" onclick="submitComplaintReply('${Security.escapeAttr(orderId)}', 'sales')">提交回复</button>` : ''}
     `;
     modal.show();
 }
 
-async function submitSellerComplaintReply(orderId) {
-    const reply = document.getElementById('sellerComplaintReply')?.value?.trim() || '';
+async function submitComplaintReply(orderId, refreshTab = 'complaints') {
+    const reply = document.getElementById('sellerComplaintReply')?.value?.trim() || document.getElementById('complaintReplyContent')?.value?.trim() || '';
     const result = await API.replyComplaint(orderId, reply);
     if (result.success) {
         Toast.success(result.message || '回复已提交');
         bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
-        renderDashboardTab('sales');
+        renderDashboardTab(refreshTab);
     } else {
         Toast.error(result.message || '回复失败');
     }
+}
+
+async function submitSellerComplaintReply(orderId) {
+    return submitComplaintReply(orderId, 'sales');
 }
 
 async function loadMyProductsTab(area) {
@@ -913,9 +962,17 @@ async function loadBalanceTab(area) {
         <h5 class="fw-bold mb-4"><i class="bi bi-wallet2 me-2"></i>余额管理</h5>
         <div class="card bg-light mb-4">
             <div class="card-body text-center py-4">
-                <h2 class="fw-bold text-primary mb-1">¥ ${App.currentUser.balance.toFixed(2)}</h2>
-                ${App.currentUser.frozen_balance > 0 ? `<div class="text-warning fw-semibold mb-1">冻结余额：¥ ${Number(App.currentUser.frozen_balance).toFixed(2)}</div>` : ''}
-                <p class="text-muted mb-3">当前可用余额</p>
+                <div class="d-flex justify-content-center gap-4 flex-wrap mb-2">
+                    <div>
+                        <div class="text-muted small">可用余额</div>
+                        <h2 class="fw-bold text-primary mb-0">¥ ${App.currentUser.balance.toFixed(2)}</h2>
+                    </div>
+                    <div>
+                        <div class="text-muted small">冻结余额</div>
+                        <h2 class="fw-bold text-warning mb-0">¥ ${Number(App.currentUser.frozen_balance || 0).toFixed(2)}</h2>
+                    </div>
+                </div>
+                <p class="text-muted mb-3">冻结余额来自处理中投诉或待处理资金，不可提现</p>
                 <div class="d-flex gap-2 justify-content-center flex-wrap">
                     <button class="btn btn-primary" onclick="openOnlineRechargeModal()">
                         <i class="bi bi-cash-stack me-1"></i>在线充值
@@ -1205,13 +1262,10 @@ async function openSellerProductManage(productId) {
             </div>
             <div class="col-12">
                 <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="editPickupPasswordEnabled" ${product.pickup_password_enabled ? 'checked' : ''} onchange="toggleEditPickupPasswordInput()">
-                    <label class="form-check-label" for="editPickupPasswordEnabled">开启取卡密码</label>
+                    <input class="form-check-input" type="checkbox" id="editPickupPasswordEnabled" ${product.pickup_password_enabled ? 'checked' : ''}>
+                    <label class="form-check-label" for="editPickupPasswordEnabled">开启买家取卡密码</label>
                 </div>
-                <div id="editPickupPasswordWrap" class="${product.pickup_password_enabled ? '' : 'hidden'}">
-                    <label class="form-label">新取卡密码</label>
-                    <input type="text" class="form-control" id="editPickupPassword" maxlength="100" placeholder="留空则保留原密码；首次开启必须填写">
-                </div>
+                <small class="text-muted">开启后，买家购买时自行设置取卡密码；卖家不需要填写密码。</small>
             </div>
         </div>
         <hr>
@@ -1280,7 +1334,6 @@ async function saveSellerProduct(productId) {
     const description = document.getElementById('editProductDesc')?.value?.trim() || '';
     const image = document.getElementById('editProductImage')?.value?.trim() || '';
     const pickupPasswordEnabled = document.getElementById('editPickupPasswordEnabled')?.checked ? '1' : '0';
-    const pickupPassword = document.getElementById('editPickupPassword')?.value?.trim() || '';
     if (!title || !price || price <= 0) {
         Toast.warning('请填写标题和有效价格');
         return;
@@ -1291,8 +1344,7 @@ async function saveSellerProduct(productId) {
         price,
         description,
         image,
-        pickup_password_enabled: pickupPasswordEnabled,
-        pickup_password: pickupPassword
+        pickup_password_enabled: pickupPasswordEnabled
     });
     if (!result.success) {
         Toast.error(result.message || '保存失败');
@@ -1305,9 +1357,7 @@ async function saveSellerProduct(productId) {
 }
 
 function toggleEditPickupPasswordInput() {
-    const enabled = document.getElementById('editPickupPasswordEnabled')?.checked;
-    const wrap = document.getElementById('editPickupPasswordWrap');
-    if (wrap) wrap.classList.toggle('hidden', !enabled);
+    return;
 }
 
 function updateEditProductImagePreview(value) {
@@ -1419,9 +1469,60 @@ function paymentMethodIcon(key) {
     return key === 'wechat' ? 'bi-wechat' : 'bi-alipay';
 }
 
-function hasConfiguredPaymentMethods() {
-    const methods = getUserPaymentMethods();
-    return Object.values(methods).some(item => !!(item.account || item.qrcode));
+function hasConfiguredPaymentMethods(user = App.currentUser || {}) {
+    const methods = getUserPaymentMethods(user);
+    return Object.values(methods).some(item => !!(item.account && item.qrcode));
+}
+
+function merchantStatusInfo(user = App.currentUser || {}) {
+    const status = user.merchant_status || 'none';
+    if (user.merchant_verified === true || user.merchant_verified === '1') {
+        return { ok: true, label: '已完成', badge: 'success', desc: '商家已开通，可正常发布商品和收款' };
+    }
+    if (status === 'pending') {
+        return { ok: false, label: '待审核', badge: 'warning', desc: '重新开通申请已提交，请等待管理员审核' };
+    }
+    if (status === 'rejected') {
+        return { ok: false, label: '未通过', badge: 'danger', desc: '审核未通过，请修改认证资料后重新提交' };
+    }
+    return { ok: false, label: '未完成', badge: 'warning', desc: '请完善收款方式、阅读守则并上传电子签名' };
+}
+
+function accountStatusCardsHtml(user = App.currentUser || {}) {
+    const qqBound = !!user.qq_bound;
+    const merchant = merchantStatusInfo(user);
+    return `
+        <div class="row g-3 mb-4 account-status-grid">
+            <div class="col-md-6">
+                <div class="account-status-card ${qqBound ? 'success' : 'warning'}">
+                    <div class="account-status-icon"><i class="bi bi-tencent-qq"></i></div>
+                    <div class="flex-grow-1">
+                        <div class="account-status-title">QQ 绑定</div>
+                        <div class="account-status-desc">${qqBound ? `已绑定：${Security.escapeHtml(user.qq_nickname || 'QQ账号')}` : '未绑定，绑定后可使用 QQ 一键登录'}</div>
+                    </div>
+                    <span class="badge ${qqBound ? 'badge-success' : 'badge-warning'}">${qqBound ? '已绑定' : '未绑定'}</span>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="account-status-card ${merchant.ok ? 'success' : 'warning'}">
+                    <div class="account-status-icon"><i class="bi bi-shop-window"></i></div>
+                    <div class="flex-grow-1">
+                        <div class="account-status-title">商家认证</div>
+                        <div class="account-status-desc">${Security.escapeHtml(merchant.desc)}</div>
+                    </div>
+                    <span class="badge badge-${merchant.badge}">${Security.escapeHtml(merchant.label)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function scrollToMerchantCertification() {
+    const target = document.getElementById('merchantCertificationBox') || document.querySelector('.payment-receive-card') || document.getElementById('savePaymentMethodsBtn');
+    if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    Toast.info('请完成收款方式、商家守则和电子签名后开通商家');
 }
 
 function paymentMethodNeedsEmailCode(key) {
@@ -1472,7 +1573,9 @@ function renderPaymentMethodUploadCard(key, item) {
 async function loadProfileTab(area) {
     const user = App.currentUser || {};
     const maskedEmail = user.email ? user.email.replace(/^(.{2}).*(@.*)$/, '$1****$2') : '未绑定邮箱';
-    const qqBound = !!user.qq_openid;
+    const qqBound = !!user.qq_bound;
+    const merchant = merchantStatusInfo(user);
+    const merchantVerified = merchant.ok;
     const paymentMethods = getUserPaymentMethods(user);
     const isAdmin = user.role === 'admin';
     let adminConfigHtml = '';
@@ -1546,6 +1649,13 @@ async function loadProfileTab(area) {
                     <div class="profile-info-row"><span>会员等级</span><strong>${Security.escapeHtml(user.membership_level || 'Free')}</strong></div>
                     <div class="profile-info-row"><span>账户余额</span><strong>¥ ${Number(user.balance || 0).toFixed(2)}</strong></div>
                     <div class="profile-info-row"><span>QQ 绑定</span><strong class="${qqBound ? 'text-success' : 'text-muted'}">${qqBound ? Security.escapeHtml(user.qq_nickname || '已绑定') : '未绑定'}</strong></div>
+                    <div class="profile-info-row align-items-center gap-2 flex-wrap">
+                        <span>商家认证</span>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <strong class="text-${merchant.badge === 'success' ? 'success' : merchant.badge === 'danger' ? 'danger' : 'warning'}">${Security.escapeHtml(merchant.label)}</strong>
+                            <button class="btn btn-sm ${merchantVerified ? 'btn-outline-primary' : 'btn-primary'}" onclick="scrollToMerchantCertification()"><i class="bi ${merchantVerified ? 'bi-eye' : 'bi-shield-check'} me-1"></i>${merchantVerified ? '查看认证' : '去认证'}</button>
+                        </div>
+                    </div>
                     <div class="mt-4 d-grid gap-2">
                         ${qqBound ? `<button class="btn btn-outline-danger" onclick="unbindQQAccount()"><i class="bi bi-link-45deg me-1"></i>解绑第三方账号</button>` : `<button class="btn btn-primary" onclick="bindQQAccount()"><i class="bi bi-tencent-qq me-1"></i>绑定第三方账号</button>`}
                     </div>
@@ -1605,11 +1715,15 @@ async function loadProfileTab(area) {
                     <div class="payment-receive-grid">
                         ${Object.entries(paymentMethods).map(([key, item]) => renderPaymentMethodUploadCard(key, item)).join('')}
                     </div>
+                    <div class="mt-4" id="merchantCertificationBox">
+                        ${renderMerchantCertificationBox(user)}
+                    </div>
                 </div>
             </div>
             ${adminConfigHtml}
         </div>
     `;
+    setTimeout(startMerchantReadTimer, 50);
 }
 
 async function handleAvatarSelect(event) {
@@ -1642,9 +1756,126 @@ async function handleAvatarSelect(event) {
     renderDashboardTab('profile');
 }
 
+function merchantAgreementDefaultText() {
+    return `商家守则、免责声明与商家质保
+
+一、商家守则
+1. 商家应保证发布的商品信息真实、完整、合法，不得发布违法违规、侵权、欺诈、虚假宣传或无法交付的商品。
+2. 商家应及时处理订单、发货、售后和用户咨询，不得恶意拖延、诱导站外交易或逃避平台规则。
+3. 商家应妥善保管收款账号、收款码和电子签名，因资料错误导致的收款异常由商家自行承担。
+
+二、免责声明
+1. 商家确认已充分了解虚拟商品交易风险，并承诺自行承担因商品来源、授权、交付、售后等产生的责任。
+2. 因商家商品描述不清、违规发布、无法交付、售后拒绝处理等造成的纠纷、退款、赔付或法律责任，由商家自行承担。
+3. 平台可根据投诉、风控或监管要求对商品、订单、资金和商家资格采取限制、冻结、下架或关闭等必要措施。
+
+三、商家质保
+1. 商家承诺对所售商品提供明确、有效的质量保障和售后说明，并按承诺处理补发、换货、退款或技术支持。
+2. 如商品存在不可用、与描述不符、重复销售、失效等问题，商家应优先保障买家权益并积极配合平台处理。
+3. 商家连续出现高投诉、拒不售后或严重违规时，平台有权取消商家资格，后续重新开通需人工审核。
+
+四、电子签名确认
+本人确认已阅读并同意以上商家守则、免责声明与商家质保，自愿申请开通商家功能，并承诺遵守平台全部规则。`;
+}
+
+function renderMerchantCertificationBox(user = App.currentUser || {}) {
+    const merchant = merchantStatusInfo(user);
+    const signature = user.merchant_signature || '';
+    const agreementText = merchantAgreementDefaultText();
+    const signaturePreview = signature ? `<img src="${Security.escapeAttr(signature + (signature.includes('?') ? '&' : '?') + 'v=' + Date.now())}" alt="电子签名" style="max-height:120px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;">` : '<div class="text-muted small">未上传电子签名图片</div>';
+    const openedOnce = user.merchant_opened_once === true || user.merchant_opened_once === '1';
+    const saveText = merchant.ok ? '更新认证资料' : (openedOnce ? '提交重新开通审核' : '同意并开通商家');
+    return `
+        <div class="profile-card-soft border" style="box-shadow:none;" data-merchant-status="${Security.escapeAttr(user.merchant_status || 'none')}">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+                <div>
+                    <h6 class="fw-bold mb-1"><i class="bi bi-shield-check me-2 text-primary"></i>商家开通认证</h6>
+                    <div class="text-muted small">首次开通免审核；后续被取消后重新开通需后台审核。</div>
+                </div>
+                <span class="badge badge-${merchant.badge}">${Security.escapeHtml(merchant.label)}</span>
+            </div>
+            <div class="alert alert-light border small mb-3">${Security.escapeHtml(merchant.desc)}</div>
+            <label class="form-label fw-semibold">商家守则、免责声明与商家质保</label>
+            <textarea class="form-control" id="merchantAgreementText" rows="9" readonly onscroll="handleMerchantAgreementScroll()">${Security.escapeHtml(agreementText)}</textarea>
+            <div class="form-text" id="merchantReadTimerText">请至少阅读 5 秒后再勾选同意。</div>
+            <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" id="merchantRulesAccepted" ${user.merchant_rules_accepted ? 'checked' : ''} ${user.merchant_rules_accepted ? '' : 'disabled'}>
+                <label class="form-check-label" for="merchantRulesAccepted">我已阅读并同意商家守则、免责声明与商家质保，申请开通商家功能</label>
+            </div>
+            <div class="mt-3">
+                <label class="form-label fw-semibold">电子签名图片</label>
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <div id="merchantSignaturePreview">${signaturePreview}</div>
+                    <div>
+                        <input type="file" id="merchantSignatureInput" accept="image/jpeg,image/png,image/webp" class="hidden" onchange="handleMerchantSignatureSelect(event)">
+                        <input type="hidden" id="merchantSignature" value="${Security.escapeAttr(signature)}">
+                        <button class="btn btn-outline-primary btn-sm" onclick="document.getElementById('merchantSignatureInput')?.click()"><i class="bi bi-upload me-1"></i>上传电子签名</button>
+                        <div class="form-text">支持 JPG、PNG、WEBP，大小不超过 2MB。</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 d-flex gap-2 flex-wrap">
+                <button class="btn btn-primary" id="merchantCertificationSaveHintBtn" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>${saveText}</button>
+            </div>
+        </div>
+    `;
+}
+
+function startMerchantReadTimer() {
+    merchantAgreementReadReady = !!(App.currentUser || {}).merchant_rules_accepted;
+    if (merchantAgreementTimer) clearInterval(merchantAgreementTimer);
+    let remaining = merchantAgreementReadReady ? 0 : 5;
+    const text = document.getElementById('merchantReadTimerText');
+    const checkbox = document.getElementById('merchantRulesAccepted');
+    if (!text || !checkbox || merchantAgreementReadReady) return;
+    text.textContent = `请至少阅读 ${remaining} 秒后再勾选同意。`;
+    merchantAgreementTimer = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+            merchantAgreementReadReady = true;
+            checkbox.disabled = false;
+            text.textContent = '已满足阅读时间，请勾选同意后提交。';
+            clearInterval(merchantAgreementTimer);
+            return;
+        }
+        text.textContent = `请至少阅读 ${remaining} 秒后再勾选同意。`;
+    }, 1000);
+}
+
+function handleMerchantAgreementScroll() {}
+
+async function handleMerchantSignatureSelect(event) {
+    const input = event.target;
+    const file = input?.files?.[0];
+    if (!file) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
+        input.value = '';
+        return Toast.warning('电子签名仅支持 JPG、PNG、WEBP 图片');
+    }
+    if (file.size > 2 * 1024 * 1024) {
+        input.value = '';
+        return Toast.warning('电子签名大小不能超过2MB');
+    }
+    const preview = document.getElementById('merchantSignaturePreview');
+    if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>上传中...';
+    const result = await API.uploadMerchantSignature(file);
+    input.value = '';
+    if (!result.success) {
+        if (preview) preview.innerHTML = '<div class="text-danger small">上传失败，请重试</div>';
+        return Toast.error(result.message || '电子签名上传失败');
+    }
+    const hidden = document.getElementById('merchantSignature');
+    if (hidden) hidden.value = result.url || '';
+    if (preview) preview.innerHTML = `<img src="${Security.escapeAttr((result.url || '') + '?v=' + Date.now())}" alt="电子签名" style="max-height:120px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;">`;
+    if (result.user) App.setUser(result.user);
+    Toast.success(result.message || '电子签名上传成功');
+}
+
 let profileSecurityUnlocked = false;
 let profileEmailVerifyPending = false;
 let profilePaymentInitiallyConfigured = false;
+let merchantAgreementTimer = null;
+let merchantAgreementReadReady = false;
 function setProfileSecurityUnlocked(unlocked) {
     profileSecurityUnlocked = !!unlocked;
     ['profileNewPassword', 'profileConfirmPassword'].forEach(id => {
@@ -1899,6 +2130,14 @@ async function savePaymentMethods() {
         }
     }
     const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
+    const merchantRulesAccepted = !!document.getElementById('merchantRulesAccepted')?.checked;
+    const merchantSignature = document.getElementById('merchantSignature')?.value.trim() || '';
+    if (!merchantRulesAccepted) {
+        return warnPaymentMethods('请先阅读商家守则满5秒，并勾选同意开通商家');
+    }
+    if (!merchantSignature) {
+        return warnPaymentMethods('请先上传电子签名图片');
+    }
     const btn = document.getElementById('savePaymentMethodsBtn');
     const oldHtml = btn?.innerHTML;
     if (btn) {
@@ -1907,7 +2146,7 @@ async function savePaymentMethods() {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>保存中...';
     }
     showPaymentMethodsNotice('正在保存收款方式...', 'info');
-    const result = await API.savePaymentMethods(methods, emailCode);
+    const result = await API.savePaymentMethods(methods, emailCode, merchantRulesAccepted, merchantSignature);
     if (btn) {
         btn.classList.remove('disabled');
         btn.setAttribute('aria-disabled', 'false');
@@ -2274,6 +2513,18 @@ function updateWithdrawInfo() {
         feeNote.textContent = `最低 ¥${Number(minWithdrawAmount).toFixed(2)}，手续费 ${(withdrawFeeRate * 100).toFixed(1)}%`;
     }
     validateWithdrawAmount(false);
+}
+
+function fillAllWithdrawAmount() {
+    const input = document.getElementById('withdrawAmount');
+    if (!input) return;
+    const balance = Math.max(0, Number(App.currentUser?.balance || 0));
+    if (balance <= 0) {
+        Toast.warning('当前没有可提现余额');
+        return;
+    }
+    input.value = balance.toFixed(2);
+    updateWithdrawInfo();
 }
 
 async function submitWithdraw() {
@@ -3079,26 +3330,73 @@ async function loadComplaintsTab(area) {
     const [ordersResult, salesResult] = await Promise.all([API.getMyOrders(), API.getMySales()]);
     const buyerComplaints = ordersResult.success ? ordersResult.orders.filter(o => o.complaint) : [];
     const sellerComplaints = salesResult.success ? salesResult.orders.filter(o => o.complaint) : [];
+    const complaintStatusInfo = complaint => {
+        const status = complaint?.status || 'open';
+        const map = {
+            open: ['warning', '待处理'],
+            processing: ['primary', '处理中'],
+            following: ['info', '跟进中'],
+            resolved: ['success', '已解决'],
+            rejected: ['danger', '已驳回'],
+            withdrawn: ['secondary', '已撤诉']
+        };
+        return map[status] || ['info', status || '已记录'];
+    };
+    const isComplaintActive = complaint => complaint && !['resolved', 'rejected', 'withdrawn'].includes(complaint.status || 'open');
     const renderStatus = complaint => {
         if (!complaint) return '<span class="badge badge-secondary">无投诉</span>';
-        if (complaint.status === 'open') return '<span class="badge badge-warning">处理中</span>';
-        if (complaint.status === 'withdrawn') return '<span class="badge badge-secondary">已撤诉</span>';
-        return '<span class="badge badge-info">已记录</span>';
+        const [type, text] = complaintStatusInfo(complaint);
+        return `<span class="badge badge-${type}">${text}</span>`;
+    };
+    const renderAdminProgress = complaint => {
+        if (!complaint) return '';
+        const [type, text] = complaintStatusInfo(complaint);
+        const adminReply = complaint.admin_reply || '';
+        const statusAt = complaint.admin_status_at || complaint.admin_replied_at || complaint.updated_at;
+        if (!adminReply && !complaint.admin_status_by && !complaint.admin_replied_by) return '';
+        return `
+            <div class="alert alert-${type === 'danger' ? 'danger' : type === 'success' ? 'success' : 'info'} py-2 small mb-3">
+                <div class="d-flex justify-content-between gap-2 mb-1">
+                    <strong><i class="bi bi-headset me-1"></i>平台处理状态：${Security.escapeHtml(text)}</strong>
+                    <span class="text-muted">${Utils.formatDate(statusAt)}</span>
+                </div>
+                ${adminReply ? `<div><strong>平台回复：</strong>${Security.escapeHtml(adminReply)}</div>` : `<div class="text-muted">平台已更新处理状态，请留意后续处理结果。</div>`}
+            </div>
+        `;
+    };
+    const renderComplaintMessages = (order) => {
+        const complaint = order.complaint || {};
+        const messages = Array.isArray(complaint.messages) && complaint.messages.length
+            ? complaint.messages
+            : [
+                complaint.reason ? { role: 'buyer', username: complaint.buyer_name || order.buyer_name || '买家', content: complaint.reason, created_at: complaint.created_at } : null,
+                complaint.seller_reply ? { role: 'seller', username: order.seller_name || '卖家', content: complaint.seller_reply, created_at: complaint.seller_replied_at || complaint.updated_at } : null
+            ].filter(Boolean);
+        if (!messages.length) return '';
+        return `<div class="complaint-thread-list compact mb-3">${messages.map(msg => `
+            <div class="complaint-thread-item ${msg.role === 'seller' ? 'seller' : 'buyer'}">
+                <div class="d-flex justify-content-between gap-2 mb-1">
+                    <strong>${msg.role === 'seller' ? '卖家' : '买家'}${msg.username ? '：' + Security.escapeHtml(msg.username) : ''}</strong>
+                    <small class="text-muted">${Utils.formatDate(msg.created_at)}</small>
+                </div>
+                <div>${Security.escapeHtml(msg.content || '')}</div>
+            </div>
+        `).join('')}</div>`;
     };
     const renderComplaintCard = (order, role) => `
         <div class="complaint-manage-card">
             <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
                 <div>
                     <div class="fw-bold">${Security.escapeHtml(order.product_title || '-')}</div>
-                    <div class="text-muted small">${role === 'buyer' ? '我是买家' : '我是卖家'} · 订单 ${Security.escapeHtml(order.id || '-')} · ${Utils.formatDate(order.complaint?.created_at || order.purchase_date)}</div>
+                    <div class="text-muted small">${role === 'buyer' ? '我是买家' : '我是卖家'} · 订单 ${Security.escapeHtml(order.id || '-')} · 冻结 ¥${Number(order.frozen_amount || 0).toFixed(2)} · ${Utils.formatDate(order.complaint?.created_at || order.purchase_date)}</div>
                 </div>
                 ${renderStatus(order.complaint)}
             </div>
-            <div class="complaint-reason-box mb-3">${Security.escapeHtml(order.complaint?.reason || '未填写投诉原因')}</div>
-            ${order.complaint?.seller_reply ? `<div class="alert alert-info py-2 small mb-3"><strong>卖家回复：</strong>${Security.escapeHtml(order.complaint.seller_reply)}</div>` : ''}
+            ${renderAdminProgress(order.complaint)}
+            ${renderComplaintMessages(order)}
             <div class="d-flex flex-wrap gap-2 justify-content-end">
-                ${role === 'buyer' && order.complaint?.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${Security.escapeAttr(order.id)}')">撤诉</button>` : ''}
-                ${role === 'seller' && order.complaint?.status === 'open' ? `<button class="btn btn-sm btn-primary" onclick="openSellerComplaintModal('${Security.escapeAttr(order.id)}')">查看并回复</button>` : ''}
+                ${role === 'buyer' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-outline-primary" onclick="openComplaintThreadModal('${Security.escapeAttr(order.id)}', 'buyer')">查看实时情况/继续沟通</button><button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${Security.escapeAttr(order.id)}')">撤诉</button>` : ''}
+                ${role === 'seller' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-primary" onclick="openSellerComplaintModal('${Security.escapeAttr(order.id)}')">查看实时情况/回复</button>` : ''}
             </div>
         </div>
     `;
@@ -3122,6 +3420,76 @@ async function loadComplaintsTab(area) {
             </div>
         </div>
     `;
+}
+
+async function openComplaintThreadModal(orderId, role = 'buyer') {
+    const result = await API.getOrder(orderId);
+    if (!result.success) {
+        Toast.error(result.message || '订单不存在');
+        return;
+    }
+    const order = result.order;
+    const complaint = order.complaint || {};
+    const messages = Array.isArray(complaint.messages) && complaint.messages.length
+        ? complaint.messages
+        : [
+            complaint.reason ? { role: 'buyer', username: complaint.buyer_name || order.buyer_name || '买家', content: complaint.reason, created_at: complaint.created_at } : null,
+            complaint.seller_reply ? { role: 'seller', username: order.seller_name || '卖家', content: complaint.seller_reply, created_at: complaint.seller_replied_at || complaint.updated_at } : null
+        ].filter(Boolean);
+    const statusInfo = (() => {
+        const map = {
+            open: ['warning', '待处理'],
+            processing: ['primary', '处理中'],
+            following: ['info', '跟进中'],
+            resolved: ['success', '已解决'],
+            rejected: ['danger', '已驳回'],
+            withdrawn: ['secondary', '已撤诉']
+        };
+        return map[complaint.status || 'open'] || ['info', complaint.status || '已记录'];
+    })();
+    const activeComplaint = !['resolved', 'rejected', 'withdrawn'].includes(complaint.status || 'open');
+    const adminProgressHtml = (complaint.admin_reply || complaint.admin_status_by || complaint.admin_replied_by) ? `
+        <div class="alert alert-info py-2 small mb-3">
+            <div class="d-flex justify-content-between gap-2 mb-1">
+                <strong><i class="bi bi-headset me-1"></i>平台处理状态：${Security.escapeHtml(statusInfo[1])}</strong>
+                <span class="text-muted">${Utils.formatDate(complaint.admin_status_at || complaint.admin_replied_at || complaint.updated_at)}</span>
+            </div>
+            ${complaint.admin_reply ? `<div><strong>平台回复：</strong>${Security.escapeHtml(complaint.admin_reply)}</div>` : '<div class="text-muted">平台已更新处理状态，请留意后续处理结果。</div>'}
+        </div>
+    ` : '';
+    const messagesHtml = messages.map(msg => `
+        <div class="complaint-thread-item ${msg.role === 'seller' ? 'seller' : 'buyer'}">
+            <div class="d-flex justify-content-between gap-2 mb-1">
+                <strong>${msg.role === 'seller' ? '卖家' : '买家'}${msg.username ? '：' + Security.escapeHtml(msg.username) : ''}</strong>
+                <small class="text-muted">${Utils.formatDate(msg.created_at)}</small>
+            </div>
+            <div>${Security.escapeHtml(msg.content || '')}</div>
+        </div>
+    `).join('');
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h6 class="fw-bold mb-3"><i class="bi bi-chat-dots me-1"></i>投诉实时情况</h6>
+        <div class="bg-light rounded-3 p-3 mb-3 small">
+            <div><strong>商品：</strong>${Security.escapeHtml(order.product_title || '-')}</div>
+            <div><strong>冻结金额：</strong>¥${Number(order.frozen_amount || 0).toFixed(2)}</div>
+            <div><strong>当前状态：</strong><span class="badge badge-${statusInfo[0]}">${Security.escapeHtml(statusInfo[1])}</span></div>
+            <div><strong>最近更新：</strong>${Utils.formatDate(complaint.updated_at || complaint.created_at)}</div>
+        </div>
+        ${adminProgressHtml}
+        <div class="complaint-thread-list mb-3">${messagesHtml || '<div class="text-muted small">暂无沟通记录</div>'}</div>
+        ${activeComplaint ? `
+            <div class="mb-3">
+                <label class="form-label">继续回复</label>
+                <textarea class="form-control" id="complaintReplyContent" rows="4" maxlength="500" placeholder="请输入要补充说明的内容"></textarea>
+                <small class="text-muted">最多 500 字</small>
+            </div>
+        ` : '<div class="alert alert-secondary py-2 small mb-0">该投诉已结束，不能继续回复。</div>'}
+    `;
+    document.getElementById('purchaseFooter').innerHTML = `
+        <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+        ${activeComplaint ? `<button class="btn btn-primary" onclick="submitComplaintReply('${Security.escapeAttr(orderId)}', 'complaints')">提交回复</button>` : ''}
+    `;
+    modal.show();
 }
 
 function openCommentModal(productId, orderId) {

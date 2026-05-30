@@ -130,6 +130,71 @@ keynest_require_installed(false);
         .logs-panel { margin-bottom: 28px; }
         .log-meta { color: var(--muted); font-size: .86rem; }
         @media (max-width: 980px) { .admin-shell { grid-template-columns: 1fr; } .sidebar { position: relative; height: auto; } .content { padding: 20px; } .topbar { align-items: flex-start; flex-direction: column; } .log-viewer.logs-page-viewer { height: 420px; max-height: 55vh; } }
+        html, body { overflow-x: hidden; }
+        img, video, canvas, svg { max-width: 100%; }
+        .table-responsive { -webkit-overflow-scrolling: touch; }
+        @media (min-width: 981px) and (max-width: 1280px) {
+            .admin-shell { grid-template-columns: 240px 1fr; }
+            .sidebar { padding: 22px 14px; }
+            .side-link { padding: 11px 12px; }
+            .content { padding: 24px; }
+            .stat-card { padding: 18px; }
+        }
+        @media (max-width: 980px) {
+            .sidebar { padding: 18px; overflow: visible; }
+            .brand { margin-bottom: 16px; }
+            .nav-title { margin: 16px 4px 8px; }
+            .sidebar .side-link { display: inline-flex; width: auto; margin: 0 6px 8px 0; border-radius: 999px; padding: 10px 13px; white-space: nowrap; }
+            .sidebar .side-link.active { box-shadow: inset 0 -3px 0 #818cf8; }
+            .content { min-width: 0; }
+            .topbar { gap: 12px; margin-bottom: 18px; }
+            .topbar h1 { font-size: clamp(1.45rem, 5vw, 2rem); }
+            .panel { padding: 18px; border-radius: 20px; }
+            .panel-title { align-items: flex-start; flex-direction: column; gap: 10px; }
+            .table-responsive { margin-inline: -8px; padding-inline: 8px; }
+            .table { min-width: 760px; }
+            .membership-admin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 640px) {
+            .login-wrap { padding: 14px; align-items: start; padding-top: min(12vh, 72px); }
+            .login-card { padding: 24px 18px; border-radius: 22px; }
+            .admin-shell { display: block; }
+            .sidebar { position: sticky; top: 0; z-index: 100; border-radius: 0; padding: 14px 12px; max-height: 46vh; overflow-y: auto; }
+            .brand-icon { width: 40px; height: 40px; border-radius: 14px; }
+            .brand strong { font-size: 1rem; }
+            .brand span, .nav-title { display: none; }
+            .content { padding: 16px 12px 24px; }
+            .topbar { flex-direction: column; align-items: stretch; }
+            .user-pill { width: 100%; justify-content: space-between; padding: 9px 12px; }
+            .profile-dropdown { position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px; width: auto; max-height: calc(100dvh - 24px); overflow-y: auto; border-radius: 20px; }
+            .profile-dropdown::before { display: none; }
+            .profile-status-row { align-items: flex-start; flex-direction: column; gap: 3px; }
+            .stat-card { padding: 16px; border-radius: 18px; }
+            .stat-value { font-size: 1.55rem; }
+            .panel { padding: 14px; border-radius: 18px; }
+            .panel-title h5 { font-size: 1rem; }
+            .settings-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
+            .settings-tab { flex: 0 0 auto; padding: 8px 12px; }
+            .toast-box { left: 12px; right: 12px; top: auto; bottom: 12px; }
+            .admin-toast { min-width: 0; width: 100%; }
+            .admin-confirm { padding: 20px; border-radius: 20px; }
+            .admin-confirm-actions { flex-direction: column-reverse; }
+            .admin-confirm-actions .btn { width: 100%; justify-content: center; }
+            .membership-admin-grid, .complaint-grid-admin { grid-template-columns: 1fr; }
+            .order-status-editor { align-items: stretch; flex-direction: column; }
+            .order-status-option { width: 100%; }
+            .log-toolbar { align-items: stretch; flex-direction: column; }
+            .log-toolbar .form-control, .log-toolbar .form-select, .log-toolbar .btn { width: 100%; }
+            .log-viewer, .log-viewer.logs-page-viewer { height: 360px; max-height: 55vh; font-size: 11px; }
+            .modal-dialog { margin: .5rem; }
+            .modal-content { border-radius: 18px; max-height: calc(100dvh - 1rem); overflow: hidden; }
+            .modal-body { overflow-y: auto; }
+        }
+        @media (max-width: 420px) {
+            .sidebar .side-link { width: 100%; justify-content: flex-start; }
+            .table { min-width: 680px; }
+            .btn { white-space: normal; }
+        }
     </style>
 </head>
 <body>
@@ -170,6 +235,7 @@ keynest_require_installed(false);
         <button class="side-link" data-page="orders" onclick="switchAdminPage('orders')"><i class="bi bi-receipt-cutoff"></i>订单记录</button>
         <button class="side-link" data-page="complaints" onclick="switchAdminPage('complaints')"><i class="bi bi-exclamation-octagon-fill"></i>投诉管理</button>
         <button class="side-link" data-page="finance" onclick="switchAdminPage('finance')"><i class="bi bi-wallet2"></i>充值提现</button>
+        <button class="side-link" data-page="merchant_review" onclick="switchAdminPage('merchant_review')"><i class="bi bi-shop-window"></i>商家审核</button>
         <button class="side-link" data-page="cards" onclick="switchAdminPage('cards')"><i class="bi bi-credit-card-2-front-fill"></i>卡密管理</button>
         <button class="side-link" data-page="membership" onclick="switchAdminPage('membership')"><i class="bi bi-gem"></i>会员等级</button>
         <button class="side-link" data-page="settings" onclick="switchAdminPage('settings')"><i class="bi bi-gear-fill"></i>系统设置</button>
@@ -199,7 +265,7 @@ keynest_require_installed(false);
 </section>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {} };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null };
 const apiBase = '/api/';
 
 function escapeHtml(value) {
@@ -225,6 +291,7 @@ function showToast(message, type = 'info') {
 }
 async function request(endpoint, method = 'GET', data = null) {
     const options = { method, headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' } };
+    if (Admin.csrfToken) options.headers['X-CSRF-Token'] = Admin.csrfToken;
     if (data) options.body = new URLSearchParams(data).toString();
     try {
         const res = await fetch(apiBase + endpoint, options);
@@ -236,6 +303,7 @@ async function request(endpoint, method = 'GET', data = null) {
             const preview = text ? text.slice(0, 1000) : '空响应';
             return { success: false, message: `服务器返回异常内容（HTTP ${res.status}）：${preview}` };
         }
+        if (json.csrf_token) Admin.csrfToken = json.csrf_token;
         if (!res.ok) {
             const detail = json.output ? '\n' + json.output : '';
             return { success: false, message: (json.message || ('请求失败：' + res.status)) + detail, status: res.status, ...json };
@@ -273,7 +341,7 @@ function refreshAdminProfileUI() {
 }
 function restoreAdminState() {
     const validPages = ['overview', 'users', 'products', 'orders', 'complaints', 'finance', 'cards', 'settings', 'membership', 'updates', 'logs'];
-    const validSettingsTabs = ['basic', 'payment', 'login', 'email', 'captcha', 'announcement'];
+    const validSettingsTabs = ['basic', 'payment', 'login', 'agreements', 'email', 'captcha', 'announcement'];
     const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
     const storedPage = localStorage.getItem('keynest_admin_page');
     const storedTab = localStorage.getItem('keynest_admin_settings_tab');
@@ -338,7 +406,7 @@ async function adminLogout() {
 function renderAdminProfileDropdown() {
     const box = document.getElementById('adminProfileDropdown');
     if (!box || !Admin.user) return;
-    const qqBound = !!Admin.user.qq_openid;
+    const qqBound = !!Admin.user.qq_bound;
     box.innerHTML = `
         <div class="profile-dropdown-head">
             <div class="avatar" style="width:48px;height:48px;font-size:1.2rem;">${escapeHtml((Admin.user.username || 'A').charAt(0).toUpperCase())}</div>
@@ -444,7 +512,7 @@ function switchAdminPage(page, settingsTab = null) {
 }
 function setTitle(title) { document.getElementById('pageTitle').textContent = title; }
 function renderPage() {
-    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
+    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, merchant_review: renderMerchantReview, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
     updateAdminNavActive(Admin.page === 'settings' && Admin.settingsTab === 'payment' ? 'payment' : null);
     (renderers[Admin.page] || renderOverview)();
 }
@@ -622,6 +690,45 @@ async function deleteUserAdmin(id) {
     await loadAdminData();
     renderUsers();
 }
+function renderMerchantReview() {
+    setTitle('商家审核');
+    const users = (Admin.cache.users || []).filter(u => u.merchant_status === 'pending');
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <div>
+                    <h5>重新开通审核</h5>
+                    <div class="small text-muted mt-1">首次开通自动通过；这里仅处理后续重新开通的商家申请。</div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
+            </div>
+            ${users.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>收款方式</th><th>电子签名</th><th>申请时间</th><th>操作</th></tr></thead><tbody>${users.map(u => merchantReviewRow(u)).join('')}</tbody></table></div>` : '<div class="text-muted py-4 text-center">暂无待审核商家重新开通申请</div>'}
+        </div>`;
+}
+function merchantReviewRow(u) {
+    const methods = u.payment_methods && typeof u.payment_methods === 'object' ? u.payment_methods : {};
+    const methodHtml = Object.entries(methods).filter(([, item]) => item && item.account && item.qrcode).map(([key, item]) => `<span class="method-chip"><i class="bi ${key === 'wechat' ? 'bi-wechat' : 'bi-alipay'}"></i>${escapeHtml(item.account)}</span>`).join('') || '<span class="text-muted">未配置</span>';
+    const signature = u.merchant_signature ? `<a href="${escapeHtml(u.merchant_signature)}" target="_blank" rel="noopener">查看签名</a>` : '<span class="text-danger">未上传</span>';
+    return `<tr><td><strong>${escapeHtml(u.username || '-')}</strong><div class="small text-muted">${escapeHtml(u.email || '-')}</div></td><td>${methodHtml}</td><td>${signature}</td><td>${dateText(u.merchant_reapply_at || u.merchant_rules_accepted_at)}</td><td><button class="btn btn-sm btn-success me-1" onclick="reviewMerchant('${escapeHtml(u.id)}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="reviewMerchant('${escapeHtml(u.id)}','reject')">拒绝</button></td></tr>`;
+}
+async function reviewMerchant(id, decision) {
+    const user = (Admin.cache.users || []).find(u => u.id === id);
+    if (!user) return showToast('用户不存在', 'error');
+    const ok = await adminConfirm({
+        title: decision === 'approve' ? '通过商家开通？' : '拒绝商家开通？',
+        message: `确认${decision === 'approve' ? '通过' : '拒绝'}用户“${user.username || '-'}”的商家重新开通申请？`,
+        confirmText: decision === 'approve' ? '确认通过' : '确认拒绝',
+        cancelText: '取消',
+        danger: decision !== 'approve'
+    });
+    if (!ok) return;
+    const res = await request('admin.php?action=review_merchant', 'POST', { id, decision });
+    if (!res.success) return showToast(res.message || '处理失败', 'error');
+    showToast(res.message || '已处理', 'success');
+    await loadAdminData();
+    renderMerchantReview();
+}
+
 function renderProducts() {
     setTitle('商品管理');
     const products = Admin.cache.products || [];
@@ -666,6 +773,9 @@ function renderProducts() {
                                 <td>${p.stock || 0}</td>
                                 <td>${p.sales || 0}</td>
                                 <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary me-1" onclick="openProductStockModal('${escapeHtml(p.id)}')">
+                                        <i class="bi bi-list-ul me-1"></i>查看库存
+                                    </button>
                                     <button class="btn btn-sm btn-outline-danger" onclick="deleteProductAdmin('${escapeHtml(p.id)}')">
                                         <i class="bi bi-trash me-1"></i>删除
                                     </button>
@@ -698,6 +808,87 @@ function updateProductBatchToolbar() {
 function toggleAllProductSelection(checked) {
     document.querySelectorAll('.product-select').forEach(input => { input.checked = checked; });
     updateProductBatchToolbar();
+}
+function stockDisplayText(item) {
+    if (!item) return '-';
+    if (item.format === 'line' && item.content) return item.content;
+    const parts = [];
+    if (item.email) parts.push('邮箱：' + item.email);
+    if (item.password) parts.push('密码：' + item.password);
+    if (item.client_id && item.client_id !== 'N/A') parts.push('Client ID：' + item.client_id);
+    if (item.fresh_token && item.fresh_token !== 'N/A') parts.push('Fresh Token：' + item.fresh_token);
+    return parts.join(' | ') || item.content || '-';
+}
+async function openProductStockModal(id) {
+    const product = (Admin.cache.products || []).find(p => p.id === id);
+    const modalId = 'productStockModal';
+    document.getElementById(modalId)?.remove();
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = modalId;
+    modal.innerHTML = `
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">查看库存</h5>
+                        <div class="small text-muted">${escapeHtml(product?.title || id)}</div>
+                    </div>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="productStockModalBody">
+                    <div class="text-center text-muted py-5"><span class="spinner-border spinner-border-sm me-2"></span>正在加载库存...</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    const instance = new bootstrap.Modal(modal);
+    instance.show();
+    await loadProductStockIntoModal(id);
+}
+async function loadProductStockIntoModal(id) {
+    const body = document.getElementById('productStockModalBody');
+    if (!body) return;
+    const res = await request('admin.php?action=product_stock&id=' + encodeURIComponent(id));
+    if (!res.success) {
+        body.innerHTML = `<div class="alert alert-danger">${escapeHtml(res.message || '库存加载失败')}</div>`;
+        return;
+    }
+    const items = Array.isArray(res.items) ? res.items : [];
+    const unsold = items.filter(item => !item.sold).length;
+    const sold = items.filter(item => item.sold).length;
+    body.innerHTML = `
+        <div class="row g-3 mb-3">
+            <div class="col-md-4"><div class="border rounded-4 p-3"><div class="text-muted small">当前可售库存</div><strong>${unsold}</strong></div></div>
+            <div class="col-md-4"><div class="border rounded-4 p-3"><div class="text-muted small">已售库存</div><strong>${sold}</strong></div></div>
+            <div class="col-md-4"><div class="border rounded-4 p-3"><div class="text-muted small">后台记录总数</div><strong>${items.length}</strong></div></div>
+        </div>
+        ${items.length ? `<div class="table-responsive"><table class="table"><thead><tr><th style="width:76px">序号</th><th>库存内容</th><th style="width:96px">状态</th><th style="width:110px" class="text-end">操作</th></tr></thead><tbody>${items.map(item => `
+            <tr>
+                <td>#${Number(item.index) + 1}</td>
+                <td><pre class="mb-0 small" style="white-space:pre-wrap;word-break:break-word;max-width:720px;">${escapeHtml(stockDisplayText(item))}</pre></td>
+                <td>${item.sold ? '<span class="badge-soft info">已售</span>' : '<span class="badge-soft success">可售</span>'}</td>
+                <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteProductStockItem('${escapeHtml(res.product.id)}', ${Number(item.index)})" ${item.sold ? 'disabled title="已售库存不能删除"' : ''}>删除</button></td>
+            </tr>`).join('')}</tbody></table></div>` : '<div class="text-muted text-center py-4">暂无库存记录</div>'}
+    `;
+}
+async function deleteProductStockItem(id, index) {
+    const ok = await adminConfirm({
+        title: '删除这条库存？',
+        message: '删除后该库存将不再出售，此操作不可恢复。已售库存不会被允许删除。',
+        confirmText: '确认删除',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!ok) return;
+    const res = await request('admin.php?action=delete_product_stock', 'POST', { id, index });
+    if (!res.success) return showToast(res.message || '删除库存失败', 'error');
+    showToast(res.message || '库存已删除', 'success');
+    await loadAdminData();
+    await loadProductStockIntoModal(id);
 }
 async function deleteProductAdmin(id) {
     const product = (Admin.cache.products || []).find(p => p.id === id);
@@ -912,9 +1103,49 @@ function withdrawMethodText(method) {
     const map = { alipay: '支付宝', wechat: '微信', bank: '银行卡' };
     return map[method] || method || '-';
 }
-function renderFinance() { setTitle('充值提现'); document.getElementById('adminContent').innerHTML = `<div class="panel"><div class="panel-title"><div><h5>申请列表</h5><div class="small text-muted mt-1">点击“查看收款信息”核对客户账号和收款码后再转账。</div></div><button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button></div>${requestTable(Admin.cache.requests || [])}</div>`; }
+function renderFinance() {
+    setTitle('充值提现');
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <div>
+                    <h5>申请列表</h5>
+                    <div class="small text-muted mt-1">点击“查看收款信息”核对客户账号和收款码后再转账。</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button id="batchDeleteFinanceBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedFinanceRequests()" disabled>
+                        <i class="bi bi-trash3 me-1"></i>批量删除
+                    </button>
+                    <button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button>
+                </div>
+            </div>
+            ${requestTable(Admin.cache.requests || [])}
+        </div>`;
+    updateFinanceBatchToolbar();
+}
 function requestList(list) { if (!list.length) return '<div class="text-muted py-4 text-center">暂无待处理申请</div>'; return list.map(r => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><strong>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</strong><div class="small text-muted">${r.id && r.id.startsWith('wd_') ? '提现' : '充值'} · ${money(r.amount)} · ${dateText(r.created_at)}</div></div>${statusBadge(r.status)}</div>`).join(''); }
-function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th>用户邮箱</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}${r.actual_amount ? `<div class="small text-muted">实到 ${money(r.actual_amount)}</div>` : ''}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td><div class="d-flex flex-wrap gap-1">${r.id && r.id.startsWith('wd_') ? `<button class="btn btn-sm btn-outline-primary" onclick="openWithdrawRequestDetail('${escapeHtml(r.id)}')">查看收款信息</button>` : ''}${r.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="handleRequest('${r.id}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : ''}${r.status !== 'pending' && !(r.id && r.id.startsWith('wd_')) ? '-' : ''}</div></td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
+function requestTable(list) { return `<div class="table-responsive"><table class="table"><thead><tr><th style="width:44px"><input class="form-check-input" type="checkbox" id="financeSelectAll" onchange="toggleAllFinanceSelection(this.checked)" ${list.length ? '' : 'disabled'}></th><th>用户邮箱</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>${list.map(r => `<tr><td><input class="form-check-input finance-select" type="checkbox" value="${escapeHtml(r.id)}" onchange="updateFinanceBatchToolbar()"></td><td>${escapeHtml(recordUserEmail(r, 'user_id', r.username || r.user_id))}</td><td>${r.id && r.id.startsWith('wd_') ? '提现' : '充值'}</td><td>${money(r.amount)}${r.actual_amount ? `<div class="small text-muted">实到 ${money(r.actual_amount)}</div>` : ''}</td><td>${statusBadge(r.status)}</td><td>${dateText(r.created_at)}</td><td><div class="d-flex flex-wrap gap-1">${r.id && r.id.startsWith('wd_') ? `<button class="btn btn-sm btn-outline-primary" onclick="openWithdrawRequestDetail('${escapeHtml(r.id)}')">查看收款信息</button>` : ''}${r.status === 'pending' ? `<button class="btn btn-sm btn-outline-danger" onclick="handleRequest('${r.id}','reject')">拒绝</button>` : ''}<button class="btn btn-sm btn-outline-danger" onclick="deleteFinanceRequest('${escapeHtml(r.id)}')">删除</button></div></td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">暂无申请</td></tr>'}</tbody></table></div>`; }
+function selectedFinanceRequestIds() {
+    return Array.from(document.querySelectorAll('.finance-select:checked')).map(input => input.value).filter(Boolean);
+}
+function updateFinanceBatchToolbar() {
+    const checkboxes = Array.from(document.querySelectorAll('.finance-select'));
+    const selectedCount = checkboxes.filter(input => input.checked).length;
+    const batchBtn = document.getElementById('batchDeleteFinanceBtn');
+    const selectAll = document.getElementById('financeSelectAll');
+    if (batchBtn) {
+        batchBtn.disabled = selectedCount === 0;
+        batchBtn.innerHTML = `<i class="bi bi-trash3 me-1"></i>${selectedCount ? '批量删除 (' + selectedCount + ')' : '批量删除'}`;
+    }
+    if (selectAll) {
+        selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+}
+function toggleAllFinanceSelection(checked) {
+    document.querySelectorAll('.finance-select').forEach(input => { input.checked = checked; });
+    updateFinanceBatchToolbar();
+}
 function openWithdrawRequestDetail(id) {
     const r = (Admin.cache.requests || []).find(item => item.id === id);
     if (!r) return showToast('提现申请不存在，请刷新后重试', 'error');
@@ -952,7 +1183,8 @@ function openWithdrawRequestDetail(id) {
                     </div>
                     <div class="text-center border rounded-4 p-3 bg-light">
                         <div class="fw-semibold mb-2">客户收款码</div>
-                        ${r.qrcode_url ? `<img src="${escapeHtml(r.qrcode_url)}" alt="收款码" style="max-width:260px;max-height:260px;border-radius:16px;background:#fff;padding:8px;box-shadow:0 8px 24px rgba(15,23,42,.12);" onerror="this.outerHTML='<div class=\'text-danger py-4\'>收款码加载失败，请点击下方链接打开</div>';"><div class="mt-2"><a href="${escapeHtml(r.qrcode_url)}" target="_blank" rel="noopener">新窗口打开收款码</a></div>` : '<div class="text-danger py-4">客户没有提交收款码</div>'}
+                        ${r.qrcode_url ? `<img src="${escapeHtml(r.qrcode_url)}" alt="收款码" role="button" title="点击放大查看" onclick="openWithdrawQrPreview('${escapeHtml(r.qrcode_url)}')" style="cursor:zoom-in;max-width:260px;max-height:260px;border-radius:16px;background:#fff;padding:8px;box-shadow:0 8px 24px rgba(15,23,42,.12);" onerror="this.outerHTML='<div class=\'text-danger py-4\'>收款码加载失败</div>';">` : '<div class="text-danger py-4">客户没有提交收款码</div>'}
+                        ${r.qrcode_url ? '<div class="small text-muted mt-2">点击图片可在当前页面放大查看</div>' : ''}
                     </div>
                     ${r.admin_note ? `<div class="alert alert-light border small mt-3 mb-0">处理备注：${escapeHtml(r.admin_note)}</div>` : ''}
                 </div>
@@ -977,11 +1209,65 @@ async function copyAdminWithdrawAccount() {
         showToast('收款账号已复制', 'success');
     }
 }
+function openWithdrawQrPreview(url) {
+    if (!url) return;
+    const modalId = 'withdrawQrPreviewModal';
+    document.getElementById(modalId)?.remove();
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = modalId;
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-qr-code me-2 text-primary"></i>收款码预览</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center bg-light">
+                    <img src="${escapeHtml(url)}" alt="收款码预览" style="max-width:100%;max-height:70vh;border-radius:18px;background:#fff;padding:10px;box-shadow:0 12px 32px rgba(15,23,42,.16);">
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
 async function handleRequestFromDetail(id, action) {
     await handleRequest(id, action);
     bootstrap.Modal.getInstance(document.getElementById('withdrawRequestDetailModal'))?.hide();
 }
 async function handleRequest(id, action) { const res = await request(`finance.php?action=${action}`, 'POST', { id }); if (!res.success) return showToast(res.message || '操作失败', 'error'); showToast(res.message || '操作成功', 'success'); await loadAdminData(); }
+async function deleteFinanceRequest(id) {
+    const item = (Admin.cache.requests || []).find(r => r.id === id);
+    if (!item) return showToast('记录不存在', 'error');
+    const confirmed = await adminConfirm({
+        title: '删除申请记录？',
+        message: '确定删除这条' + (id.startsWith('wd_') ? '提现' : '充值') + '记录吗？此操作不可恢复。',
+        confirmText: '删除',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!confirmed) return;
+    const res = await request('finance.php?action=delete_request', 'POST', { id });
+    if (!res.success) return showToast(res.message || '删除失败', 'error');
+    showToast(res.message || '记录已删除', 'success');
+    await loadAdminData();
+}
+async function deleteSelectedFinanceRequests() {
+    const ids = selectedFinanceRequestIds();
+    if (!ids.length) return showToast('请先选择要删除的记录', 'error');
+    const confirmed = await adminConfirm({
+        title: '批量删除申请记录？',
+        message: '确定删除选中的 ' + ids.length + ' 条充值/提现记录吗？此操作不可恢复。',
+        confirmText: '批量删除',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!confirmed) return;
+    const res = await request('finance.php?action=delete_requests', 'POST', { ids: JSON.stringify(ids) });
+    if (!res.success) return showToast(res.message || '批量删除失败', 'error');
+    showToast(res.message || '已删除选中记录', 'success');
+    await loadAdminData();
+}
 function renderCards() {
     setTitle('卡密管理');
     const cards = Admin.cache.cards || [];
@@ -1493,6 +1779,7 @@ function renderSettings() {
         ['basic', '基础设置'],
         ['payment', '支付设置'],
         ['login', '登录注册'],
+        ['agreements', '协议管理'],
         ['email', '邮箱验证'],
         ['captcha', '人机验证'],
         ['announcement', '公告设置']
@@ -1507,7 +1794,7 @@ function renderSettings() {
 }
 function switchSettingsTab(tab) { Admin.settingsTab = tab; saveAdminState(); renderSettings(); }
 function renderSettingsContent() {
-    const map = { basic: renderBasicSettings, payment: renderPaymentSettingsOnly, login: renderReservedLoginSettings, email: renderReservedEmailSettings, captcha: renderReservedCaptchaSettings, announcement: renderReservedAnnouncementSettings };
+    const map = { basic: renderBasicSettings, payment: renderPaymentSettingsOnly, login: renderReservedLoginSettings, agreements: renderAgreementSettings, email: renderReservedEmailSettings, captcha: renderReservedCaptchaSettings, announcement: renderReservedAnnouncementSettings };
     (map[Admin.settingsTab] || renderBasicSettings)('settingsContent');
 }
 function renderBasicSettings(targetId = 'settingsContent') {
@@ -1567,6 +1854,27 @@ function renderReservedLoginSettings(targetId = 'settingsContent') {
     const caihongCallback = c.oauth_caihong_redirect_uri || oauthCallbackUrl('caihong');
     document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>登录注册</h5><button class="btn btn-sm btn-primary" onclick="saveLoginSettings()">保存登录设置</button></div><div class="config-help mb-3">这里控制第三方登录以及注册/登录是否需要人机验证。发送邮箱验证码始终会强制进行人机验证。</div><div class="row g-3 mb-3"><div class="col-md-6"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="captchaLoginEnabled" ${c.captcha_login_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaLoginEnabled"><strong>登录时启用人机验证</strong><span>开启后用户登录前需要先通过验证。</span></label></div></div><div class="col-md-6"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="captchaRegisterEnabled" ${c.captcha_register_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaRegisterEnabled"><strong>注册时启用人机验证</strong><span>开启后用户提交注册前需要先通过验证。</span></label></div></div></div><div class="row g-3">${oauthCard({ id: 'oauthQq', title: 'QQ 官方登录', desc: 'QQ 互联网站应用', enabled: c.oauth_qq_enabled, help: `回调地址：<code>${escapeHtml(qqCallback)}</code> <button class="btn btn-sm btn-outline-primary ms-2" type="button" onclick="copyText('${oauthCallbackUrl('qq')}')">复制默认</button>`, fields: [oauthField('oauthQqAppId', 'App ID', c.oauth_qq_app_id, '例如 1020xxxxx'), oauthField('oauthQqAppKey', 'App Key', '', c.oauth_qq_app_key ? '已配置，留空不修改' : '填写 QQ App Key', 'password'), oauthField('oauthQqRedirectUri', '回调地址', qqCallback)] })}${oauthCard({ id: 'oauthWechat', title: '微信官方登录', desc: '微信开放平台网站应用', enabled: c.oauth_wechat_enabled, help: `回调地址：<code>${escapeHtml(wechatCallback)}</code> <button class="btn btn-sm btn-outline-primary ms-2" type="button" onclick="copyText('${oauthCallbackUrl('wechat')}')">复制默认</button>`, fields: [oauthField('oauthWechatAppId', 'App ID', c.oauth_wechat_app_id, '例如 wx123456'), oauthField('oauthWechatAppSecret', 'App Secret', '', c.oauth_wechat_app_secret ? '已配置，留空不修改' : '填写 App Secret', 'password'), oauthField('oauthWechatRedirectUri', '回调地址', wechatCallback)] })}${oauthCard({ id: 'oauthCaihong', title: '彩虹聚合登录', desc: '聚合登录平台参数', enabled: c.oauth_caihong_enabled, help: `网关、商户 ID 和通信 Key 由聚合登录服务商提供。<br>当前前台域名：<code>${escapeHtml(location.hostname)}</code><br><strong>注意：</strong>如果前台是 <code>shop.uzip.cn</code>，聚合平台白名单也要填 <code>shop.uzip.cn</code>，只填 <code>uzip.cn</code> 可能会被判定为回调域名未授权。`, fields: [oauthField('oauthCaihongApiUrl', '聚合登录网关', c.oauth_caihong_api_url, 'https://login.example.com/'), oauthField('oauthCaihongAppId', '商户 / App ID', c.oauth_caihong_app_id), oauthField('oauthCaihongKey', '通信 Key', '', c.oauth_caihong_key ? '已配置，留空不修改' : '填写通信 Key', 'password'), oauthField('oauthCaihongRedirectUri', '回调地址', caihongCallback)] })}</div></div>`;
     toggleOauthConfig();
+}
+function renderAgreementSettings(targetId = 'settingsContent') {
+    const c = Admin.cache.sysConfig || {};
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><div><h5>协议管理</h5><div class="small text-muted mt-1">用户注册必须勾选同意协议后才能提交，前台展示内容从这里读取。</div></div><button class="btn btn-sm btn-primary" onclick="saveAgreementSettings()">保存协议</button></div><div class="config-help mb-3">支持 Markdown 格式。用户协议用于注册提示；商家协议用于商品发布、销售和结算规则说明。</div><div class="row g-3"><div class="col-lg-6"><label class="form-label">用户协议标题</label><input id="userAgreementTitle" class="form-control" value="${escapeHtml(c.user_agreement_title || '用户协议')}"><label class="form-label mt-3">用户协议内容</label><textarea id="userAgreementContent" class="form-control" rows="18" oninput="updateAgreementPreview('user')">${escapeHtml(c.user_agreement_content || '')}</textarea></div><div class="col-lg-6"><label class="form-label">用户协议预览</label><div id="userAgreementPreview" class="markdown-preview" style="min-height:440px;max-height:620px;overflow:auto"></div></div><div class="col-lg-6"><label class="form-label">商家协议标题</label><input id="merchantAgreementTitle" class="form-control" value="${escapeHtml(c.merchant_agreement_title || '商家协议')}"><label class="form-label mt-3">商家协议内容</label><textarea id="merchantAgreementContent" class="form-control" rows="18" oninput="updateAgreementPreview('merchant')">${escapeHtml(c.merchant_agreement_content || '')}</textarea></div><div class="col-lg-6"><label class="form-label">商家协议预览</label><div id="merchantAgreementPreview" class="markdown-preview" style="min-height:440px;max-height:620px;overflow:auto"></div></div><div class="col-12"><button class="btn btn-primary" onclick="saveAgreementSettings()"><i class="bi bi-check2-circle me-1"></i>保存协议内容</button></div></div></div>`;
+    updateAgreementPreview('user');
+    updateAgreementPreview('merchant');
+}
+function updateAgreementPreview(type) {
+    const isMerchant = type === 'merchant';
+    const sourceId = isMerchant ? 'merchantAgreementContent' : 'userAgreementContent';
+    const previewId = isMerchant ? 'merchantAgreementPreview' : 'userAgreementPreview';
+    const preview = document.getElementById(previewId);
+    if (preview) preview.innerHTML = markdownToHtml(fieldValue(sourceId)) || '<span class="text-muted">暂无内容</span>';
+}
+async function saveAgreementSettings() {
+    await saveSystemConfigFields({
+        user_agreement_title: fieldValue('userAgreementTitle'),
+        user_agreement_content: fieldValue('userAgreementContent'),
+        merchant_agreement_title: fieldValue('merchantAgreementTitle'),
+        merchant_agreement_content: fieldValue('merchantAgreementContent')
+    }, '协议内容已保存');
 }
 async function saveLoginSettings() {
     const c = Admin.cache.sysConfig || {};

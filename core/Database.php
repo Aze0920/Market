@@ -519,7 +519,11 @@ class Database {
             'announcement_title' => '',
             'announcement_content' => '',
             'announcement_position' => 'home',
-            'announcement_items' => []
+            'announcement_items' => [],
+            'user_agreement_title' => 'KeyNest 用户服务协议',
+            'user_agreement_content' => "# KeyNest 用户服务协议\n\n欢迎使用 KeyNest 虚拟商品交易平台。注册或使用本平台，即表示你已阅读并同意本协议。\n\n## 1. 账号与安全\n\n- 你应使用真实、有效的信息注册账号，并妥善保管账号和密码。\n- 因账号保管不善造成的损失，由账号使用者自行承担。\n- 不得冒用他人身份、恶意注册、批量注册或从事影响平台正常运行的行为。\n\n## 2. 交易规则\n\n- 你应在交易前仔细确认商品标题、描述、库存说明、发货方式和售后规则。\n- 虚拟商品具有即时交付、易复制等特性，购买后请及时核验交付内容。\n- 如出现商品不符、无法使用等问题，应优先通过平台投诉或沟通流程处理。\n\n## 3. 禁止行为\n\n- 禁止发布或购买违法违规、侵权、诈骗、赌博、色情、木马病毒、黑灰产等内容。\n- 禁止利用平台洗钱、套现、刷单、恶意投诉、恶意退款或扰乱交易秩序。\n- 平台有权对违规账号、商品、订单采取限制、下架、冻结、封禁等措施。\n\n## 4. 风险提示\n\n- 虚拟商品交易存在账号失效、服务变更、第三方平台限制等风险。\n- 平台将尽力维护交易秩序，但不对用户之间私下约定或脱离平台的交易承担责任。\n\n## 5. 协议变更\n\n平台可根据业务和法律要求更新本协议，更新后将通过页面展示或公告方式提示。继续使用平台即视为接受更新后的协议。",
+            'merchant_agreement_title' => 'KeyNest 商家守则、免责声明与商家质保',
+            'merchant_agreement_content' => "# KeyNest 商家守则、免责声明与商家质保\n\n当你申请开通商家、发布商品、添加库存或作为卖家收款时，即表示你已阅读并同意本守则。\n\n## 1. 商家守则\n\n- 商家应确保商品来源合法、描述真实、库存有效、交付内容可正常使用。\n- 商品标题、图片、描述、价格、库存和售后说明不得夸大、误导或隐瞒重要信息。\n- 禁止发布违法违规、侵权盗版、诈骗钓鱼、黑灰产、恶意软件、个人隐私数据等商品。\n- 商家应及时处理订单、发货、售后和用户咨询，不得恶意拖延、诱导站外交易或逃避平台规则。\n\n## 2. 免责声明\n\n- 商家确认已充分了解虚拟商品交易风险，并自行承担因商品来源、授权、交付、售后等产生的责任。\n- 因商家商品描述不清、违规发布、无法交付、售后拒绝处理等造成的纠纷、退款、赔付或法律责任，由商家自行承担。\n- 平台可根据投诉、风控或监管要求对商品、订单、资金和商家资格采取限制、冻结、下架或关闭等必要措施。\n\n## 3. 商家质保\n\n- 商家承诺对所售商品提供明确、有效的质量保障和售后说明，并按承诺处理补发、换货、退款或技术支持。\n- 如商品存在不可用、与描述不符、重复销售、失效等问题，商家应优先保障买家权益并积极配合平台处理。\n- 商家连续出现高投诉、拒不售后或严重违规时，平台有权取消商家资格，后续重新开通需人工审核。\n\n## 4. 电子签名确认\n\n本人确认已阅读并同意以上商家守则、免责声明与商家质保，自愿申请开通商家功能，并承诺遵守平台全部规则。"
         ];
     }
 
@@ -763,6 +767,50 @@ class Database {
         return false;
     }
 
+    public function deleteWithdrawRequest($id) {
+        $exists = false;
+        $this->data['withdraw_requests'] = array_values(array_filter($this->data['withdraw_requests'], function($request) use ($id, &$exists) {
+            if (($request['id'] ?? '') === $id) {
+                $exists = true;
+                return false;
+            }
+            return true;
+        }));
+        return $exists ? $this->deleteRecord('withdraw_requests', $id) : false;
+    }
+
+    public function deleteWithdrawRequests($ids) {
+        $count = 0;
+        foreach ((array)$ids as $id) {
+            if ($this->deleteWithdrawRequest($id)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    public function deleteDepositRequest($id) {
+        $exists = false;
+        $this->data['deposit_requests'] = array_values(array_filter($this->data['deposit_requests'], function($request) use ($id, &$exists) {
+            if (($request['id'] ?? '') === $id) {
+                $exists = true;
+                return false;
+            }
+            return true;
+        }));
+        return $exists ? $this->deleteRecord('deposit_requests', $id) : false;
+    }
+
+    public function deleteDepositRequests($ids) {
+        $count = 0;
+        foreach ((array)$ids as $id) {
+            if ($this->deleteDepositRequest($id)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
     public function getPendingWithdrawRequests() {
         return $this->getWithdrawRequests(null, 'pending');
     }
@@ -875,7 +923,7 @@ class Database {
             $userId = $updates['id'];
         }
 
-        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar'];
+        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar', 'merchant_rules_accepted', 'merchant_rules_accepted_at', 'merchant_signature', 'merchant_status', 'merchant_opened_once', 'merchant_approved_at', 'merchant_reapply_at'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
                 unset($updates[$key]);
@@ -908,6 +956,22 @@ class Database {
                 if ($updates[$key] !== '' && !preg_match('/^\/uploads\/avatars\/[a-zA-Z0-9_.-]+\.(png|jpe?g|gif|webp)$/i', $updates[$key])) {
                     unset($updates[$key]);
                 }
+            }
+            if ($key === 'merchant_signature') {
+                $updates[$key] = trim((string)$value);
+                if ($updates[$key] !== '' && !preg_match('/^\/uploads\/merchant_signatures\/[a-zA-Z0-9_.-]+\.(png|jpe?g|webp)$/i', $updates[$key])) {
+                    unset($updates[$key]);
+                }
+            }
+            if (in_array($key, ['merchant_rules_accepted', 'merchant_opened_once'], true)) {
+                $updates[$key] = !empty($value);
+            }
+            if (in_array($key, ['merchant_rules_accepted_at', 'merchant_approved_at', 'merchant_reapply_at'], true)) {
+                $updates[$key] = max(0, intval($value));
+            }
+            if ($key === 'merchant_status') {
+                $status = trim((string)$value);
+                $updates[$key] = in_array($status, ['none', 'pending', 'approved', 'rejected'], true) ? $status : 'none';
             }
         }
 

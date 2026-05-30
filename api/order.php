@@ -44,6 +44,7 @@ function genComplaintPassword() {
 
 function maskDeliveryInfo($deliveryInfo) {
     if (!is_array($deliveryInfo)) return $deliveryInfo;
+    if (isset($deliveryInfo['pickup_password_hash'])) unset($deliveryInfo['pickup_password_hash']);
     $deliveryInfo['items'] = array_map(function($item) {
         return [
             'format' => $item['format'] ?? 'line',
@@ -59,6 +60,9 @@ function maskDeliveryInfo($deliveryInfo) {
 }
 
 function safeOrderForResponse($order) {
+    if (isset($order['delivery_info']) && is_array($order['delivery_info'])) {
+        unset($order['delivery_info']['pickup_password_hash']);
+    }
     if (isset($order['complaint']) && is_array($order['complaint'])) {
         unset($order['complaint']['password_hash']);
         unset($order['complaint']['email']);
@@ -108,7 +112,7 @@ switch ($action) {
         $orders = $db->getOrders($userId, 'buyer');
         foreach ($orders as &$order) {
             $order['has_comment'] = $db->hasComment($userId, $order['product_id'] ?? '', $order['id'] ?? '');
-            if (!empty($order['delivery_info']['password_required'])) {
+            if (!empty($order['delivery_info']['pickup_password_enabled'])) {
                 $order['delivery_info'] = maskDeliveryInfo($order['delivery_info']);
                 $order['pickup_password_required'] = true;
             }
@@ -141,15 +145,15 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '无权查看'], 403);
         }
 
-        $product = $db->getProductById($order['product_id'] ?? '');
         $pickupPassword = trim((string)($_GET['pickup_password'] ?? $_POST['pickup_password'] ?? ''));
-        if ($product && !empty($product['pickup_password_enabled']) && $order['buyer_id'] === $userId) {
-            $hash = (string)($product['pickup_password'] ?? '');
+        if (!empty($order['delivery_info']['pickup_password_enabled']) && $order['buyer_id'] === $userId) {
+            $hash = (string)($order['delivery_info']['pickup_password_hash'] ?? '');
             if ($hash === '' || $pickupPassword === '' || !password_verify($pickupPassword, $hash)) {
                 $order['delivery_info'] = maskDeliveryInfo($order['delivery_info'] ?? []);
                 $order['pickup_password_required'] = true;
             } else {
                 if (isset($order['delivery_info']['locked'])) $order['delivery_info']['locked'] = false;
+                $order['delivery_info']['password_required'] = false;
                 $order['pickup_password_required'] = false;
             }
         }
@@ -204,6 +208,13 @@ switch ($action) {
             'reason' => htmlspecialchars($reason, ENT_QUOTES, 'UTF-8'),
             'password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'seller_reply' => '',
+            'messages' => [[
+                'role' => 'buyer',
+                'user_id' => $userId,
+                'username' => $user['username'] ?? '',
+                'content' => htmlspecialchars($reason, ENT_QUOTES, 'UTF-8'),
+                'created_at' => time()
+            ]],
             'created_at' => time(),
             'updated_at' => time()
         ];
@@ -239,6 +250,7 @@ switch ($action) {
 
     case 'reply_complaint':
         $userId = requireAuth();
+        $user = getCurrentUser();
         $id = $_POST['order_id'] ?? '';
         $reply = trim((string)($_POST['reply'] ?? ''));
         if (!validateId($id)) {
@@ -251,14 +263,47 @@ switch ($action) {
         if (!$order) {
             jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
         }
-        if (($order['seller_id'] ?? '') !== $userId) {
-            jsonResponse(['success' => false, 'message' => '只能回复自己售出订单的投诉'], 403);
+        $isBuyer = (($order['buyer_id'] ?? '') === $userId);
+        $isSeller = (($order['seller_id'] ?? '') === $userId);
+        if (!$isBuyer && !$isSeller) {
+            jsonResponse(['success' => false, 'message' => '无权回复该投诉'], 403);
         }
-        if (empty($order['complaint']) || ($order['complaint']['status'] ?? '') !== 'open') {
-            jsonResponse(['success' => false, 'message' => '该订单没有进行中的投诉'], 400);
+        if (empty($order['complaint']) || in_array(($order['complaint']['status'] ?? ''), ['resolved', 'rejected', 'withdrawn'], true)) {
+            jsonResponse(['success' => false, 'message' => '该投诉已结束，不能继续回复'], 400);
         }
-        $order['complaint']['seller_reply'] = htmlspecialchars($reply, ENT_QUOTES, 'UTF-8');
-        $order['complaint']['seller_replied_at'] = time();
+        if (!isset($order['complaint']['messages']) || !is_array($order['complaint']['messages'])) {
+            $order['complaint']['messages'] = [];
+            if (!empty($order['complaint']['reason'])) {
+                $order['complaint']['messages'][] = [
+                    'role' => 'buyer',
+                    'user_id' => $order['buyer_id'] ?? '',
+                    'username' => $order['buyer_name'] ?? '买家',
+                    'content' => $order['complaint']['reason'],
+                    'created_at' => $order['complaint']['created_at'] ?? time()
+                ];
+            }
+            if (!empty($order['complaint']['seller_reply'])) {
+                $order['complaint']['messages'][] = [
+                    'role' => 'seller',
+                    'user_id' => $order['seller_id'] ?? '',
+                    'username' => $order['seller_name'] ?? '卖家',
+                    'content' => $order['complaint']['seller_reply'],
+                    'created_at' => $order['complaint']['seller_replied_at'] ?? ($order['complaint']['updated_at'] ?? time())
+                ];
+            }
+        }
+        $role = $isSeller ? 'seller' : 'buyer';
+        $order['complaint']['messages'][] = [
+            'role' => $role,
+            'user_id' => $userId,
+            'username' => $user['username'] ?? ($role === 'seller' ? '卖家' : '买家'),
+            'content' => htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'),
+            'created_at' => time()
+        ];
+        if ($isSeller) {
+            $order['complaint']['seller_reply'] = htmlspecialchars($reply, ENT_QUOTES, 'UTF-8');
+            $order['complaint']['seller_replied_at'] = time();
+        }
         $order['complaint']['updated_at'] = time();
         $db->updateOrder($order);
         jsonResponse(['success' => true, 'message' => '回复已提交']);

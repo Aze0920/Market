@@ -400,6 +400,9 @@ function resetRegisterForm() {
     if (codeInput) codeInput.value = '';
     const group = document.getElementById('regEmailCodeGroup');
     if (group) group.classList.add('hidden');
+    const agreement = document.getElementById('regAgreementAccepted');
+    if (agreement) agreement.checked = false;
+    updateRegisterSubmitState();
     document.getElementById('registerCaptchaBox')?.replaceChildren();
     setRegisterError('');
 }
@@ -543,7 +546,13 @@ async function handleLogin() {
         App.setUser(result.user);
         bootstrap.Modal.getInstance(document.getElementById('loginModal'))?.hide();
         Toast.success(`欢迎回来，${result.user.username}！`);
-        showHome();
+        const oauthParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+        if (oauthParams.get('oauth_action') === 'bind_after_login') {
+            Toast.info('请在个人中心绑定刚才使用的 QQ，绑定后即可一键登录。');
+            showDashboard('profile');
+        } else {
+            showHome();
+        }
         App.updateUnreadBadge();
     } catch (error) {
         const message = error && error.message === 'captcha_cancelled' ? '已取消人机验证' : (error && error.message ? error.message : '登录请求失败，请稍后重试');
@@ -569,6 +578,30 @@ function setRegisterError(message, type = 'danger') {
     box.textContent = message;
 }
 
+function updateRegisterSubmitState() {
+    const btn = document.getElementById('registerSubmitBtn');
+    const agreement = document.getElementById('regAgreementAccepted');
+    if (btn && agreement) btn.disabled = !agreement.checked;
+}
+
+function openAgreementModal(type = 'user') {
+    const config = window.KeyNestSystemConfig || {};
+    const isMerchant = type === 'merchant';
+    const title = isMerchant
+        ? (config.merchant_agreement_title || '商家协议')
+        : (config.user_agreement_title || '用户协议');
+    const content = isMerchant
+        ? (config.merchant_agreement_content || '')
+        : (config.user_agreement_content || '');
+    const titleEl = document.getElementById('agreementModalTitle');
+    const bodyEl = document.getElementById('agreementModalBody');
+    if (titleEl) titleEl.innerHTML = '<i class="bi bi-file-earmark-text me-2 text-primary"></i>' + (window.Security ? Security.escapeHtml(title) : title);
+    if (bodyEl) bodyEl.innerHTML = typeof window.renderMarkdown === 'function'
+        ? renderMarkdown(content)
+        : (window.Security ? Security.escapeHtml(content).replace(/\n/g, '<br>') : String(content).replace(/\n/g, '<br>'));
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('agreementModal')).show();
+}
+
 function showRegisterError(message) {
     setRegisterError(message || '注册失败，请检查填写内容', 'danger');
 }
@@ -579,6 +612,14 @@ async function handleRegister() {
     const password = document.getElementById('regPassword').value.trim();
     const passwordConfirm = document.getElementById('regPasswordConfirm').value.trim();
     const emailCode = document.getElementById('regEmailCode')?.value.trim() || '';
+    const agreementAccepted = !!document.getElementById('regAgreementAccepted')?.checked;
+
+    if (!agreementAccepted) {
+        showRegisterError('请先阅读并同意用户协议和商家协议');
+        Toast.warning('请先勾选同意协议');
+        updateRegisterSubmitState();
+        return;
+    }
 
     // 客户端验证
     if (!username || !email || !password) {
@@ -628,7 +669,7 @@ async function handleRegister() {
 
     try {
         const captchaToken = await runCaptcha('register');
-        const result = await API.register(username, email, password, passwordConfirm, emailCode, captchaToken);
+        const result = await API.register(username, email, password, passwordConfirm, emailCode, captchaToken, agreementAccepted);
 
         if (!result.success) {
             const message = result.message || '注册失败，请检查验证码、用户名或邮箱';

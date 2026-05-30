@@ -33,6 +33,38 @@ function getCurrentUser() {
     return $db->getUserById($_SESSION['user_id']);
 }
 
+function userHasMerchantCertification($user) {
+    $methods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
+    $paymentComplete = false;
+    foreach ($methods as $method) {
+        if (is_array($method) && trim((string)($method['account'] ?? '')) !== '' && trim((string)($method['qrcode'] ?? '')) !== '') {
+            $paymentComplete = true;
+            break;
+        }
+    }
+    return $paymentComplete
+        && !empty($user['merchant_rules_accepted'])
+        && trim((string)($user['merchant_signature'] ?? '')) !== ''
+        && ($user['merchant_status'] ?? 'none') === 'approved';
+}
+
+function merchantCertificationMessage($user) {
+    $methods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
+    $paymentComplete = false;
+    foreach ($methods as $method) {
+        if (is_array($method) && trim((string)($method['account'] ?? '')) !== '' && trim((string)($method['qrcode'] ?? '')) !== '') {
+            $paymentComplete = true;
+            break;
+        }
+    }
+    if (!$paymentComplete) return '您还未完成商家认证，请先到控制台完善收款方式';
+    if (empty($user['merchant_rules_accepted'])) return '请先阅读并同意商家守则、免责声明与商家质保';
+    if (trim((string)($user['merchant_signature'] ?? '')) === '') return '请先上传电子签名图片后再开通商家';
+    if (($user['merchant_status'] ?? 'none') === 'pending') return '您的商家重新开通申请正在审核中，请等待管理员审核';
+    if (($user['merchant_status'] ?? 'none') === 'rejected') return '您的商家重新开通申请未通过，请修改资料后重新提交';
+    return '您还未完成商家认证，请先到控制台完成商家开通';
+}
+
 function sanitizeString($str) {
     return htmlspecialchars(trim($str), ENT_QUOTES, 'UTF-8');
 }
@@ -110,7 +142,7 @@ function normalizeProductImage($image) {
     return '';
 }
 
-function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'balance') {
+function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'balance', $pickupPassword = '') {
     global $db;
     $levels = $db->getMembershipLevels();
     $seller = $db->getUserById($product['seller_id']);
@@ -133,6 +165,11 @@ function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'bala
 
     if (count($deliveryList) < $quantity) {
         return ['success' => false, 'message' => '该商品暂无足够可用账户'];
+    }
+
+    $pickupPasswordEnabled = !empty($product['pickup_password_enabled']);
+    if ($pickupPasswordEnabled && trim((string)$pickupPassword) === '') {
+        return ['success' => false, 'message' => '该商品需要买家设置取卡密码'];
     }
 
     foreach ($deliveryList as $delivery) {
@@ -172,8 +209,10 @@ function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'bala
                     'format' => $deliveryInfo['format'] ?? 'pipe'
                 ];
             }, $deliveryList),
-            'locked' => !empty($product['pickup_password_enabled']),
-            'password_required' => !empty($product['pickup_password_enabled'])
+            'locked' => false,
+            'password_required' => false,
+            'pickup_password_enabled' => $pickupPasswordEnabled,
+            'pickup_password_hash' => $pickupPasswordEnabled ? password_hash(trim((string)$pickupPassword), PASSWORD_DEFAULT) : ''
         ]
     ];
     $db->addOrder($order);
@@ -313,6 +352,13 @@ switch ($action) {
         if (!$user) {
             productPublishFail('登录状态异常，请退出后重新登录');
         }
+        if (!userHasMerchantCertification($user)) {
+            jsonResponse([
+                'success' => false,
+                'message' => merchantCertificationMessage($user),
+                'code' => 'merchant_certification_required'
+            ], 403);
+        }
         $levels = $db->getMembershipLevels();
         $userLevel = $levels[$user['membership_level'] ?? 'Free'] ?? $levels['Free'];
 
@@ -333,7 +379,6 @@ switch ($action) {
         $accountListText = trim($_POST['account_list'] ?? '');
         $customImage = normalizeProductImage($_POST['image'] ?? '');
         $pickupPasswordEnabled = ($_POST['pickup_password_enabled'] ?? '0') === '1';
-        $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
 
         if (empty($title) || strlen($title) > 100) {
             productPublishFail('请填写标题（最多100字符）');
@@ -344,13 +389,6 @@ switch ($action) {
         if (empty($accountListText)) {
             productPublishFail('请填写账户列表');
         }
-        if ($pickupPasswordEnabled && $pickupPassword === '') {
-            productPublishFail('开启取卡密码后必须填写取卡密码');
-        }
-        if (strlen($pickupPassword) > 100) {
-            productPublishFail('取卡密码最多100字符');
-        }
-
         $accountLines = preg_split('/\r\n|\r|\n/', $accountListText);
         $accountList = [];
         foreach ($accountLines as $line) {
@@ -412,7 +450,7 @@ switch ($action) {
             'description' => $description,
             'account_list' => $accountList,
             'pickup_password_enabled' => $pickupPasswordEnabled,
-            'pickup_password' => $pickupPasswordEnabled ? password_hash($pickupPassword, PASSWORD_DEFAULT) : '',
+            'pickup_password' => '',
             'sales' => 0,
             'created_at' => time(),
             'image' => $customImage !== '' ? $customImage : $images[array_rand($images)]
@@ -442,7 +480,6 @@ switch ($action) {
         $description = sanitizeMarkdown($_POST['description'] ?? '');
         $customImage = normalizeProductImage($_POST['image'] ?? '');
         $pickupPasswordEnabled = ($_POST['pickup_password_enabled'] ?? '0') === '1';
-        $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
 
         if ($title === '' || strlen($title) > 100) {
             jsonResponse(['success' => false, 'message' => '请填写标题（最多100字符）'], 400);
@@ -450,13 +487,6 @@ switch ($action) {
         if ($price <= 0 || $price > 999999) {
             jsonResponse(['success' => false, 'message' => '请填写有效价格（最高999999）'], 400);
         }
-        if ($pickupPasswordEnabled && empty($product['pickup_password']) && $pickupPassword === '') {
-            jsonResponse(['success' => false, 'message' => '首次开启取卡密码必须填写密码'], 400);
-        }
-        if (strlen($pickupPassword) > 100) {
-            jsonResponse(['success' => false, 'message' => '取卡密码最多100字符'], 400);
-        }
-
         $product['title'] = $title;
         $product['category'] = $category;
         $product['price'] = $price;
@@ -465,12 +495,7 @@ switch ($action) {
             $product['image'] = $customImage;
         }
         $product['pickup_password_enabled'] = $pickupPasswordEnabled;
-        if ($pickupPasswordEnabled && $pickupPassword !== '') {
-            $product['pickup_password'] = password_hash($pickupPassword, PASSWORD_DEFAULT);
-        }
-        if (!$pickupPasswordEnabled) {
-            $product['pickup_password'] = '';
-        }
+        $product['pickup_password'] = '';
         $product['updated_at'] = time();
         $db->updateProduct($product);
         $safe = $product;
@@ -575,6 +600,7 @@ switch ($action) {
         $user = getCurrentUser();
         $id = $_POST['id'] ?? '';
         $quantity = max(1, min(100, intval($_POST['quantity'] ?? 1)));
+        $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
         if (!validateId($id)) {
             jsonResponse(['success' => false, 'message' => '无效的ID'], 400);
         }
@@ -590,13 +616,20 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '不能购买自己的商品'], 400);
         }
 
+        if (!empty($product['pickup_password_enabled']) && $pickupPassword === '') {
+            jsonResponse(['success' => false, 'message' => '请填写取卡密码，后续查看发货需要使用'], 400);
+        }
+        if (mb_strlen($pickupPassword) > 100) {
+            jsonResponse(['success' => false, 'message' => '取卡密码最多100字符'], 400);
+        }
+
         $price = $product['price'] * $quantity;
         if ($user['balance'] < $price) {
             jsonResponse(['success' => false, 'message' => '余额不足'], 400);
         }
 
         $db->updateUser($userId, ['balance' => $user['balance'] - $price]);
-        $purchaseResult = completeProductPurchase($product, $user, $quantity, 'balance');
+        $purchaseResult = completeProductPurchase($product, $user, $quantity, 'balance', $pickupPassword);
         if (empty($purchaseResult['success'])) {
             $db->updateUser($userId, ['balance' => $user['balance']]);
             jsonResponse(['success' => false, 'message' => $purchaseResult['message'] ?? '购买失败'], 400);
@@ -644,6 +677,16 @@ switch ($action) {
         }
         if ($db->hasComment($userId, $productId, $orderId)) {
             jsonResponse(['success' => false, 'message' => '您已评价过此订单'], 400);
+        }
+        $order = $db->getOrderById($orderId);
+        if (!$order) {
+            jsonResponse(['success' => false, 'message' => '订单不存在，无法评价'], 404);
+        }
+        if (($order['buyer_id'] ?? '') !== $userId) {
+            jsonResponse(['success' => false, 'message' => '只能评价自己的购买订单'], 403);
+        }
+        if (($order['product_id'] ?? '') !== $productId) {
+            jsonResponse(['success' => false, 'message' => '订单与商品不匹配'], 400);
         }
 
         $comment = [

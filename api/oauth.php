@@ -13,14 +13,18 @@ function oauthJson($data, $code = 200) {
     exit;
 }
 
-function oauthRedirect($message, $success = false) {
+function oauthRedirect($message, $success = false, $extra = []) {
     $flag = $success ? 'success' : 'error';
     $return = $_SESSION['oauth_qq_return'] ?? 'front';
     unset($_SESSION['oauth_qq_return']);
+    $extraQuery = '';
+    if (!empty($extra)) {
+        $extraQuery = '&' . http_build_query($extra);
+    }
     if ($return === 'admin') {
-        $url = '../admin/#page=overview&oauth_' . $flag . '=' . rawurlencode($message);
+        $url = '../admin/#page=overview&oauth_' . $flag . '=' . rawurlencode($message) . $extraQuery;
     } else {
-        $url = '../#page=dashboard&tab=profile&oauth_' . $flag . '=' . rawurlencode($message);
+        $url = '../#page=home&oauth_' . $flag . '=' . rawurlencode($message) . $extraQuery;
     }
     header('Location: ' . $url);
     exit;
@@ -181,7 +185,7 @@ if ($mode === 'bind') {
 }
 
 if (!$boundUser) {
-    oauthRedirect('该第三方账号还没有绑定平台账号，请先登录账号后到个人中心绑定');
+    oauthRedirect('该 QQ 还没有绑定平台账号。请先用账号密码登录，登录成功后到个人中心绑定该 QQ，之后就可以一键登录。', false, ['oauth_action' => 'bind_after_login']);
 }
 
 session_regenerate_id(true);

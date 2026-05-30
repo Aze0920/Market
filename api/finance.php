@@ -317,6 +317,45 @@ switch ($action) {
 
         jsonResponse(['success' => true, 'message' => '已拒绝']);
 
+    case 'delete_request':
+        requireAdmin();
+        $requestId = $_POST['id'] ?? '';
+        if (!validateId($requestId) && !preg_match('/^wd_/', $requestId) && !preg_match('/^dep_/', $requestId)) {
+            jsonResponse(['success' => false, 'message' => '无效的ID'], 400);
+        }
+        if (preg_match('/^wd_/', $requestId)) {
+            $deleted = $db->deleteWithdrawRequest($requestId);
+        } else {
+            $deleted = $db->deleteDepositRequest($requestId);
+        }
+        if (!$deleted) {
+            jsonResponse(['success' => false, 'message' => '记录不存在或已删除'], 404);
+        }
+        jsonResponse(['success' => true, 'message' => '记录已删除']);
+
+    case 'delete_requests':
+        requireAdmin();
+        $rawIds = $_POST['ids'] ?? '[]';
+        $ids = json_decode($rawIds, true);
+        if (!is_array($ids)) {
+            jsonResponse(['success' => false, 'message' => '请选择要删除的记录'], 400);
+        }
+        $withdrawIds = [];
+        $depositIds = [];
+        foreach ($ids as $id) {
+            $id = (string)$id;
+            if (!validateId($id) && !preg_match('/^wd_/', $id) && !preg_match('/^dep_/', $id)) {
+                continue;
+            }
+            if (preg_match('/^wd_/', $id)) {
+                $withdrawIds[] = $id;
+            } else {
+                $depositIds[] = $id;
+            }
+        }
+        $count = $db->deleteWithdrawRequests($withdrawIds) + $db->deleteDepositRequests($depositIds);
+        jsonResponse(['success' => true, 'message' => '已删除 ' . $count . ' 条记录', 'count' => $count]);
+
     case 'get_withdraw_requests':
         requireAdmin();
         $requests = $db->getWithdrawRequests();
@@ -401,6 +440,10 @@ switch ($action) {
             'announcement_content',
             'announcement_position',
             'announcement_items',
+            'user_agreement_title',
+            'user_agreement_content',
+            'merchant_agreement_title',
+            'merchant_agreement_content',
             'oauth_qq_app_id',
             'oauth_qq_app_key',
             'oauth_qq_redirect_uri',
@@ -438,7 +481,7 @@ switch ($action) {
                     $config[$field] = $normalizedItems;
                     continue;
                 }
-                $config[$field] = in_array($field, ['announcement_content', 'captcha_extra_config', 'announcement_items', 'email_template_html'], true)
+                $config[$field] = in_array($field, ['announcement_content', 'captcha_extra_config', 'announcement_items', 'email_template_html', 'user_agreement_content', 'merchant_agreement_content'], true)
                     ? $value
                     : sanitizeString($value);
             }

@@ -296,6 +296,13 @@ async function handleBuyNow() {
                 <p class="text-muted small mb-0">当前余额: ¥${Security.escapeHtml(App.currentUser.balance.toFixed(2))}</p>
             </div>
         </div>
+        ${App.currentDetailProduct.pickup_password_enabled ? `
+            <div class="mt-3">
+                <label class="form-label fw-semibold">设置取卡密码</label>
+                <input type="password" class="form-control" id="buyerPickupPassword" maxlength="100" placeholder="请输入取卡密码，后续查看发货需要使用">
+                <small class="text-muted">这个密码由买家自己设置，购买成功后会立即显示卡密；之后在购买记录查看发货需要输入此密码。</small>
+            </div>
+        ` : ''}
         <div class="mt-3">
             <div class="form-label fw-semibold mb-2">选择支付方式</div>
             <div class="purchase-payment-options">
@@ -339,6 +346,16 @@ async function confirmPurchase(quantity = 1) {
 
     try {
         const selectedOption = purchasePaymentOptions.find(item => item.value === selectedPurchasePaymentValue);
+        const pickupPassword = document.getElementById('buyerPickupPassword')?.value?.trim() || '';
+        if (App.currentDetailProduct.pickup_password_enabled && !pickupPassword) {
+            Toast.warning('请设置取卡密码，后续查看发货需要使用');
+            document.getElementById('buyerPickupPassword')?.focus();
+            return;
+        }
+        if (pickupPassword.length > 100) {
+            Toast.warning('取卡密码最多100字符');
+            return;
+        }
         if (!selectedOption || selectedOption.disabled) {
             Toast.warning('请选择可用的支付方式');
             return;
@@ -349,7 +366,8 @@ async function confirmPurchase(quantity = 1) {
                 selectedOption.configId,
                 App.currentDetailProduct.id,
                 quantity,
-                selectedOption.payType
+                selectedOption.payType,
+                pickupPassword
             );
             if (!result.success) {
                 Toast.error(result.message || '创建支付订单失败');
@@ -363,7 +381,7 @@ async function confirmPurchase(quantity = 1) {
             return;
         }
 
-        const result = await API.buyProduct(App.currentDetailProduct.id, quantity);
+        const result = await API.buyProduct(App.currentDetailProduct.id, quantity, pickupPassword);
 
         if (!result.success) {
             Toast.error(result.message);
@@ -372,12 +390,13 @@ async function confirmPurchase(quantity = 1) {
 
         const order = result.order;
         const d = order.delivery_info;
+        const pickupWasEnabled = !!App.currentDetailProduct.pickup_password_enabled;
 
         document.getElementById('purchaseBody').innerHTML = `
         <div class="text-center mb-3">
             <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
             <h5 class="fw-bold mt-2">购买成功！</h5>
-            <p class="text-muted">商品已自动发货，${d?.locked ? '该商品需要取卡密码，请到购买记录输入密码查看' : '请保存好以下信息'}</p>
+            <p class="text-muted">商品已自动发货，请保存好以下信息${pickupWasEnabled ? '；后续在购买记录查看发货需要输入你刚设置的取卡密码' : ''}</p>
         </div>
         <div class="delivery-card">
             <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
@@ -427,7 +446,7 @@ async function viewDeliveryInfo(orderId, pickupPassword = '') {
     document.getElementById('purchaseBody').innerHTML = `
         <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
         ${order.pickup_password_required ? `
-            <div class="alert alert-warning small">该商品开启了取卡密码，请输入卖家设置的取卡密码后查看。</div>
+            <div class="alert alert-warning small">该订单设置了取卡密码，请输入你购买时填写的取卡密码后查看发货信息。</div>
             <div class="input-group mb-3">
                 <input type="password" class="form-control" id="pickupPasswordInput" placeholder="请输入取卡密码">
                 <button class="btn btn-primary" onclick="viewDeliveryInfo('${Security.escapeAttr(orderId)}', document.getElementById('pickupPasswordInput').value)">确认取卡</button>
@@ -514,9 +533,7 @@ async function deleteProduct(id) {
 }
 
 function togglePickupPasswordInput() {
-    const enabled = document.getElementById('pubPickupPasswordEnabled')?.checked;
-    const wrap = document.getElementById('pubPickupPasswordWrap');
-    if (wrap) wrap.classList.toggle('hidden', !enabled);
+    return;
 }
 
 function updatePublishImagePreview(value) {
@@ -576,10 +593,38 @@ function initPublishImageDropZone() {
     });
 }
 
+function isMerchantVerifiedForPublish() {
+    const user = App.currentUser || {};
+    return user.merchant_verified === true || user.merchant_verified === '1';
+}
+
+function merchantPublishBlockMessage() {
+    const user = App.currentUser || {};
+    if (user.merchant_status === 'pending') return '您的商家重新开通申请正在审核中，请等待管理员审核';
+    if (user.merchant_status === 'rejected') return '您的商家重新开通申请未通过，请修改认证资料后重新提交';
+    if (!user.merchant_rules_accepted) return '请先阅读并同意商家守则、免责声明与商家质保';
+    if (!user.merchant_signature) return '请先上传电子签名图片后再开通商家';
+    return '您还未完成商家认证，请先到控制台完成商家开通';
+}
+
+function redirectToMerchantCertification() {
+    Toast.warning(merchantPublishBlockMessage());
+    const modal = bootstrap.Modal.getInstance(document.getElementById('publishModal'));
+    if (modal) modal.hide();
+    showDashboard('profile');
+    setTimeout(() => {
+        (document.getElementById('merchantCertificationBox') || document.querySelector('.payment-receive-card'))?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 350);
+}
+
 function openPublishModal() {
     if (!App.currentUser) {
         Toast.warning('请先登录');
         openLoginModal();
+        return;
+    }
+    if (!isMerchantVerifiedForPublish()) {
+        redirectToMerchantCertification();
         return;
     }
 
@@ -595,10 +640,7 @@ function openPublishModal() {
     if (fileInput) fileInput.value = '';
     updatePublishImagePreview('');
     const pickupEnabled = document.getElementById('pubPickupPasswordEnabled');
-    const pickupPassword = document.getElementById('pubPickupPassword');
     if (pickupEnabled) pickupEnabled.checked = false;
-    if (pickupPassword) pickupPassword.value = '';
-    togglePickupPasswordInput();
 
     const modal = new bootstrap.Modal(document.getElementById('publishModal'));
     modal.show();
@@ -646,6 +688,10 @@ async function handlePublish(event) {
             showPublishError('发布接口脚本未加载，请刷新页面后重试');
             return;
         }
+        if (!isMerchantVerifiedForPublish()) {
+            redirectToMerchantCertification();
+            return;
+        }
 
         const titleEl = document.getElementById('pubTitle');
         const categoryEl = document.getElementById('pubCategory');
@@ -654,7 +700,6 @@ async function handlePublish(event) {
         const accountsEl = document.getElementById('pubAccounts');
         const imageEl = document.getElementById('pubImageUrl');
         const pickupEnabledEl = document.getElementById('pubPickupPasswordEnabled');
-        const pickupPasswordEl = document.getElementById('pubPickupPassword');
 
         if (!titleEl || !categoryEl || !priceEl || !descEl || !accountsEl) {
             showPublishError('发布表单加载不完整，请刷新页面后重试');
@@ -668,7 +713,6 @@ async function handlePublish(event) {
         const accountListText = accountsEl.value.trim();
         const image = imageEl ? imageEl.value.trim() : '';
         const pickupPasswordEnabled = pickupEnabledEl && pickupEnabledEl.checked;
-        const pickupPassword = pickupPasswordEl ? pickupPasswordEl.value.trim() : '';
 
         if (!title || !price || price <= 0) {
             showPublishError('请填写标题和有效价格');
@@ -678,11 +722,6 @@ async function handlePublish(event) {
             showPublishError('请填写账户列表');
             return;
         }
-        if (pickupPasswordEnabled && !pickupPassword) {
-            showPublishError('开启取卡密码后必须填写取卡密码');
-            return;
-        }
-
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>发布中...';
@@ -691,8 +730,7 @@ async function handlePublish(event) {
         const result = await API.publishProduct({
             title, category, price, description, account_list: accountListText,
             image,
-            pickup_password_enabled: pickupPasswordEnabled ? '1' : '0',
-            pickup_password: pickupPassword
+            pickup_password_enabled: pickupPasswordEnabled ? '1' : '0'
         });
 
         if (result && result.success) {

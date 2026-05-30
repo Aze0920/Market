@@ -216,7 +216,7 @@ function adminRunCommand($command, $cwd = null) {
 }
 
 function adminAppVersion() {
-    return 'V1.1.11';
+    return 'V1.1.41';
 }
 
 function adminUpdaterVersion($config) {
@@ -630,7 +630,7 @@ switch ($action) {
         if (($target['role'] ?? '') === 'admin') {
             adminJsonResponse(['success' => false, 'message' => '管理员账号不允许重置收款方式'], 400);
         }
-        if (!$db->updateUser($id, ['payment_methods' => []])) {
+        if (!$db->updateUser($id, ['payment_methods' => [], 'merchant_status' => 'none', 'merchant_rules_accepted' => false, 'merchant_rules_accepted_at' => 0])) {
             adminJsonResponse(['success' => false, 'message' => '重置收款方式失败'], 500);
         }
         adminJsonResponse(['success' => true, 'message' => '已清空该用户收款方式，用户可重新配置']);
@@ -648,6 +648,86 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => '删除失败'], 400);
         }
         adminJsonResponse(['success' => true, 'message' => '用户已删除']);
+
+    case 'review_merchant':
+        $id = trim($_POST['id'] ?? '');
+        $decision = trim($_POST['decision'] ?? '');
+        $target = $db->getUserById($id);
+        if (!$target) {
+            adminJsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        if (($target['merchant_status'] ?? 'none') !== 'pending') {
+            adminJsonResponse(['success' => false, 'message' => '该用户没有待审核的商家重新开通申请'], 400);
+        }
+        $updates = $decision === 'approve'
+            ? ['merchant_status' => 'approved', 'merchant_approved_at' => time(), 'merchant_opened_once' => true]
+            : ['merchant_status' => 'rejected'];
+        if (!$db->updateUser($id, $updates)) {
+            adminJsonResponse(['success' => false, 'message' => '商家审核处理失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => $decision === 'approve' ? '已通过商家重新开通申请' : '已拒绝商家重新开通申请']);
+
+    case 'product_stock':
+        $id = trim($_GET['id'] ?? $_POST['id'] ?? '');
+        if ($id === '') {
+            adminJsonResponse(['success' => false, 'message' => '缺少商品ID'], 400);
+        }
+        $product = $db->getProductById($id);
+        if (!$product) {
+            adminJsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        $accounts = is_array($product['account_list'] ?? null) ? $product['account_list'] : [];
+        $stockItems = [];
+        foreach ($accounts as $index => $account) {
+            if (!is_array($account)) continue;
+            $stockItems[] = [
+                'index' => $index,
+                'email' => $account['email'] ?? '',
+                'password' => $account['password'] ?? '',
+                'client_id' => $account['client_id'] ?? '',
+                'fresh_token' => $account['fresh_token'] ?? '',
+                'content' => $account['content'] ?? '',
+                'format' => $account['format'] ?? '',
+                'sold' => !empty($account['sold'])
+            ];
+        }
+        adminJsonResponse([
+            'success' => true,
+            'product' => [
+                'id' => $product['id'] ?? '',
+                'title' => $product['title'] ?? '',
+                'stock' => intval($product['stock'] ?? 0),
+                'sales' => intval($product['sales'] ?? 0)
+            ],
+            'items' => $stockItems
+        ]);
+
+    case 'delete_product_stock':
+        $id = trim($_POST['id'] ?? '');
+        $index = $_POST['index'] ?? null;
+        if ($id === '' || $index === null || !is_numeric($index)) {
+            adminJsonResponse(['success' => false, 'message' => '缺少商品ID或库存序号'], 400);
+        }
+        $index = intval($index);
+        $product = $db->getProductById($id);
+        if (!$product) {
+            adminJsonResponse(['success' => false, 'message' => '商品不存在'], 404);
+        }
+        $accounts = is_array($product['account_list'] ?? null) ? $product['account_list'] : [];
+        if (!array_key_exists($index, $accounts) || !is_array($accounts[$index])) {
+            adminJsonResponse(['success' => false, 'message' => '库存不存在或已被删除'], 404);
+        }
+        if (!empty($accounts[$index]['sold'])) {
+            adminJsonResponse(['success' => false, 'message' => '已售库存不能删除，避免影响已成交订单'], 400);
+        }
+        array_splice($accounts, $index, 1);
+        $product['account_list'] = array_values($accounts);
+        $product['stock'] = count(array_filter($product['account_list'], fn($item) => is_array($item) && empty($item['sold'])));
+        $product['updated_at'] = time();
+        if (!$db->updateProduct($product)) {
+            adminJsonResponse(['success' => false, 'message' => '删除库存失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => '库存已删除', 'stock' => $product['stock']]);
 
     case 'delete_product':
         $id = trim($_POST['id'] ?? '');
