@@ -501,7 +501,7 @@ document.addEventListener('click', e => {
     if (wrap && !wrap.contains(e.target)) closeAdminProfileDropdown();
 });
 async function loadAdminData() {
-    const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints] = await Promise.all([
+    const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, membershipLevels] = await Promise.all([
         request('admin.php?action=users'),
         request('product.php?action=list&stock_min=0'),
         request('payment.php?action=get_orders'),
@@ -509,7 +509,8 @@ async function loadAdminData() {
         request('card.php?action=list'),
         request('payment.php?action=get_configs'),
         request('finance.php?action=get_system_config'),
-        request('admin.php?action=complaints')
+        request('admin.php?action=complaints'),
+        request('admin.php?action=membership_levels')
     ]);
     Admin.cache = {
         users: users.users || [],
@@ -519,7 +520,7 @@ async function loadAdminData() {
         cards: cards.cards || [],
         payConfigs: payConfigs.configs || [],
         complaints: complaints.complaints || [],
-        membershipLevels: {},
+        membershipLevels: membershipLevels.levels || {},
         sysConfig: sysConfig.config || {}
     };
     renderPage();
@@ -603,9 +604,13 @@ function userTable(users, withActions = false) {
     return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td>${money(u.balance)}</td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
 }
 function membershipOptionsForUser(selected) {
-    const levels = Object.values(Admin.cache.membershipLevels || {});
-    const list = levels.length ? levels : [{ name: 'Free' }, { name: 'VIP' }, { name: 'PRO' }, { name: 'Infinite' }];
-    return list.map(level => `<option value="${escapeHtml(level.name)}" ${level.name === selected ? 'selected' : ''}>${escapeHtml(level.name)}</option>`).join('');
+    const selectedName = selected || 'Free';
+    const levels = Object.values(Admin.cache.membershipLevels || {})
+        .filter(level => level && level.name)
+        .sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
+    const selectedExists = levels.some(level => level.name === selectedName);
+    const list = selectedExists ? levels : [{ name: selectedName, priority: -1 }, ...levels];
+    return list.map(level => `<option value="${escapeHtml(level.name)}" ${level.name === selectedName ? 'selected' : ''}>${escapeHtml(level.name)}</option>`).join('');
 }
 function openUserEditor(id) {
     const user = (Admin.cache.users || []).find(u => u.id === id);

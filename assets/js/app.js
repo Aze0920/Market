@@ -519,6 +519,7 @@ async function loadOrdersTab(area) {
                 <thead>
                     <tr>
                         <th>商品</th>
+                        <th>卖家昵称</th>
                         <th>价格</th>
                         <th>时间</th>
                         <th>操作</th>
@@ -532,6 +533,7 @@ async function loadOrdersTab(area) {
                                 ${o.complaint && o.complaint.status === 'open' ? '<div><span class="badge badge-warning">投诉中</span></div>' : ''}
                                 ${o.complaint && o.complaint.status === 'withdrawn' ? '<div><span class="badge badge-secondary">已撤诉</span></div>' : ''}
                             </td>
+                            <td>${Security.escapeHtml(o.seller_name || '-')}</td>
                             <td class="text-danger fw-semibold">¥${o.price.toFixed(2)}</td>
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
