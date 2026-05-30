@@ -1485,7 +1485,7 @@ function merchantStatusInfo(user = App.currentUser || {}) {
     if (status === 'rejected') {
         return { ok: false, label: '未通过', badge: 'danger', desc: '审核未通过，请修改认证资料后重新提交' };
     }
-    return { ok: false, label: '未完成', badge: 'warning', desc: '请完善收款方式、阅读守则并上传电子签名' };
+    return { ok: false, label: '未完成', badge: 'warning', desc: '请完善收款方式，并阅读同意商家守则声明' };
 }
 
 function accountStatusCardsHtml(user = App.currentUser || {}) {
@@ -1522,7 +1522,7 @@ function scrollToMerchantCertification() {
     if (target) {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-    Toast.info('请完成收款方式、商家守则和电子签名后开通商家');
+    Toast.info('请完成收款方式，并阅读同意商家守则声明后开通商家');
 }
 
 function paymentMethodNeedsEmailCode(key) {
@@ -1762,7 +1762,7 @@ function merchantAgreementDefaultText() {
 一、商家守则
 1. 商家应保证发布的商品信息真实、完整、合法，不得发布违法违规、侵权、欺诈、虚假宣传或无法交付的商品。
 2. 商家应及时处理订单、发货、售后和用户咨询，不得恶意拖延、诱导站外交易或逃避平台规则。
-3. 商家应妥善保管收款账号、收款码和电子签名，因资料错误导致的收款异常由商家自行承担。
+3. 商家应妥善保管收款账号和收款码，因资料错误导致的收款异常由商家自行承担。
 
 二、免责声明
 1. 商家确认已充分了解虚拟商品交易风险，并承诺自行承担因商品来源、授权、交付、售后等产生的责任。
@@ -1774,15 +1774,13 @@ function merchantAgreementDefaultText() {
 2. 如商品存在不可用、与描述不符、重复销售、失效等问题，商家应优先保障买家权益并积极配合平台处理。
 3. 商家连续出现高投诉、拒不售后或严重违规时，平台有权取消商家资格，后续重新开通需人工审核。
 
-四、电子签名确认
+四、开通确认
 本人确认已阅读并同意以上商家守则、免责声明与商家质保，自愿申请开通商家功能，并承诺遵守平台全部规则。`;
 }
 
 function renderMerchantCertificationBox(user = App.currentUser || {}) {
     const merchant = merchantStatusInfo(user);
-    const signature = user.merchant_signature || '';
     const agreementText = merchantAgreementDefaultText();
-    const signaturePreview = signature ? `<img src="${Security.escapeAttr(signature + (signature.includes('?') ? '&' : '?') + 'v=' + Date.now())}" alt="电子签名" style="max-height:120px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;">` : '<div class="text-muted small">未上传电子签名图片</div>';
     const openedOnce = user.merchant_opened_once === true || user.merchant_opened_once === '1';
     const saveText = merchant.ok ? '更新认证资料' : (openedOnce ? '提交重新开通审核' : '同意并开通商家');
     return `
@@ -1801,18 +1799,6 @@ function renderMerchantCertificationBox(user = App.currentUser || {}) {
             <div class="form-check mt-3">
                 <input class="form-check-input" type="checkbox" id="merchantRulesAccepted" ${user.merchant_rules_accepted ? 'checked' : ''} ${user.merchant_rules_accepted ? '' : 'disabled'}>
                 <label class="form-check-label" for="merchantRulesAccepted">我已阅读并同意商家守则、免责声明与商家质保，申请开通商家功能</label>
-            </div>
-            <div class="mt-3">
-                <label class="form-label fw-semibold">电子签名图片</label>
-                <div class="d-flex align-items-center gap-3 flex-wrap">
-                    <div id="merchantSignaturePreview">${signaturePreview}</div>
-                    <div>
-                        <input type="file" id="merchantSignatureInput" accept="image/jpeg,image/png,image/webp" class="hidden" onchange="handleMerchantSignatureSelect(event)">
-                        <input type="hidden" id="merchantSignature" value="${Security.escapeAttr(signature)}">
-                        <button class="btn btn-outline-primary btn-sm" onclick="document.getElementById('merchantSignatureInput')?.click()"><i class="bi bi-upload me-1"></i>上传电子签名</button>
-                        <div class="form-text">支持 JPG、PNG、WEBP，大小不超过 2MB。</div>
-                    </div>
-                </div>
             </div>
             <div class="mt-3 d-flex gap-2 flex-wrap">
                 <button class="btn btn-primary" id="merchantCertificationSaveHintBtn" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>${saveText}</button>
@@ -1843,33 +1829,6 @@ function startMerchantReadTimer() {
 }
 
 function handleMerchantAgreementScroll() {}
-
-async function handleMerchantSignatureSelect(event) {
-    const input = event.target;
-    const file = input?.files?.[0];
-    if (!file) return;
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
-        input.value = '';
-        return Toast.warning('电子签名仅支持 JPG、PNG、WEBP 图片');
-    }
-    if (file.size > 2 * 1024 * 1024) {
-        input.value = '';
-        return Toast.warning('电子签名大小不能超过2MB');
-    }
-    const preview = document.getElementById('merchantSignaturePreview');
-    if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>上传中...';
-    const result = await API.uploadMerchantSignature(file);
-    input.value = '';
-    if (!result.success) {
-        if (preview) preview.innerHTML = '<div class="text-danger small">上传失败，请重试</div>';
-        return Toast.error(result.message || '电子签名上传失败');
-    }
-    const hidden = document.getElementById('merchantSignature');
-    if (hidden) hidden.value = result.url || '';
-    if (preview) preview.innerHTML = `<img src="${Security.escapeAttr((result.url || '') + '?v=' + Date.now())}" alt="电子签名" style="max-height:120px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;">`;
-    if (result.user) App.setUser(result.user);
-    Toast.success(result.message || '电子签名上传成功');
-}
 
 let profileSecurityUnlocked = false;
 let profileEmailVerifyPending = false;
@@ -2131,12 +2090,8 @@ async function savePaymentMethods() {
     }
     const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
     const merchantRulesAccepted = !!document.getElementById('merchantRulesAccepted')?.checked;
-    const merchantSignature = document.getElementById('merchantSignature')?.value.trim() || '';
     if (!merchantRulesAccepted) {
         return warnPaymentMethods('请先阅读商家守则满5秒，并勾选同意开通商家');
-    }
-    if (!merchantSignature) {
-        return warnPaymentMethods('请先上传电子签名图片');
     }
     const btn = document.getElementById('savePaymentMethodsBtn');
     const oldHtml = btn?.innerHTML;
@@ -2146,7 +2101,7 @@ async function savePaymentMethods() {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>保存中...';
     }
     showPaymentMethodsNotice('正在保存收款方式...', 'info');
-    const result = await API.savePaymentMethods(methods, emailCode, merchantRulesAccepted, merchantSignature);
+    const result = await API.savePaymentMethods(methods, emailCode, merchantRulesAccepted);
     if (btn) {
         btn.classList.remove('disabled');
         btn.setAttribute('aria-disabled', 'false');

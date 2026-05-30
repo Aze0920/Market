@@ -702,14 +702,14 @@ function renderMerchantReview() {
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
-            ${users.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>收款方式</th><th>电子签名</th><th>申请时间</th><th>操作</th></tr></thead><tbody>${users.map(u => merchantReviewRow(u)).join('')}</tbody></table></div>` : '<div class="text-muted py-4 text-center">暂无待审核商家重新开通申请</div>'}
+            ${users.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>收款方式</th><th>声明确认</th><th>申请时间</th><th>操作</th></tr></thead><tbody>${users.map(u => merchantReviewRow(u)).join('')}</tbody></table></div>` : '<div class="text-muted py-4 text-center">暂无待审核商家重新开通申请</div>'}
         </div>`;
 }
 function merchantReviewRow(u) {
     const methods = u.payment_methods && typeof u.payment_methods === 'object' ? u.payment_methods : {};
     const methodHtml = Object.entries(methods).filter(([, item]) => item && item.account && item.qrcode).map(([key, item]) => `<span class="method-chip"><i class="bi ${key === 'wechat' ? 'bi-wechat' : 'bi-alipay'}"></i>${escapeHtml(item.account)}</span>`).join('') || '<span class="text-muted">未配置</span>';
-    const signature = u.merchant_signature ? `<a href="${escapeHtml(u.merchant_signature)}" target="_blank" rel="noopener">查看签名</a>` : '<span class="text-danger">未上传</span>';
-    return `<tr><td><strong>${escapeHtml(u.username || '-')}</strong><div class="small text-muted">${escapeHtml(u.email || '-')}</div></td><td>${methodHtml}</td><td>${signature}</td><td>${dateText(u.merchant_reapply_at || u.merchant_rules_accepted_at)}</td><td><button class="btn btn-sm btn-success me-1" onclick="reviewMerchant('${escapeHtml(u.id)}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="reviewMerchant('${escapeHtml(u.id)}','reject')">拒绝</button></td></tr>`;
+    const rulesAccepted = u.merchant_rules_accepted ? '<span class="badge bg-success">已同意</span>' : '<span class="badge bg-warning text-dark">未同意</span>';
+    return `<tr><td><strong>${escapeHtml(u.username || '-')}</strong><div class="small text-muted">${escapeHtml(u.email || '-')}</div></td><td>${methodHtml}</td><td>${rulesAccepted}</td><td>${dateText(u.merchant_reapply_at || u.merchant_rules_accepted_at)}</td><td><button class="btn btn-sm btn-success me-1" onclick="reviewMerchant('${escapeHtml(u.id)}','approve')">通过</button><button class="btn btn-sm btn-outline-danger" onclick="reviewMerchant('${escapeHtml(u.id)}','reject')">拒绝</button></td></tr>`;
 }
 async function reviewMerchant(id, decision) {
     const user = (Admin.cache.users || []).find(u => u.id === id);

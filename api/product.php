@@ -44,7 +44,6 @@ function userHasMerchantCertification($user) {
     }
     return $paymentComplete
         && !empty($user['merchant_rules_accepted'])
-        && trim((string)($user['merchant_signature'] ?? '')) !== ''
         && ($user['merchant_status'] ?? 'none') === 'approved';
 }
 
@@ -59,7 +58,6 @@ function merchantCertificationMessage($user) {
     }
     if (!$paymentComplete) return '您还未完成商家认证，请先到控制台完善收款方式';
     if (empty($user['merchant_rules_accepted'])) return '请先阅读并同意商家守则、免责声明与商家质保';
-    if (trim((string)($user['merchant_signature'] ?? '')) === '') return '请先上传电子签名图片后再开通商家';
     if (($user['merchant_status'] ?? 'none') === 'pending') return '您的商家重新开通申请正在审核中，请等待管理员审核';
     if (($user['merchant_status'] ?? 'none') === 'rejected') return '您的商家重新开通申请未通过，请修改资料后重新提交';
     return '您还未完成商家认证，请先到控制台完成商家开通';

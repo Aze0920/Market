@@ -324,8 +324,7 @@ function safeUser($user) {
     }
     $merchantStatus = $user['merchant_status'] ?? 'none';
     $merchantRulesAccepted = !empty($user['merchant_rules_accepted']);
-    $merchantSignature = trim((string)($user['merchant_signature'] ?? ''));
-    $merchantVerified = $paymentComplete && $merchantRulesAccepted && $merchantSignature !== '' && $merchantStatus === 'approved';
+    $merchantVerified = $paymentComplete && $merchantRulesAccepted && $merchantStatus === 'approved';
     return [
         'id' => $user['id'] ?? '',
         'username' => $user['username'] ?? '',
@@ -343,7 +342,6 @@ function safeUser($user) {
         'merchant_status' => $merchantStatus,
         'merchant_rules_accepted' => $merchantRulesAccepted,
         'merchant_rules_accepted_at' => intval($user['merchant_rules_accepted_at'] ?? 0),
-        'merchant_signature' => $merchantSignature,
         'merchant_opened_once' => !empty($user['merchant_opened_once']),
         'created_at' => $user['created_at'] ?? 0,
         'last_login' => $user['last_login'] ?? 0,
@@ -710,12 +708,8 @@ switch ($action) {
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
         $merchantRulesAccepted = filter_var($_POST['merchant_rules_accepted'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $merchantSignature = trim((string)($_POST['merchant_signature'] ?? ($user['merchant_signature'] ?? '')));
         if (!$merchantRulesAccepted) {
             jsonResponse(['success' => false, 'message' => '请先阅读商家守则满5秒并勾选同意开通商家'], 400);
-        }
-        if ($merchantSignature === '' || !preg_match('/^\/uploads\/merchant_signatures\/[a-zA-Z0-9_.-]+\.(png|jpe?g|webp)$/i', $merchantSignature)) {
-            jsonResponse(['success' => false, 'message' => '请先上传电子签名图片'], 400);
         }
         $code = trim($_POST['email_code'] ?? '');
         $securityUnlocked = false;
@@ -756,7 +750,6 @@ switch ($action) {
             'payment_methods' => $methods,
             'merchant_rules_accepted' => true,
             'merchant_rules_accepted_at' => time(),
-            'merchant_signature' => $merchantSignature,
             'merchant_status' => $merchantStatus,
             'merchant_opened_once' => true
         ];
@@ -779,49 +772,6 @@ switch ($action) {
         $updatedUser = $db->getUserById($userId);
         $message = $merchantStatus === 'approved' ? '商家已开通，首次开通免审核' : '重新开通申请已提交，请等待后台审核';
         jsonResponse(['success' => true, 'message' => $message, 'user' => safeUser($updatedUser)]);
-
-    case 'upload_merchant_signature':
-        $userId = requireAuth();
-        $user = $db->getUserById($userId);
-        if (!$user) {
-            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
-        }
-        if (empty($_FILES['image']) || !is_uploaded_file($_FILES['image']['tmp_name'] ?? '')) {
-            jsonResponse(['success' => false, 'message' => '请选择要上传的电子签名图片'], 400);
-        }
-        $file = $_FILES['image'];
-        if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
-            jsonResponse(['success' => false, 'message' => '电子签名图片上传失败'], 400);
-        }
-        if (($file['size'] ?? 0) <= 0 || $file['size'] > 2 * 1024 * 1024) {
-            jsonResponse(['success' => false, 'message' => '电子签名图片大小不能超过2MB'], 400);
-        }
-        $info = @getimagesize($file['tmp_name']);
-        $mime = $info['mime'] ?? '';
-        $extMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
-        if (!isset($extMap[$mime])) {
-            jsonResponse(['success' => false, 'message' => '电子签名仅支持 JPG、PNG、WEBP 图片'], 400);
-        }
-        $siteRoot = is_dir(dirname(__DIR__) . '/public') ? dirname(__DIR__) . '/public' : dirname(__DIR__);
-        $uploadDir = $siteRoot . '/uploads/merchant_signatures';
-        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
-            jsonResponse(['success' => false, 'message' => '签名上传目录创建失败'], 500);
-        }
-        if (!is_writable($uploadDir)) {
-            jsonResponse(['success' => false, 'message' => '签名上传目录不可写，请检查权限'], 500);
-        }
-        $filename = 'merchant_sig_' . date('YmdHis') . '_' . bin2hex(random_bytes(6)) . '.' . $extMap[$mime];
-        $target = $uploadDir . '/' . $filename;
-        if (!move_uploaded_file($file['tmp_name'], $target)) {
-            jsonResponse(['success' => false, 'message' => '保存电子签名失败'], 500);
-        }
-        @chmod($target, 0644);
-        $url = '/uploads/merchant_signatures/' . $filename;
-        if (!$db->updateUser($userId, ['merchant_signature' => $url])) {
-            jsonResponse(['success' => false, 'message' => '电子签名保存失败'], 500);
-        }
-        $updatedUser = $db->getUserById($userId);
-        jsonResponse(['success' => true, 'url' => $url, 'message' => '电子签名上传成功', 'user' => safeUser($updatedUser)]);
 
     case 'upload_payment_qrcode':
         $userId = requireAuth();

@@ -141,40 +141,12 @@ const API = {
         }
     },
 
-    savePaymentMethods(methods, emailCode = '', merchantRulesAccepted = false, merchantSignature = '') {
+    savePaymentMethods(methods, emailCode = '', merchantRulesAccepted = false) {
         return this.request('auth.php?action=save_payment_methods', 'POST', {
             payment_methods: JSON.stringify(methods || {}),
             email_code: emailCode,
-            merchant_rules_accepted: merchantRulesAccepted ? '1' : '0',
-            merchant_signature: merchantSignature || ''
+            merchant_rules_accepted: merchantRulesAccepted ? '1' : '0'
         });
-    },
-
-    async uploadMerchantSignature(file) {
-        const options = {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: new FormData()
-        };
-        if (this.csrfToken) {
-            options.headers['X-CSRF-Token'] = this.csrfToken;
-        }
-        options.body.append('image', file);
-        try {
-            const response = await fetch(this.baseUrl + 'auth.php?action=upload_merchant_signature', options);
-            const text = await response.text();
-            let result = {};
-            try {
-                result = text ? JSON.parse(text) : {};
-            } catch (parseError) {
-                const preview = text ? text.slice(0, 300) : '空响应';
-                return { success: false, message: `服务器返回异常（HTTP ${response.status}）：${preview}` };
-            }
-            return response.ok ? result : { success: false, message: result.message || `上传失败（HTTP ${response.status}）`, ...result };
-        } catch (error) {
-            console.error('Merchant Signature Upload Error:', error);
-            return { success: false, message: '电子签名上传失败，请检查网络或服务器状态：' + (error.message || error) };
-        }
     },
 
     async uploadPaymentQrcode(file, method = '', emailCode = '', account = '') {
