@@ -287,7 +287,13 @@ async function handleBuyNow() {
                 <h6 class="fw-bold">${Security.escapeHtml(App.currentDetailProduct.title)}</h6>
                 <p class="text-muted small mb-1">单价：¥${Security.escapeHtml(App.currentDetailProduct.price.toFixed(2))} × ${Security.escapeHtml(quantity)}</p>
                 <p class="text-danger fs-5 fw-bold mb-1">¥${Security.escapeHtml(totalPrice.toFixed(2))}</p>
-                <p class="text-muted small mb-0">${App.currentUser ? `当前余额: ¥${Security.escapeHtml(App.currentUser.balance.toFixed(2))}` : '游客购买仅支持在线支付，支付后请保存订单号'}</p>
+                ${App.currentUser ? `<p class="text-muted small mb-0">当前余额: ¥${Security.escapeHtml(App.currentUser.balance.toFixed(2))}</p>` : `
+                    <div class="text-danger small fw-semibold">
+                        <p class="mb-1">游客购买仅支持在线支付，支付后请保存订单号且无法维权</p>
+                        <p class="mb-1">游客购买仅支持在线支付，支付后请保存订单号且无法维权</p>
+                        <p class="mb-0">游客购买仅支持在线支付，支付后请保存订单号且无法维权</p>
+                    </div>
+                `}
             </div>
         </div>
         ${App.currentDetailProduct.pickup_password_enabled ? `
