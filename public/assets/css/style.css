@@ -1846,11 +1846,48 @@ a:hover {
     .auth-modal-content {
         grid-template-columns: 1fr;
         min-height: auto;
+        border-radius: 22px;
     }
 
     .auth-art-pane {
+        display: block;
+        grid-column: 1;
+        grid-row: 1;
+        min-height: min(82vh, 640px);
+        padding: 0;
+        border-radius: 22px;
+    }
+
+    .auth-art-caption {
         display: none;
-        min-height: 0;
+    }
+
+    .auth-art-pane::before {
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.20) 0%, rgba(15, 23, 42, 0.42) 44%, rgba(15, 23, 42, 0.68) 100%);
+    }
+
+    .auth-form-shell {
+        grid-column: 1;
+        grid-row: 1;
+        min-height: min(82vh, 640px);
+        border-radius: 22px;
+        background: transparent;
+    }
+
+    .auth-modal-content.is-register .auth-form-shell {
+        transform: none;
+        border-radius: 22px;
+    }
+
+    .auth-form-track {
+        min-height: min(82vh, 640px);
+    }
+
+    .auth-form-pane {
+        min-height: min(82vh, 640px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
 
     .auth-form-pane .modal-body,

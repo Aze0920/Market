@@ -407,9 +407,18 @@ function resetRegisterForm() {
     setRegisterError('');
 }
 
+function updateAuthBackgroundImage() {
+    const img = document.getElementById('authAnimeImage');
+    if (!img) return;
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+    const baseUrl = isMobile ? (img.dataset.mobileSrc || 'https://api.elaina.cat/random/mobile') : (img.dataset.pcSrc || 'https://api.elaina.cat/random/pc');
+    img.src = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+}
+
 function openLoginModal() {
     resetLoginForm();
     setAuthMode('login');
+    updateAuthBackgroundImage();
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('loginModal'));
     modal.show();
 }
@@ -417,6 +426,7 @@ function openLoginModal() {
 function openRegisterModal() {
     resetRegisterForm();
     setAuthMode('register');
+    updateAuthBackgroundImage();
     refreshRegisterEmailVerifyState();
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('loginModal'));
     modal.show();
