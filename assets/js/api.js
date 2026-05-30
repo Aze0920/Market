@@ -258,6 +258,10 @@ const API = {
         return this.request('product.php?action=delete_stock', 'POST', { id, stock_index: stockIndex });
     },
 
+    deleteProductStockBatch(id, mode, stockIndexes = []) {
+        return this.request('product.php?action=delete_stock_batch', 'POST', { id, mode, stock_indexes: JSON.stringify(stockIndexes) });
+    },
+
     clearProductStock(id) {
         return this.request('product.php?action=clear_stock', 'POST', { id });
     },

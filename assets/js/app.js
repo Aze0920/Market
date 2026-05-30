@@ -1292,7 +1292,24 @@ async function openSellerProductManage(productId) {
     initEditProductImageDropZone();
 }
 
-async function openStockManageModal(productId) {
+let currentStockManageState = { productId: '', page: 1, pageSize: 10 };
+
+function stockItemDisplayContent(item = {}) {
+    const content = String(item.content || '').trim();
+    if (content && content !== 'N/A') return content;
+    const values = [item.email, item.password, item.client_id, item.fresh_token]
+        .map(v => String(v || '').trim())
+        .filter(v => v && v !== 'N/A');
+    return values.length ? values.join(' | ') : '库存内容为空';
+}
+
+function stockPageSizeOptions(selected = 10) {
+    return [10, 20, 50, 100, 200, 500, 1000].map(size => `<option value="${size}" ${Number(selected) === size ? 'selected' : ''}>每页 ${size} 个</option>`).join('');
+}
+
+async function openStockManageModal(productId, page = currentStockManageState.page || 1, pageSize = currentStockManageState.pageSize || 10) {
+    pageSize = Math.max(10, Math.min(1000, Number(pageSize) || 10));
+    currentStockManageState = { productId, page: Math.max(1, Number(page) || 1), pageSize };
     const result = await API.getProductStock(productId);
     if (!result.success) {
         Toast.error(result.message || '库存读取失败');
@@ -1302,16 +1319,21 @@ async function openStockManageModal(productId) {
     const stock = Array.isArray(result.stock) ? result.stock : [];
     const unsoldCount = Number(result.unsold_count || stock.filter(item => !item.sold).length || 0);
     const soldCount = Number(result.sold_count || stock.filter(item => item.sold).length || 0);
-    const rowsHtml = stock.length ? stock.map(item => {
-        const content = [item.email, item.password, item.client_id, item.fresh_token].filter(Boolean).join(' | ') || item.content || '-';
+    const totalPages = Math.max(1, Math.ceil(stock.length / pageSize));
+    const safePage = Math.min(currentStockManageState.page, totalPages);
+    currentStockManageState.page = safePage;
+    const pageStock = stock.slice((safePage - 1) * pageSize, safePage * pageSize);
+    const rowsHtml = pageStock.length ? pageStock.map(item => {
+        const content = stockItemDisplayContent(item);
         return `
             <div class="seller-stock-row ${item.sold ? 'sold' : ''}">
                 <div class="seller-stock-main">
+                    <input class="form-check-input seller-stock-select" type="radio" name="sellerStockSelected" value="${Number(item.index)}" aria-label="选择库存 #${Number(item.index) + 1}">
                     <div class="seller-stock-index">#${Number(item.index) + 1}</div>
-                    <div class="seller-stock-content">${Security.escapeHtml(content)}</div>
+                    <div class="seller-stock-content" title="${Security.escapeAttr(content)}">${Security.escapeHtml(content)}</div>
                     <span class="badge ${item.sold ? 'badge-secondary' : 'badge-success'}">${item.sold ? '已售' : '未售'}</span>
                 </div>
-                <button class="btn btn-sm btn-outline-danger" ${item.sold ? 'disabled title="已售库存不能删除"' : ''} onclick="deleteSellerStockItem('${Security.escapeAttr(productId)}', ${Number(item.index)})">
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteSellerStockItem('${Security.escapeAttr(productId)}', ${Number(item.index)})">
                     <i class="bi bi-trash me-1"></i>删除
                 </button>
             </div>
@@ -1325,7 +1347,10 @@ async function openStockManageModal(productId) {
                 <div class="text-muted small">${Security.escapeHtml(product.title || '-')}</div>
             </div>
             <div class="d-flex gap-2 flex-wrap stock-manage-actions">
-                <button class="btn btn-sm btn-outline-danger" ${unsoldCount <= 0 ? 'disabled title="没有可清空的未售库存"' : ''} onclick="clearSellerUnsoldStock('${Security.escapeAttr(productId)}')"><i class="bi bi-trash3 me-1"></i>清空库存</button>
+                <button class="btn btn-sm btn-outline-danger" ${stock.length <= 0 ? 'disabled' : ''} onclick="deleteSellerStockBatch('${Security.escapeAttr(productId)}', 'all')"><i class="bi bi-trash3 me-1"></i>删除全部库存</button>
+                <button class="btn btn-sm btn-outline-danger" ${stock.length <= 0 ? 'disabled' : ''} onclick="deleteSellerStockSelected('${Security.escapeAttr(productId)}')"><i class="bi bi-check2-square me-1"></i>删除选中库存</button>
+                <button class="btn btn-sm btn-outline-danger" ${unsoldCount <= 0 ? 'disabled' : ''} onclick="deleteSellerStockBatch('${Security.escapeAttr(productId)}', 'unsold')"><i class="bi bi-box-seam me-1"></i>删除未出售</button>
+                <button class="btn btn-sm btn-outline-danger" ${soldCount <= 0 ? 'disabled' : ''} onclick="deleteSellerStockBatch('${Security.escapeAttr(productId)}', 'sold')"><i class="bi bi-bag-check me-1"></i>删除已出售</button>
                 <button class="btn btn-sm btn-outline-primary" onclick="openAddStockModal('${Security.escapeAttr(productId)}')"><i class="bi bi-plus-circle me-1"></i>添加库存</button>
             </div>
         </div>
@@ -1334,7 +1359,15 @@ async function openStockManageModal(productId) {
             <div><strong>${Security.escapeHtml(unsoldCount)}</strong><span>未售</span></div>
             <div><strong>${Security.escapeHtml(soldCount)}</strong><span>已售</span></div>
         </div>
-        <div class="alert alert-light border small">只能删除未售库存；已售库存关联历史订单，不能删除。</div>
+        <div class="seller-stock-toolbar mb-3">
+            <select class="form-select form-select-sm" onchange="openStockManageModal('${Security.escapeAttr(productId)}', 1, this.value)">${stockPageSizeOptions(pageSize)}</select>
+            <div class="seller-stock-page-actions">
+                <button class="btn btn-sm btn-outline" ${safePage <= 1 ? 'disabled' : ''} onclick="openStockManageModal('${Security.escapeAttr(productId)}', ${safePage - 1}, ${pageSize})">上一页</button>
+                <span class="small text-muted">第 ${safePage} / ${totalPages} 页，共 ${stock.length} 条</span>
+                <button class="btn btn-sm btn-outline" ${safePage >= totalPages ? 'disabled' : ''} onclick="openStockManageModal('${Security.escapeAttr(productId)}', ${safePage + 1}, ${pageSize})">下一页</button>
+            </div>
+        </div>
+        <div class="alert alert-light border small">可选择单条或多条库存进行删除；删除已售库存只会移除库存管理记录，不影响已生成订单。</div>
         <div class="seller-stock-list">${rowsHtml}</div>
     `;
     document.getElementById('purchaseFooter').innerHTML = `
@@ -1344,11 +1377,36 @@ async function openStockManageModal(productId) {
 }
 
 async function deleteSellerStockItem(productId, stockIndex) {
-    if (!confirm('确定删除这条未售库存吗？删除后不可恢复。')) return;
+    if (!confirm('确定删除这条库存吗？删除后不可恢复。')) return;
     const result = await API.deleteProductStock(productId, stockIndex);
     if (!result.success) return Toast.error(result.message || '删除库存失败');
     Toast.success(result.message || '库存已删除');
-    await openStockManageModal(productId);
+    await openStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize);
+    renderDashboardTab('myproducts');
+    if (typeof loadProducts === 'function') loadProducts();
+}
+
+async function deleteSellerStockSelected(productId) {
+    const checked = Array.from(document.querySelectorAll('input[name="sellerStockSelected"]:checked'));
+    const indexes = checked.map(input => Number(input.value)).filter(Number.isInteger);
+    if (!indexes.length) return Toast.warning('请先选择要删除的库存');
+    if (!confirm('确定删除选中的库存吗？删除后不可恢复。')) return;
+    const result = await API.deleteProductStockBatch(productId, 'selected', indexes);
+    if (!result.success) return Toast.error(result.message || '删除选中库存失败');
+    Toast.success(result.message || '库存已删除');
+    await openStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize);
+    renderDashboardTab('myproducts');
+    if (typeof loadProducts === 'function') loadProducts();
+}
+
+async function deleteSellerStockBatch(productId, mode) {
+    const labels = { all: '全部库存', unsold: '未出售库存', sold: '已出售库存' };
+    const label = labels[mode] || '库存';
+    if (!confirm(`确定删除${label}吗？删除后不可恢复。`)) return;
+    const result = await API.deleteProductStockBatch(productId, mode);
+    if (!result.success) return Toast.error(result.message || `删除${label}失败`);
+    Toast.success(result.message || '库存已删除');
+    await openStockManageModal(productId, 1, currentStockManageState.pageSize);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
 }
