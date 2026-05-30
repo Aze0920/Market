@@ -286,7 +286,8 @@ keynest_require_installed(false);
 </section>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 } } };
+const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
 const apiBase = '/api/';
 
 function escapeHtml(value) {
@@ -300,6 +301,21 @@ function statusBadge(status) {
     const map = { pending: ['warning', '待处理'], approved: ['success', '已通过'], paid: ['success', '已支付'], rejected: ['danger', '已拒绝'] };
     const item = map[status] || ['info', status || '-'];
     return `<span class="badge-soft ${item[0]}">${item[1]}</span>`;
+}
+function adminPageSizeSelect(id, value, onChange) {
+    return `<select id="${escapeHtml(id)}" class="form-select form-select-sm" style="width:auto;min-width:120px" onchange="${onChange}">${adminPageSizeOptions.map(size => `<option value="${size}" ${Number(value) === size ? 'selected' : ''}>每页 ${size} 条</option>`).join('')}</select>`;
+}
+function adminPaginationHtml(page, pageSize, total, onPage, label = '条') {
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+    return `
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+            <div class="small text-muted">第 ${safePage} / ${totalPages} 页，共 ${total} ${label}</div>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-outline-secondary" ${safePage <= 1 ? 'disabled' : ''} onclick="${onPage}(${safePage - 1})">上一页</button>
+                <button class="btn btn-sm btn-outline-secondary" ${safePage >= totalPages ? 'disabled' : ''} onclick="${onPage}(${safePage + 1})">下一页</button>
+            </div>
+        </div>`;
 }
 function showToast(message, type = 'info') {
     const box = document.getElementById('toastBox');
@@ -560,48 +576,95 @@ function renderUsers() {
     setTitle('用户管理');
     const keyword = (document.getElementById('userSearchInput')?.value || '').trim().toLowerCase();
     const users = Admin.cache.users || [];
+    const state = Admin.listState.users || (Admin.listState.users = { page: 1, pageSize: 10 });
+    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('userPageSizeSelect')?.value || state.pageSize || 10)));
     const filteredUsers = keyword ? users.filter(u =>
         String(u.username || '').toLowerCase().includes(keyword) ||
         String(u.email || '').toLowerCase().includes(keyword)
     ) : users;
+    const totalPages = Math.max(1, Math.ceil(filteredUsers.length / state.pageSize));
+    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
+    const pageUsers = filteredUsers.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>全部用户</h5>
-                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filteredUsers.length + ' / ' + users.length + ' 个用户' : '共 ' + users.length + ' 个用户'}</div>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filteredUsers.length + ' / ' + users.length + ' 个用户' : '共 ' + users.length + ' 个用户'}，当前显示 ${pageUsers.length} 个</div>
                 </div>
-                <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
+                <div class="d-flex flex-wrap gap-2">
+                    <button id="batchDeleteUsersBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedUsersAdmin()" disabled><i class="bi bi-trash3 me-1"></i>删除选中</button>
+                    <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
+                </div>
             </div>
-            <div class="row g-2 mb-3">
+            <div class="row g-2 mb-3 align-items-center">
                 <div class="col-md-7 col-lg-5">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="userSearchInput" class="form-control" placeholder="搜索用户名或邮箱" value="${escapeHtml(keyword)}" oninput="renderUsers()" autocomplete="off">
+                        <input id="userSearchInput" class="form-control" placeholder="搜索用户名或邮箱" value="${escapeHtml(keyword)}" oninput="Admin.listState.users.page=1;renderUsers()" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-auto">
                     <button class="btn btn-outline-secondary" onclick="clearUserSearch()" ${keyword ? '' : 'disabled'}>清空</button>
                 </div>
+                <div class="col-md-auto ms-md-auto">
+                    ${adminPageSizeSelect('userPageSizeSelect', state.pageSize, 'setUsersPageSize(this.value)')}
+                </div>
             </div>
-            ${userTable(filteredUsers, true)}
+            ${userTable(pageUsers, true, true)}
+            ${adminPaginationHtml(state.page, state.pageSize, filteredUsers.length, 'setUsersPage', '个用户')}
         </div>`;
+    updateUserBatchToolbar();
     if (keyword) {
         const input = document.getElementById('userSearchInput');
         input?.focus();
         input?.setSelectionRange(input.value.length, input.value.length);
     }
 }
+function setUsersPage(page) {
+    Admin.listState.users.page = Number(page) || 1;
+    renderUsers();
+}
+function setUsersPageSize(size) {
+    Admin.listState.users.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
+    Admin.listState.users.page = 1;
+    renderUsers();
+}
 function clearUserSearch() {
     const input = document.getElementById('userSearchInput');
     if (input) input.value = '';
+    Admin.listState.users.page = 1;
     renderUsers();
 }
-function userTable(users, withActions = false) {
+function userTable(users, withActions = false, selectable = false) {
     if (!users.length) return '<div class="text-muted py-4 text-center">暂无用户</div>';
+    const selectHead = selectable ? '<th style="width:44px"><input class="form-check-input" type="checkbox" id="userSelectAll" onchange="toggleAllUserSelection(this.checked)"></th>' : '';
+    const selectCol = u => selectable ? `<td><input class="form-check-input user-select" type="checkbox" value="${escapeHtml(u.id)}" onchange="updateUserBatchToolbar()" ${u.username === 'admin' || u.role === 'admin' ? 'disabled title="管理员禁止删除"' : ''}></td>` : '';
     const actionHead = withActions ? '<th>操作</th>' : '';
     const actionCol = u => withActions ? `<td><button class="btn btn-sm btn-outline-primary me-1" onclick="openUserEditor('${escapeHtml(u.id)}')">编辑</button><button class="btn btn-sm btn-outline-danger" onclick="deleteUserAdmin('${escapeHtml(u.id)}')" ${u.username === 'admin' ? 'disabled title="admin 禁止删除"' : ''}>删除</button></td>` : '';
-    return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td>${money(u.balance)}</td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-responsive"><table class="table"><thead><tr>${selectHead}<th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr>${selectCol(u)}<td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td>${money(u.balance)}</td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
+}
+function selectedUserIds() {
+    return Array.from(document.querySelectorAll('.user-select:checked')).map(input => input.value).filter(Boolean);
+}
+function updateUserBatchToolbar() {
+    const checkboxes = Array.from(document.querySelectorAll('.user-select:not(:disabled)'));
+    const selectedCount = checkboxes.filter(input => input.checked).length;
+    const batchBtn = document.getElementById('batchDeleteUsersBtn');
+    const selectAll = document.getElementById('userSelectAll');
+    if (batchBtn) {
+        batchBtn.disabled = selectedCount === 0;
+        batchBtn.innerHTML = `<i class="bi bi-trash3 me-1"></i>${selectedCount ? '删除选中 (' + selectedCount + ')' : '删除选中'}`;
+    }
+    if (selectAll) {
+        selectAll.disabled = checkboxes.length === 0;
+        selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+}
+function toggleAllUserSelection(checked) {
+    document.querySelectorAll('.user-select:not(:disabled)').forEach(input => { input.checked = checked; });
+    updateUserBatchToolbar();
 }
 function membershipOptionsForUser(selected) {
     const selectedName = selected || 'Free';
@@ -713,6 +776,22 @@ async function deleteUserAdmin(id) {
     const res = await request('admin.php?action=delete_user', 'POST', { id });
     if (!res.success) return showToast(res.message || '删除失败', 'error');
     showToast('用户已删除', 'success');
+    await loadAdminData();
+    renderUsers();
+}
+async function deleteSelectedUsersAdmin() {
+    const ids = selectedUserIds();
+    if (!ids.length) return showToast('请先选择要删除的用户', 'error');
+    if (!confirm('确定删除选中的 ' + ids.length + ' 个用户吗？此操作不可恢复。')) return;
+    let successCount = 0;
+    let failedMessage = '';
+    for (const id of ids) {
+        const res = await request('admin.php?action=delete_user', 'POST', { id });
+        if (res.success) successCount++;
+        else failedMessage = res.message || '部分用户删除失败';
+    }
+    if (successCount) showToast('已删除 ' + successCount + ' 个用户', 'success');
+    if (failedMessage) showToast(failedMessage, 'error');
     await loadAdminData();
     renderUsers();
 }
@@ -1065,12 +1144,17 @@ function paymentOrderAdminCard(o) {
     const userEmail = escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'));
     return `
         <div class="admin-order-card">
-            <div class="admin-order-card-head">
-                <div class="min-width-0">
-                    <div class="admin-order-title">${escapeHtml(o.title || orderTypeLabel(o.type, o.pay_type) || '支付订单')}</div>
-                    <div class="admin-order-trade">${tradeNo}</div>
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                <input class="form-check-input order-select" type="checkbox" value="${id}" onchange="updateOrderBatchToolbar()">
+                <div class="flex-grow-1 min-width-0">
+                    <div class="admin-order-card-head">
+                        <div class="min-width-0">
+                            <div class="admin-order-title">${escapeHtml(o.title || orderTypeLabel(o.type, o.pay_type) || '支付订单')}</div>
+                            <div class="admin-order-trade">${tradeNo}</div>
+                        </div>
+                        ${orderStatusPill(o)}
+                    </div>
                 </div>
-                ${orderStatusPill(o)}
             </div>
             <div class="admin-order-desc">${escapeHtml(o.description || '-')}</div>
             <div class="admin-order-grid">
@@ -1091,28 +1175,56 @@ function paymentOrderAdminCard(o) {
 
 function renderOrders() {
     setTitle('订单记录');
-    const orders = Admin.cache.payOrders || [];
+    const keyword = (document.getElementById('orderSearchInput')?.value || '').trim().toLowerCase();
+    const allOrders = Admin.cache.payOrders || [];
+    const state = Admin.listState.orders || (Admin.listState.orders = { page: 1, pageSize: 10 });
+    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('orderPageSizeSelect')?.value || state.pageSize || 10)));
+    const orders = keyword ? allOrders.filter(o => [
+        o.id, o.trade_no, o.user_id, recordUserEmail(o, 'user_id', ''), o.pay_type, o.type, orderTypeLabel(o.type, o.pay_type), o.title, o.description, o.status, orderStatusMeta(o.status).label
+    ].some(v => String(v || '').toLowerCase().includes(keyword))) : allOrders;
+    const totalPages = Math.max(1, Math.ceil(orders.length / state.pageSize));
+    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
+    const pageOrders = orders.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
-                <h5>支付订单</h5>
+                <div>
+                    <h5>支付订单</h5>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + orders.length + ' / ' + allOrders.length + ' 条订单' : '共 ' + allOrders.length + ' 条订单'}，当前显示 ${pageOrders.length} 条</div>
+                </div>
                 <div class="d-flex flex-wrap gap-2">
+                    <button id="batchDeleteOrdersBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedPaymentOrdersAdmin()" disabled><i class="bi bi-trash3 me-1"></i>删除选中</button>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteUnpaidOrdersAdmin()">删除所有未支付</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteAllOrdersAdmin()">删除全部订单</button>
                     <button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button>
                 </div>
             </div>
+            <div class="row g-2 mb-3 align-items-center">
+                <div class="col-md-7 col-lg-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input id="orderSearchInput" class="form-control" placeholder="搜索交易号、邮箱、类型、说明、状态" value="${escapeHtml(keyword)}" oninput="Admin.listState.orders.page=1;renderOrders()" autocomplete="off">
+                    </div>
+                </div>
+                <div class="col-md-auto">
+                    <button class="btn btn-outline-secondary" onclick="clearOrderSearch()" ${keyword ? '' : 'disabled'}>清空</button>
+                </div>
+                <div class="col-md-auto ms-md-auto">
+                    ${adminPageSizeSelect('orderPageSizeSelect', state.pageSize, 'setOrdersPageSize(this.value)')}
+                </div>
+            </div>
             <div class="admin-order-mobile-list">
-                ${orders.map(paymentOrderAdminCard).join('') || '<div class="text-muted text-center py-4">暂无订单</div>'}
+                ${pageOrders.map(paymentOrderAdminCard).join('') || '<div class="text-muted text-center py-4">暂无订单</div>'}
             </div>
             <div class="table-responsive admin-order-table-wrap">
                 <table class="table">
                     <thead>
-                        <tr><th>交易号</th><th>用户邮箱</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
+                        <tr><th style="width:44px"><input class="form-check-input" type="checkbox" id="orderSelectAll" onchange="toggleAllOrderSelection(this.checked)" ${pageOrders.length ? '' : 'disabled'}></th><th>交易号</th><th>用户邮箱</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
                     </thead>
                     <tbody>
-                        ${orders.map(o => `
+                        ${pageOrders.map(o => `
                             <tr>
+                                <td><input class="form-check-input order-select" type="checkbox" value="${escapeHtml(o.id)}" onchange="updateOrderBatchToolbar()"></td>
                                 <td><code>${escapeHtml(o.trade_no || o.id)}</code></td>
                                 <td>${escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'))}</td>
                                 <td>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</td>
@@ -1124,13 +1236,56 @@ function renderOrders() {
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></td>
                             </tr>
                             <tr id="orderStatusEditor-${escapeHtml(o.id)}" class="order-status-editor-row hidden">
-                                <td colspan="9">${orderStatusEditor(o)}</td>
+                                <td colspan="10">${orderStatusEditor(o)}</td>
                             </tr>
-                        `).join('') || '<tr><td colspan="9" class="text-center text-muted py-4">暂无订单</td></tr>'}
+                        `).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">暂无订单</td></tr>'}
                     </tbody>
                 </table>
             </div>
+            ${adminPaginationHtml(state.page, state.pageSize, orders.length, 'setOrdersPage', '条订单')}
         </div>`;
+    updateOrderBatchToolbar();
+    if (keyword) {
+        const input = document.getElementById('orderSearchInput');
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+    }
+}
+function setOrdersPage(page) {
+    Admin.listState.orders.page = Number(page) || 1;
+    renderOrders();
+}
+function setOrdersPageSize(size) {
+    Admin.listState.orders.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
+    Admin.listState.orders.page = 1;
+    renderOrders();
+}
+function clearOrderSearch() {
+    const input = document.getElementById('orderSearchInput');
+    if (input) input.value = '';
+    Admin.listState.orders.page = 1;
+    renderOrders();
+}
+function selectedPaymentOrderIds() {
+    return Array.from(document.querySelectorAll('.order-select:checked')).map(input => input.value).filter(Boolean);
+}
+function updateOrderBatchToolbar() {
+    const checkboxes = Array.from(document.querySelectorAll('.order-select'));
+    const selectedCount = checkboxes.filter(input => input.checked).length;
+    const batchBtn = document.getElementById('batchDeleteOrdersBtn');
+    const selectAll = document.getElementById('orderSelectAll');
+    if (batchBtn) {
+        batchBtn.disabled = selectedCount === 0;
+        batchBtn.innerHTML = `<i class="bi bi-trash3 me-1"></i>${selectedCount ? '删除选中 (' + selectedCount + ')' : '删除选中'}`;
+    }
+    if (selectAll) {
+        selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+}
+function toggleAllOrderSelection(checked) {
+    document.querySelectorAll('.order-select').forEach(input => { input.checked = checked; });
+    updateOrderBatchToolbar();
 }
 function orderStatusMeta(status) {
     const map = {
@@ -1171,8 +1326,9 @@ function toggleOrderStatusEditor(id, forceOpen = null) {
     if (row) row.classList.toggle('hidden', !shouldOpen);
     if (card) card.classList.toggle('hidden', !shouldOpen);
 }
-async function updatePaymentOrderStatus(id, status) { const res = await request('payment.php?action=update_order_status', 'POST', { id, status }); if (!res.success) { showToast(res.message || '状态更新失败', 'error'); await loadAdminData(); renderOrders(); return; } showToast('订单状态已更新', 'success'); await loadAdminData(); }
+async function updatePaymentOrderStatus(id, status) { const res = await request('payment.php?action=update_order_status', 'POST', { id, status }); if (!res.success) { showToast(res.message || '状态更新失败', 'error'); await loadAdminData(); renderOrders(); return; } showToast('订单状态已更新', 'success'); await loadAdminData(); renderOrders(); }
 async function deletePaymentOrderAdmin(id) { if (!confirm('确定删除这条订单吗？')) return; const res = await request('payment.php?action=delete_order', 'POST', { id }); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast('订单已删除', 'success'); await loadAdminData(); renderOrders(); }
+async function deleteSelectedPaymentOrdersAdmin() { const ids = selectedPaymentOrderIds(); if (!ids.length) return showToast('请先选择要删除的订单', 'error'); if (!confirm('确定删除选中的 ' + ids.length + ' 条订单吗？此操作不可恢复。')) return; let successCount = 0; let failedMessage = ''; for (const id of ids) { const res = await request('payment.php?action=delete_order', 'POST', { id }); if (res.success) successCount++; else failedMessage = res.message || '部分订单删除失败'; } if (successCount) showToast('已删除 ' + successCount + ' 条订单', 'success'); if (failedMessage) showToast(failedMessage, 'error'); await loadAdminData(); renderOrders(); }
 async function deleteUnpaidOrdersAdmin() { if (!confirm('确定删除所有未支付订单吗？包含待处理、失败、已取消订单。')) return; const res = await request('payment.php?action=delete_unpaid_orders', 'POST'); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast(res.message || '已删除未支付订单', 'success'); await loadAdminData(); renderOrders(); }
 async function deleteAllOrdersAdmin() { if (!confirm('确定删除全部支付订单吗？此操作不可恢复。')) return; const res = await request('payment.php?action=delete_all_orders', 'POST'); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast(res.message || '已删除全部订单', 'success'); await loadAdminData(); renderOrders(); }
 function withdrawMethodText(method) {

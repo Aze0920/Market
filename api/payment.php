@@ -151,16 +151,23 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
 
 function completeOnlineProductPurchase($order, $payMethod = '') {
     global $db;
-    if (!empty($order['related_id'])) return null;
+    $freshOrder = $db->getPaymentOrder($order['id'] ?? '');
+    if ($freshOrder) $order = $freshOrder;
+    if (!empty($order['related_id'])) {
+        $existingOrder = $db->getOrderById($order['related_id']);
+        if ($existingOrder) return $existingOrder;
+    }
 
     $product = $db->getProductById($order['product_id'] ?? '');
     $buyer = $db->getUserById($order['user_id'] ?? '');
     $quantity = max(1, intval($order['quantity'] ?? 1));
     $pickupPasswordHash = (string)($order['pickup_password_hash'] ?? '');
     if (!$product || !$buyer || ($product['stock'] ?? 0) < $quantity || ($product['seller_id'] ?? '') === ($buyer['id'] ?? '')) {
+        $db->updatePaymentOrder($order['id'], ['delivery_status' => 'failed', 'delivery_error' => '商品不存在、库存不足或不能购买自己的商品']);
         return null;
     }
     if (!empty($product['pickup_password_enabled']) && $pickupPasswordHash === '') {
+        $db->updatePaymentOrder($order['id'], ['delivery_status' => 'failed', 'delivery_error' => '取卡密码缺失，无法自动发货']);
         return null;
     }
 
@@ -182,7 +189,10 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
             if (count($deliveryList) >= $quantity) break;
         }
     }
-    if (count($deliveryList) < $quantity) return null;
+    if (count($deliveryList) < $quantity) {
+        $db->updatePaymentOrder($order['id'], ['delivery_status' => 'failed', 'delivery_error' => '可用库存不足，无法自动发货']);
+        return null;
+    }
 
     foreach ($deliveryList as $delivery) {
         $product['account_list'][$delivery['account_index']]['sold'] = true;
@@ -247,8 +257,50 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
         ]);
     }
 
-    $db->updatePaymentOrder($order['id'], ['related_id' => $productOrder['id'], 'fee' => $fee]);
+    $db->updatePaymentOrder($order['id'], ['related_id' => $productOrder['id'], 'fee' => $fee, 'delivery_status' => 'delivered', 'delivery_error' => '']);
     return $productOrder;
+}
+
+function finalizePaidPaymentOrder($order, $notifyData = null) {
+    global $db;
+    $update = [
+        'status' => 'paid',
+        'paid_at' => $order['paid_at'] ?? time()
+    ];
+    if ($notifyData !== null) {
+        $update['notify_data'] = $notifyData;
+    }
+    $db->updatePaymentOrder($order['id'], $update);
+    $order = array_merge($order, $update);
+
+    $user = $db->getUserById($order['user_id']);
+    if (!$user) return null;
+
+    if (($order['type'] ?? 'recharge') === 'membership_upgrade') {
+        $targetLevel = $order['target_level'] ?? '';
+        $levels = $db->getMembershipLevels();
+        if ($targetLevel !== '' && isset($levels[$targetLevel])) {
+            $currentLevel = $user['membership_level'] ?? 'Free';
+            $currentPriority = intval($levels[$currentLevel]['priority'] ?? 0);
+            $targetPriority = intval($levels[$targetLevel]['priority'] ?? 0);
+            if ($targetPriority > $currentPriority) {
+                $db->updateUser($order['user_id'], ['membership_level' => $targetLevel]);
+            }
+        }
+        return null;
+    }
+
+    if (($order['type'] ?? '') === 'product_online_purchase') {
+        return completeOnlineProductPurchase($order, $order['pay_type'] ?? '');
+    }
+
+    if (empty($order['balance_applied'])) {
+        $db->updateUser($order['user_id'], [
+            'balance' => floatval($user['balance'] ?? 0) + floatval($order['amount'] ?? 0)
+        ]);
+        $db->updatePaymentOrder($order['id'], ['balance_applied' => true]);
+    }
+    return null;
 }
 
 class YiPay {
@@ -685,6 +737,9 @@ switch ($action) {
         }
 
         if ($order['status'] === 'paid') {
+            if (($order['type'] ?? '') === 'product_online_purchase' && empty($order['related_id'])) {
+                finalizePaidPaymentOrder($order, $data);
+            }
             echo 'success';
             exit;
         }
@@ -693,33 +748,7 @@ switch ($action) {
             exit;
         }
 
-        $db->updatePaymentOrder($order['id'], [
-            'status' => 'paid',
-            'paid_at' => time(),
-            'notify_data' => $data
-        ]);
-
-        $user = $db->getUserById($order['user_id']);
-        if ($user) {
-            if (($order['type'] ?? 'recharge') === 'membership_upgrade') {
-                $targetLevel = $order['target_level'] ?? '';
-                $levels = $db->getMembershipLevels();
-                if ($targetLevel !== '' && isset($levels[$targetLevel])) {
-                    $currentLevel = $user['membership_level'] ?? 'Free';
-                    $currentPriority = intval($levels[$currentLevel]['priority'] ?? 0);
-                    $targetPriority = intval($levels[$targetLevel]['priority'] ?? 0);
-                    if ($targetPriority > $currentPriority) {
-                        $db->updateUser($order['user_id'], ['membership_level' => $targetLevel]);
-                    }
-                }
-            } elseif (($order['type'] ?? '') === 'product_online_purchase') {
-                completeOnlineProductPurchase($order, $order['pay_type'] ?? '');
-            } else {
-                $db->updateUser($order['user_id'], [
-                    'balance' => $user['balance'] + $order['amount']
-                ]);
-            }
-        }
+        finalizePaidPaymentOrder($order, $data);
 
         echo 'success';
         exit;
@@ -782,6 +811,10 @@ switch ($action) {
         }
         if (!$db->updatePaymentOrder($id, $update)) {
             jsonResponse(['success' => false, 'message' => '状态更新失败'], 400);
+        }
+        if ($status === 'paid') {
+            $updatedOrder = array_merge($order, $update);
+            finalizePaidPaymentOrder($updatedOrder);
         }
         jsonResponse(['success' => true, 'message' => '订单状态已更新']);
 
