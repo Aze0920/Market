@@ -73,9 +73,23 @@ keynest_require_installed(false);
         .order-status-pill.failed, .order-status-pill.cancelled, .order-status-pill.unpaid { background: #fee2e2; color: #991b1b; }
         .order-status-editor-row td { padding-top: 0; border-top: 0; }
         .order-status-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 18px; background: #f8fafc; }
+        .order-status-editor-card .order-status-editor { margin-top: 12px; }
         .order-status-option { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 8px 13px; font-weight: 800; color: #475569; }
         .order-status-option.active { border-color: var(--primary); color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary2)); }
         .order-status-option:not(.active):hover { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
+        .admin-order-mobile-list { display: none; }
+        .admin-order-card { border: 1px solid var(--border); border-radius: 18px; padding: 14px; background: #fff; box-shadow: 0 10px 28px rgba(15,23,42,.06); }
+        .admin-order-card + .admin-order-card { margin-top: 12px; }
+        .admin-order-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+        .admin-order-title { font-weight: 850; color: #111827; line-height: 1.35; word-break: break-word; }
+        .admin-order-trade { color: var(--muted); font-family: Consolas, Monaco, "Courier New", monospace; font-size: .72rem; word-break: break-all; margin-top: 2px; }
+        .admin-order-desc { color: #64748b; font-size: .82rem; line-height: 1.45; word-break: break-word; margin-bottom: 12px; }
+        .admin-order-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .admin-order-grid > div { min-width: 0; border-radius: 12px; background: #f8fafc; padding: 9px 10px; }
+        .admin-order-grid span { display: block; color: var(--muted); font-size: .72rem; margin-bottom: 3px; }
+        .admin-order-grid strong { display: block; color: #111827; font-size: .9rem; line-height: 1.35; word-break: break-word; }
+        .admin-order-time { grid-column: 1 / -1; }
+        .admin-order-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
         .confirm-overlay { position: fixed; inset: 0; z-index: 9998; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(6px); }
         .admin-confirm { width: min(430px, 100%); background: #fff; border: 1px solid rgba(255,255,255,.75); border-radius: 24px; padding: 24px; box-shadow: 0 28px 90px rgba(15,23,42,.28); animation: confirmPop .16s ease-out; }
         .admin-confirm-icon { width: 50px; height: 50px; border-radius: 18px; display: grid; place-items: center; background: #fee2e2; color: var(--danger); font-size: 1.5rem; margin-bottom: 16px; }
@@ -173,6 +187,8 @@ keynest_require_installed(false);
             .stat-value { font-size: 1.55rem; }
             .panel { padding: 14px; border-radius: 18px; }
             .panel-title h5 { font-size: 1rem; }
+            .panel-title .btn { flex: 1 1 calc(50% - 6px); }
+            .panel-title .btn-primary { flex-basis: 100%; }
             .settings-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
             .settings-tab { flex: 0 0 auto; padding: 8px 12px; }
             .toast-box { left: 12px; right: 12px; top: auto; bottom: 12px; }
@@ -183,6 +199,11 @@ keynest_require_installed(false);
             .membership-admin-grid, .complaint-grid-admin { grid-template-columns: 1fr; }
             .order-status-editor { align-items: stretch; flex-direction: column; }
             .order-status-option { width: 100%; }
+            .admin-order-table-wrap { display: none; }
+            .admin-order-mobile-list { display: block; }
+            .admin-order-card .order-status-pill { cursor: pointer; flex: 0 0 auto; }
+            .admin-order-grid { grid-template-columns: 1fr; }
+            .admin-order-actions { grid-template-columns: 1fr; }
             .log-toolbar { align-items: stretch; flex-direction: column; }
             .log-toolbar .form-control, .log-toolbar .form-select, .log-toolbar .btn { width: 100%; }
             .log-viewer, .log-viewer.logs-page-viewer { height: 360px; max-height: 55vh; font-size: 11px; }
@@ -1033,6 +1054,36 @@ async function updateAdminComplaintStatus(orderId, status) {
     renderComplaints();
 }
 
+function paymentOrderAdminCard(o) {
+    const id = escapeHtml(o.id || '');
+    const tradeNo = escapeHtml(o.trade_no || o.id || '-');
+    const userEmail = escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'));
+    return `
+        <div class="admin-order-card">
+            <div class="admin-order-card-head">
+                <div class="min-width-0">
+                    <div class="admin-order-title">${escapeHtml(o.title || orderTypeLabel(o.type, o.pay_type) || '支付订单')}</div>
+                    <div class="admin-order-trade">${tradeNo}</div>
+                </div>
+                ${orderStatusPill(o)}
+            </div>
+            <div class="admin-order-desc">${escapeHtml(o.description || '-')}</div>
+            <div class="admin-order-grid">
+                <div><span>用户邮箱</span><strong>${userEmail}</strong></div>
+                <div><span>类型</span><strong>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</strong></div>
+                <div><span>金额</span><strong class="${Number(o.amount || 0) < 0 ? 'text-danger' : 'text-success'}">${money(o.amount)}</strong></div>
+                <div><span>实付</span><strong>${money(o.actual_amount)}</strong></div>
+                <div class="admin-order-time"><span>创建时间</span><strong>${dateText(o.created_at)}</strong></div>
+            </div>
+            <div id="orderStatusEditorCard-${id}" class="order-status-editor-card hidden">${orderStatusEditor(o)}</div>
+            <div class="admin-order-actions">
+                <button class="btn btn-sm btn-outline-primary" onclick="toggleOrderStatusEditor('${id}', true)">修改状态</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${id}')">删除</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderOrders() {
     setTitle('订单记录');
     const orders = Admin.cache.payOrders || [];
@@ -1046,7 +1097,10 @@ function renderOrders() {
                     <button class="btn btn-sm btn-primary" onclick="loadAdminData()">刷新</button>
                 </div>
             </div>
-            <div class="table-responsive">
+            <div class="admin-order-mobile-list">
+                ${orders.map(paymentOrderAdminCard).join('') || '<div class="text-muted text-center py-4">暂无订单</div>'}
+            </div>
+            <div class="table-responsive admin-order-table-wrap">
                 <table class="table">
                     <thead>
                         <tr><th>交易号</th><th>用户邮箱</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
@@ -1104,10 +1158,13 @@ function orderStatusEditor(order) {
 }
 function toggleOrderStatusEditor(id, forceOpen = null) {
     const row = document.getElementById('orderStatusEditor-' + id);
-    if (!row) return;
-    const shouldOpen = forceOpen === null ? row.classList.contains('hidden') : forceOpen;
-    document.querySelectorAll('.order-status-editor-row').forEach(el => el.classList.add('hidden'));
-    row.classList.toggle('hidden', !shouldOpen);
+    const card = document.getElementById('orderStatusEditorCard-' + id);
+    const currentTarget = card && window.matchMedia('(max-width: 640px)').matches ? card : row;
+    if (!row && !card) return;
+    const shouldOpen = forceOpen === null ? (currentTarget ? currentTarget.classList.contains('hidden') : true) : forceOpen;
+    document.querySelectorAll('.order-status-editor-row, .order-status-editor-card').forEach(el => el.classList.add('hidden'));
+    if (row) row.classList.toggle('hidden', !shouldOpen);
+    if (card) card.classList.toggle('hidden', !shouldOpen);
 }
 async function updatePaymentOrderStatus(id, status) { const res = await request('payment.php?action=update_order_status', 'POST', { id, status }); if (!res.success) { showToast(res.message || '状态更新失败', 'error'); await loadAdminData(); renderOrders(); return; } showToast('订单状态已更新', 'success'); await loadAdminData(); }
 async function deletePaymentOrderAdmin(id) { if (!confirm('确定删除这条订单吗？')) return; const res = await request('payment.php?action=delete_order', 'POST', { id }); if (!res.success) return showToast(res.message || '删除失败', 'error'); showToast('订单已删除', 'success'); await loadAdminData(); renderOrders(); }
