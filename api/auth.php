@@ -227,7 +227,7 @@ function sendRegisterEmailCode($email) {
     }
     foreach ($db->getTable('users') as $u) {
         if (isset($u['email']) && strtolower($u['email']) === $email) {
-            jsonResponse(['success' => false, 'message' => '该邮箱已被注册'], 400);
+            jsonResponse(['success' => false, 'message' => '该邮箱已注册，请直接登录'], 400);
         }
     }
     $code = (string)random_int(100000, 999999);
@@ -445,22 +445,22 @@ switch ($action) {
         if ($password !== $passwordConfirm) {
             jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
         }
+        // 先检查账号重复，避免已注册邮箱被验证码校验提示覆盖
+        if ($db->getUserByUsername($username)) {
+            jsonResponse(['success' => false, 'message' => '用户名已存在'], 400);
+        }
+        $allUsers = $db->getTable('users');
+        foreach ($allUsers as $u) {
+            if (isset($u['email']) && strtolower($u['email']) === strtolower($email)) {
+                jsonResponse(['success' => false, 'message' => '该邮箱已注册，请直接登录'], 400);
+            }
+        }
+
         $captchaConfig = captchaClientConfig();
         if (!empty($captchaConfig['register_enabled'])) {
             requireCaptcha('register');
         }
         verifyRegisterEmailCode($email, $emailCode);
-        if ($db->getUserByUsername($username)) {
-            jsonResponse(['success' => false, 'message' => '用户名已存在'], 400);
-        }
-
-        // 检查邮箱是否已被使用
-        $allUsers = $db->getTable('users');
-        foreach ($allUsers as $u) {
-            if (isset($u['email']) && strtolower($u['email']) === strtolower($email)) {
-                jsonResponse(['success' => false, 'message' => '该邮箱已被注册'], 400);
-            }
-        }
 
         $newUser = [
             'id' => genId(),

@@ -568,7 +568,49 @@ function adminComplaintOrders() {
     return array_values($items);
 }
 
-adminRequireAdmin();
+function adminResolveComplaintFunds(&$order, $status) {
+    global $db;
+    if (!in_array($status, ['resolved', 'rejected'], true)) return [true, ''];
+    if (!empty($order['complaint']['funds_settled'])) return [true, '该投诉资金已处理，请勿重复操作'];
+    if (empty($order['balance_frozen'])) {
+        $order['complaint']['funds_settled'] = true;
+        $order['complaint']['funds_settled_at'] = time();
+        $order['complaint']['funds_action'] = 'none';
+        return [true, '该订单没有冻结金额，仅更新投诉状态'];
+    }
+
+    $amount = max(0, floatval($order['frozen_amount'] ?? 0));
+    $seller = $db->getUserById($order['seller_id'] ?? '');
+    if (!$seller) return [false, '卖家不存在，无法处理冻结金额'];
+    $sellerFrozen = floatval($seller['frozen_balance'] ?? 0);
+
+    if ($status === 'resolved') {
+        $db->updateUser($seller['id'], [
+            'balance' => floatval($seller['balance'] ?? 0) + $amount,
+            'frozen_balance' => max(0, $sellerFrozen - $amount)
+        ]);
+        $order['complaint']['funds_action'] = 'release_to_seller';
+        $message = '投诉已解决，冻结金额已放款给卖家';
+    } else {
+        $buyer = $db->getUserById($order['buyer_id'] ?? '');
+        if (!$buyer) return [false, '买家不存在，无法退还冻结金额'];
+        $db->updateUser($seller['id'], [
+            'frozen_balance' => max(0, $sellerFrozen - $amount)
+        ]);
+        $db->updateUser($buyer['id'], [
+            'balance' => floatval($buyer['balance'] ?? 0) + $amount
+        ]);
+        $order['complaint']['funds_action'] = 'refund_to_buyer';
+        $message = '投诉已驳回，冻结金额已退还给买家';
+    }
+
+    $order['balance_frozen'] = false;
+    $order['frozen_released_at'] = time();
+    $order['complaint']['funds_settled'] = true;
+    $order['complaint']['funds_settled_at'] = time();
+    $order['complaint']['funds_amount'] = $amount;
+    return [true, $message];
+}
 
 function adminTestEmailPayload() {
     $email = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
@@ -800,21 +842,28 @@ switch ($action) {
     case 'update_complaint_status':
         $id = trim($_POST['order_id'] ?? '');
         $status = trim($_POST['status'] ?? '');
-        $allowed = ['open', 'processing', 'resolved', 'rejected', 'withdrawn'];
+        $allowed = ['open', 'processing', 'resolved', 'rejected'];
         $order = $db->getOrderById($id);
         if (!$order || empty($order['complaint'])) {
             adminJsonResponse(['success' => false, 'message' => '投诉不存在'], 404);
         }
         if (!in_array($status, $allowed, true)) {
-            adminJsonResponse(['success' => false, 'message' => '投诉状态无效'], 400);
+            adminJsonResponse(['success' => false, 'message' => '投诉状态无效，后台不能操作撤诉'], 400);
+        }
+        if (in_array(($order['complaint']['status'] ?? ''), ['resolved', 'rejected', 'withdrawn'], true)) {
+            adminJsonResponse(['success' => false, 'message' => '该投诉已结束，不能重复修改状态'], 400);
         }
         $adminUser = $db->getUserById($_SESSION['user_id'] ?? '');
+        [$fundsOk, $fundsMessage] = adminResolveComplaintFunds($order, $status);
+        if (!$fundsOk) {
+            adminJsonResponse(['success' => false, 'message' => $fundsMessage ?: '冻结金额处理失败'], 500);
+        }
         $order['complaint']['status'] = $status;
         $order['complaint']['admin_status_by'] = $adminUser['username'] ?? 'admin';
         $order['complaint']['admin_status_at'] = time();
         $order['complaint']['updated_at'] = time();
         $db->updateOrder($order);
-        adminJsonResponse(['success' => true, 'message' => '投诉状态已更新']);
+        adminJsonResponse(['success' => true, 'message' => $fundsMessage ?: '投诉状态已更新']);
 
     case 'stats':
         $users = $db->getTable('users');

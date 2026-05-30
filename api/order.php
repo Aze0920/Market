@@ -242,11 +242,10 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '撤诉密码错误'], 400);
         }
         releaseSellerOrderBalance($order);
-        $order['complaint']['status'] = 'withdrawn';
-        $order['complaint']['withdrawn_at'] = time();
-        $order['complaint']['updated_at'] = time();
+        unset($order['complaint']);
+        $order['complaint_withdrawn_at'] = time();
         $db->updateOrder($order);
-        jsonResponse(['success' => true, 'message' => '已撤诉，冻结金额已解冻']);
+        jsonResponse(['success' => true, 'message' => '已撤诉，冻结金额已解冻，投诉记录已删除']);
 
     case 'reply_complaint':
         $userId = requireAuth();

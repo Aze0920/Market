@@ -944,7 +944,7 @@ function memberLimitText(value, unit) {
     return number === 0 ? '无限制' : `${number} ${unit}`;
 }
 function complaintStatusBadge(status) {
-    const map = { open: ['warning', '处理中'], processing: ['info', '跟进中'], resolved: ['success', '已解决'], rejected: ['danger', '已驳回'], withdrawn: ['info', '已撤诉'] };
+    const map = { open: ['warning', '处理中'], processing: ['info', '跟进中'], resolved: ['success', '已解决'], rejected: ['danger', '已驳回'] };
     const item = map[status] || ['info', status || '-'];
     return `<span class="badge-soft ${item[0]}">${item[1]}</span>`;
 }
@@ -968,7 +968,7 @@ function renderComplaints() {
                 <div class="col-md-4"><input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="renderComplaints()"></div>
                 <div class="col-md-3">
                     <select id="complaintStatusFilter" class="form-select" onchange="renderComplaints()">
-                        ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','已解决'],['rejected','已驳回'],['withdrawn','已撤诉']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
+                        ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','已解决'],['rejected','已驳回']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
                     </select>
                 </div>
             </div>
@@ -998,11 +998,11 @@ function renderComplaintAdminCard(order) {
             </div>
             <div class="d-flex flex-wrap gap-2 justify-content-end">
                 <button class="btn btn-sm btn-outline-primary" onclick="saveAdminComplaintReply('${escapeHtml(order.id)}')">保存回复</button>
-                ${['open','processing','resolved','rejected','withdrawn'].map(s => `<button class="btn btn-sm ${complaint.status === s ? 'btn-primary' : 'btn-outline-secondary'}" onclick="updateAdminComplaintStatus('${escapeHtml(order.id)}','${s}')">${complaintStatusText(s)}</button>`).join('')}
+                ${['open','processing','resolved','rejected'].map(s => `<button class="btn btn-sm ${complaint.status === s ? 'btn-primary' : 'btn-outline-secondary'}" onclick="updateAdminComplaintStatus('${escapeHtml(order.id)}','${s}')">${complaintStatusText(s)}</button>`).join('')}
             </div>
         </div>`;
 }
-function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '已解决', rejected: '已驳回', withdrawn: '已撤诉' })[status] || status; }
+function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '已解决', rejected: '已驳回' })[status] || status; }
 async function saveAdminComplaintReply(orderId) {
     const reply = document.getElementById('adminComplaintReply-' + orderId)?.value?.trim() || '';
     const res = await request('admin.php?action=reply_complaint', 'POST', { order_id: orderId, reply });
@@ -1012,9 +1012,23 @@ async function saveAdminComplaintReply(orderId) {
     renderComplaints();
 }
 async function updateAdminComplaintStatus(orderId, status) {
+    const tipMap = {
+        resolved: '确认标记为已解决吗？冻结余额会放款给卖家。',
+        rejected: '确认标记为已驳回吗？冻结余额会退还给买家。'
+    };
+    if (tipMap[status]) {
+        const ok = await adminConfirm({
+            title: complaintStatusText(status),
+            message: tipMap[status],
+            confirmText: '确认处理',
+            cancelText: '取消',
+            danger: status === 'rejected'
+        });
+        if (!ok) return;
+    }
     const res = await request('admin.php?action=update_complaint_status', 'POST', { order_id: orderId, status });
     if (!res.success) return showToast(res.message || '状态更新失败', 'error');
-    showToast('投诉状态已更新', 'success');
+    showToast(res.message || '投诉状态已更新', 'success');
     await loadAdminData();
     renderComplaints();
 }
