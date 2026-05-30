@@ -1859,44 +1859,32 @@ function scrollToMerchantCertification() {
 }
 
 function paymentMethodNeedsEmailCode(key) {
-    const methods = getUserPaymentMethods();
-    const item = methods[key] || {};
-    return !!(item.account || item.qrcode) && profilePaymentInitiallyConfigured && !profileSecurityUnlocked;
+    return false;
 }
 
 function paymentMethodVerifyHtml(key, item) {
-    if (!item.account && !item.qrcode) return '';
-    return `
-        <div class="payment-verify-box mt-3">
-            <div class="small text-muted"><i class="bi bi-lock-fill me-1"></i>已配置并锁定，收款账号和收款码不能在前台修改；如需重配请联系管理员。</div>
-        </div>
-    `;
+    return '';
 }
 
 function renderPaymentMethodUploadCard(key, item) {
     const hasQr = !!item.qrcode;
-    const isLocked = hasQr && profilePaymentInitiallyConfigured && !profileSecurityUnlocked;
     const imageUrl = hasQr ? `${item.qrcode}${item.qrcode.includes('?') ? '&' : '?'}v=${Date.now()}` : '';
-    const uploadAttrs = isLocked
-        ? 'aria-disabled="true" onclick="event.preventDefault(); Toast.info(\'请输入邮箱验证码，验证成功后即可重新配置收款码。\')"'
-        : `for="paymentQrInput_${Security.escapeAttr(key)}" ondragover="handlePaymentQrDragOver(event)" ondragleave="handlePaymentQrDragLeave(event)" ondrop="handlePaymentQrDrop(event, '${Security.escapeAttr(key)}')"`;
+    const uploadAttrs = `for="paymentQrInput_${Security.escapeAttr(key)}" ondragover="handlePaymentQrDragOver(event)" ondragleave="handlePaymentQrDragLeave(event)" ondrop="handlePaymentQrDrop(event, '${Security.escapeAttr(key)}')"`;
     return `
         <div class="payment-receive-card" data-method="${Security.escapeAttr(key)}">
             <div class="payment-receive-head">
                 <div class="payment-receive-title"><i class="bi ${paymentMethodIcon(key)}"></i>${Security.escapeHtml(item.label)}</div>
-                <span class="badge ${hasQr && item.account ? 'badge-success' : 'badge-warning'}">${isLocked ? '已锁定' : (hasQr && item.account ? '已解锁' : '待完善')}</span>
+                <span class="badge ${hasQr && item.account ? 'badge-success' : 'badge-warning'}">${hasQr && item.account ? '已配置' : '待完善'}</span>
             </div>
             <label class="form-label mt-3">收款账号</label>
             <div class="payment-account-lock-wrap">
-                <input class="form-control ${isLocked ? 'locked' : ''}" id="paymentAccount_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.account || '')}" placeholder="填写${Security.escapeAttr(item.label)}账号/昵称" ${isLocked ? 'readonly aria-readonly="true" title="输入邮箱验证码并验证通过后可修改"' : ''}>
-                ${isLocked ? '<span class="payment-account-lock"><i class="bi bi-lock-fill"></i>已锁定</span>' : ''}
+                <input class="form-control" id="paymentAccount_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.account || '')}" placeholder="填写${Security.escapeAttr(item.label)}账号/昵称">
             </div>
-            ${isLocked ? paymentMethodVerifyHtml(key, item) : ''}
-            <label class="payment-upload-zone ${isLocked ? 'locked' : ''} mt-3" ${uploadAttrs}>
-                <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" ${isLocked ? 'disabled' : `onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')"`}>
+            <label class="payment-upload-zone mt-3" ${uploadAttrs}>
+                <input type="file" id="paymentQrInput_${Security.escapeAttr(key)}" accept="image/*" class="hidden" onchange="handlePaymentQrSelect(event, '${Security.escapeAttr(key)}')">
                 <input type="hidden" id="paymentQr_${Security.escapeAttr(key)}" value="${Security.escapeAttr(item.qrcode || '')}">
                 <div class="payment-upload-preview" id="paymentQrPreview_${Security.escapeAttr(key)}">
-                    ${hasQr ? `<img src="${Security.escapeAttr(imageUrl)}" alt="${Security.escapeAttr(item.label)}收款码" onerror="handlePaymentQrImageError(this, '${Security.escapeAttr(item.label)}')"><div class="payment-upload-lock"><i class="bi ${isLocked ? 'bi-lock-fill' : 'bi-unlock-fill'}"></i>${isLocked ? '已锁定，验证后可重新上传' : '已解锁，可重新上传'}</div>` : renderPaymentQrPlaceholder()}
+                    ${hasQr ? `<img src="${Security.escapeAttr(imageUrl)}" alt="${Security.escapeAttr(item.label)}收款码" onerror="handlePaymentQrImageError(this, '${Security.escapeAttr(item.label)}')"><div class="payment-upload-lock"><i class="bi bi-unlock-fill"></i>可重新上传</div>` : renderPaymentQrPlaceholder()}
                 </div>
             </label>
         </div>
@@ -2024,7 +2012,7 @@ async function loadProfileTab(area) {
                     </div>
                     <hr class="my-4">
                     <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-2 text-primary"></i>账号安全验证</h6>
-                    <div class="alert alert-light border small mb-3">发送一次验证码即可在有效期内用于修改密码、保存支付宝和微信收款方式：<strong>${Security.escapeHtml(maskedEmail)}</strong></div>
+                    <div class="alert alert-light border small mb-3">发送一次验证码即可在有效期内用于修改登录密码：<strong>${Security.escapeHtml(maskedEmail)}</strong></div>
                     <div class="row g-3">
                         <div class="col-md-7">
                             <label class="form-label">邮箱验证码</label>
@@ -2054,7 +2042,7 @@ async function loadProfileTab(area) {
                             <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-2 text-primary"></i>收款方式</h6>
                             <div class="text-muted small">提现会直接使用这里配置的微信或支付宝收款信息</div>
                         </div>
-                        <button class="btn btn-primary ${profilePaymentInitiallyConfigured ? 'disabled' : ''}" id="savePaymentMethodsBtn" onclick="savePaymentMethods()" aria-disabled="${profilePaymentInitiallyConfigured ? 'true' : 'false'}" ${profilePaymentInitiallyConfigured ? 'title="请先输入6位邮箱验证码完成验证"' : ''}><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
+                        <button class="btn btn-primary" id="savePaymentMethodsBtn" onclick="savePaymentMethods()"><i class="bi bi-check2-circle me-1"></i>保存收款方式</button>
                     </div>
                     <div id="paymentMethodsNotice" class="payment-methods-notice hidden mb-3"></div>
                     <div class="payment-receive-grid">
@@ -2198,26 +2186,6 @@ function setProfileSecurityUnlocked(unlocked) {
     });
     const passwordBtn = document.getElementById('changeProfilePasswordBtn');
     if (passwordBtn) passwordBtn.disabled = !profileSecurityUnlocked;
-    const paymentBtn = document.getElementById('savePaymentMethodsBtn');
-    if (paymentBtn) {
-        const needsVerify = profilePaymentInitiallyConfigured;
-        paymentBtn.classList.toggle('disabled', needsVerify && !profileSecurityUnlocked);
-        paymentBtn.setAttribute('aria-disabled', needsVerify && !profileSecurityUnlocked ? 'true' : 'false');
-        paymentBtn.title = needsVerify && !profileSecurityUnlocked ? '请先输入6位邮箱验证码完成验证' : '';
-    }
-    document.querySelectorAll('[id^="paymentAccount_"]').forEach(input => {
-        const method = input.id.replace('paymentAccount_', '');
-        const hasConfigured = !!(getUserPaymentMethods()[method]?.account || getUserPaymentMethods()[method]?.qrcode);
-        if (hasConfigured) {
-            input.readOnly = !profileSecurityUnlocked;
-            input.classList.toggle('locked', !profileSecurityUnlocked);
-        }
-    });
-    document.querySelectorAll('[id^="paymentQrInput_"]').forEach(input => {
-        const method = input.id.replace('paymentQrInput_', '');
-        const hasConfigured = !!(getUserPaymentMethods()[method]?.account || getUserPaymentMethods()[method]?.qrcode);
-        if (hasConfigured) input.disabled = !profileSecurityUnlocked;
-    });
 }
 
 function handleProfileEmailCodeInput() {
@@ -2246,14 +2214,7 @@ async function verifyProfileEmailCodeAndUnlock(code) {
         return;
     }
     setProfileSecurityUnlocked(true);
-    document.querySelectorAll('.payment-receive-card').forEach(card => {
-        const method = card.dataset.method;
-        const item = getUserPaymentMethods()[method] || {};
-        const next = document.createElement('div');
-        next.innerHTML = renderPaymentMethodUploadCard(method, item);
-        card.replaceWith(next.firstElementChild);
-    });
-    Toast.success(result.message || '验证通过，已解锁可修改项');
+    Toast.success(result.message || '验证通过，已解锁修改密码');
 }
 
 let profileEmailCountdown = 0;
@@ -2375,18 +2336,12 @@ async function uploadPaymentQrFile(method, file) {
     if (file.size > 2 * 1024 * 1024) return Toast.warning('图片大小不能超过2MB');
     const accountValue = document.getElementById('paymentAccount_' + method)?.value.trim() || '';
     if (!accountValue) return warnPaymentMethods('请先填写收款账号/昵称，再上传收款码图片');
-    const needsCode = paymentMethodNeedsEmailCode(method);
-    const emailCode = document.getElementById('profileEmailCode')?.value.trim() || '';
-    if (needsCode && !profileSecurityUnlocked) {
-        document.getElementById('paymentQrInput_' + method).value = '';
-        return Toast.warning('该收款方式已锁定，请先输入6位邮箱验证码完成解锁');
-    }
     const preview = document.getElementById('paymentQrPreview_' + method);
     const previousHtml = preview?.innerHTML || renderPaymentQrPlaceholder();
     if (preview) preview.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>上传中...</span>';
     let result;
     try {
-        result = await API.uploadPaymentQrcode(file, method, emailCode, accountValue);
+        result = await API.uploadPaymentQrcode(file, method, '', accountValue);
     } catch (error) {
         const message = error?.message || '收款码上传异常，请重试';
         Toast.error(message);
@@ -2426,17 +2381,10 @@ async function savePaymentMethods() {
     if (!App.currentUser?.qq_bound) {
         return warnPaymentMethods('请先绑定 QQ 后再申请开通商家');
     }
-    if (profilePaymentInitiallyConfigured && !profileSecurityUnlocked) {
-        return warnPaymentMethods('请先输入6位邮箱验证码完成验证后再保存收款方式');
-    }
     const methods = getUserPaymentMethods();
-    const currentMethods = getUserPaymentMethods();
     Object.keys(methods).forEach(key => {
-        const locked = !!(currentMethods[key]?.qrcode || currentMethods[key]?.account) && profilePaymentInitiallyConfigured && !profileSecurityUnlocked;
-        const account = locked ? (currentMethods[key]?.account || '') : (document.getElementById('paymentAccount_' + key)?.value.trim() || '');
-        const qrcode = locked ? (currentMethods[key]?.qrcode || '') : (document.getElementById('paymentQr_' + key)?.value.trim() || '');
-        methods[key].account = account;
-        methods[key].qrcode = qrcode;
+        methods[key].account = document.getElementById('paymentAccount_' + key)?.value.trim() || '';
+        methods[key].qrcode = document.getElementById('paymentQr_' + key)?.value.trim() || '';
     });
     for (const [key, item] of Object.entries(methods)) {
         if (!item.account || !item.qrcode) {

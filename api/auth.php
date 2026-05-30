@@ -716,20 +716,14 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '请先阅读商家守则满5秒并勾选同意开通商家'], 400);
         }
         $code = trim($_POST['email_code'] ?? '');
-        $securityUnlocked = false;
-        if ($code !== '') {
-            verifyProfileEmailCode($user, $code, false);
-            $securityUnlocked = true;
-        }
         $methods = [];
         foreach ($allowed as $key => $label) {
             $item = is_array($decoded[$key] ?? null) ? $decoded[$key] : [];
             $oldItem = is_array($oldMethods[$key] ?? null) ? $oldMethods[$key] : [];
             $oldAccount = safeTrimString($oldItem['account'] ?? '', 100);
             $oldQrcode = safeTrimString($oldItem['qrcode'] ?? '', 300);
-            $isLocked = ($oldAccount !== '' || $oldQrcode !== '') && !$securityUnlocked;
-            $account = $isLocked ? $oldAccount : safeTrimString($item['account'] ?? '', 100);
-            $qrcode = $isLocked ? $oldQrcode : safeTrimString($item['qrcode'] ?? '', 300);
+            $account = safeTrimString($item['account'] ?? '', 100);
+            $qrcode = safeTrimString($item['qrcode'] ?? '', 300);
             if (($account === '') !== ($qrcode === '')) {
                 jsonResponse(['success' => false, 'message' => $label . '需同时填写收款账号并上传收款码'], 400);
             }
@@ -768,7 +762,7 @@ switch ($action) {
                 'event' => 'save_payment_methods_update_failed',
                 'user_id' => $userId,
                 'method_keys' => array_keys($methods),
-                'security_unlocked' => $securityUnlocked,
+                'security_unlocked' => true,
                 'has_email_code' => $code !== '',
             ]);
             jsonResponse(['success' => false, 'message' => '收款方式保存失败，请检查用户数据或数据库写入状态'], 500);
@@ -785,9 +779,6 @@ switch ($action) {
         }
         $method = trim((string)($_POST['method'] ?? ''));
         $emailCode = trim((string)($_POST['email_code'] ?? ''));
-        if ($emailCode !== '') {
-            verifyProfileEmailCode($user, $emailCode, false);
-        }
         $incomingAccount = safeTrimString($_POST['account'] ?? '', 100);
         $allowed = ['alipay' => '支付宝', 'wechat' => '微信'];
         if (!isset($allowed[$method])) {
@@ -801,10 +792,6 @@ switch ($action) {
         }
         $oldMethods = is_array($user['payment_methods'] ?? null) ? $user['payment_methods'] : [];
         $oldItem = is_array($oldMethods[$method] ?? null) ? $oldMethods[$method] : [];
-        $hasExistingPaymentInfo = safeTrimString($oldItem['qrcode'] ?? '', 300) !== '' || safeTrimString($oldItem['account'] ?? '', 100) !== '';
-        if ($hasExistingPaymentInfo && $emailCode === '') {
-            jsonResponse(['success' => false, 'message' => '该收款方式已锁定，请先输入邮箱验证码完成解锁'], 400);
-        }
         if (empty($_FILES['image'])) {
             $maxUpload = ini_get('upload_max_filesize') ?: '未知';
             $maxPost = ini_get('post_max_size') ?: '未知';
@@ -866,7 +853,7 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '收款码保存失败'], 500);
         }
         $updatedUser = $db->getUserById($userId);
-        jsonResponse(['success' => true, 'url' => $url, 'message' => $hasExistingPaymentInfo ? '邮箱验证通过，收款码已更新' : '收款码上传成功，已自动保存', 'user' => safeUser($updatedUser)]);
+        jsonResponse(['success' => true, 'url' => $url, 'message' => '收款码上传成功', 'user' => safeUser($updatedUser)]);
 
     case 'send_profile_email_code':
         $userId = requireAuth();
