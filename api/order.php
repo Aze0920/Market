@@ -59,6 +59,14 @@ function maskDeliveryInfo($deliveryInfo) {
     return $deliveryInfo;
 }
 
+function anonymizeGuestBuyerForSeller($order) {
+    if (empty($order['guest_order'])) return $order;
+    $order['buyer_id'] = '';
+    $order['buyer_name'] = '游客买家';
+    unset($order['guest_token']);
+    return $order;
+}
+
 function safeOrderForResponse($order) {
     if (isset($order['delivery_info']) && is_array($order['delivery_info'])) {
         unset($order['delivery_info']['pickup_password_hash']);
@@ -125,7 +133,7 @@ switch ($action) {
         $userId = requireAuth();
         $orders = $db->getOrders($userId, 'seller');
         foreach ($orders as &$order) {
-            $order = safeOrderForResponse($order);
+            $order = anonymizeGuestBuyerForSeller(safeOrderForResponse($order));
         }
         usort($orders, fn($a, $b) => $b['purchase_date'] - $a['purchase_date']);
         jsonResponse(['success' => true, 'orders' => $orders]);
@@ -159,6 +167,10 @@ switch ($action) {
                 $order['delivery_info']['password_required'] = false;
                 $order['pickup_password_required'] = false;
             }
+        }
+
+        if (($order['seller_id'] ?? '') === $sessionUserId && !empty($order['guest_order'])) {
+            $order = anonymizeGuestBuyerForSeller($order);
         }
 
         jsonResponse(['success' => true, 'order' => safeOrderForResponse($order)]);

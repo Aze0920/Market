@@ -313,7 +313,7 @@ async function handleBuyNow() {
                     <div class="text-danger small fw-semibold">
                         <p class="mb-1">游客购买仅支持在线支付，支付后请保存订单号且无法维权</p>
                         <p class="mb-1">游客购买仅支持在线支付，支付后请保存订单号且无法维权</p>
-                        <p class="mb-0">游客购买仅支持在线支付，支付后请保存订单号且无法维权</p>
+                        <p class="mb-0">游客购买仅支持在线支付，支付后请保存订单号且无法维权；提交支付前还会再次确认三次</p>
                     </div>
                 `}
             </div>
@@ -355,6 +355,19 @@ async function handleBuyNow() {
     }
 }
 
+async function confirmGuestPurchaseRisk() {
+    if (App.currentUser) return true;
+    const message = '游客购买仅支持在线支付，支付后请保存订单号且无法维权，是否继续';
+    for (let i = 1; i <= 3; i += 1) {
+        const ok = window.confirm(`${message}\n\n第 ${i} / 3 次确认`);
+        if (!ok) {
+            Toast.info('已取消游客购买');
+            return false;
+        }
+    }
+    return true;
+}
+
 async function confirmPurchase(quantity = 1) {
     if (confirmPurchasePending) return;
     if (!App.currentDetailProduct) return;
@@ -381,6 +394,11 @@ async function confirmPurchase(quantity = 1) {
         if (!selectedOption || selectedOption.disabled) {
             Toast.warning('请选择可用的支付方式');
             return;
+        }
+
+        if (!App.currentUser) {
+            const guestConfirmed = await confirmGuestPurchaseRisk();
+            if (!guestConfirmed) return;
         }
 
         if (selectedOption.value !== 'balance') {

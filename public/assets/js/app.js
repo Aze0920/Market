@@ -591,11 +591,12 @@ async function loadSalesTab(area) {
                                 ${Utils.truncate(o.product_title, 20)}
                                 ${o.complaint && o.complaint.status === 'open' ? '<div><span class="badge badge-warning">投诉中</span></div>' : ''}
                             </td>
-                            <td>${o.buyer_name}</td>
+                            <td>${o.guest_order ? '<span class="badge badge-secondary">游客买家</span><div class="small text-muted">已隐藏信息</div>' : Security.escapeHtml(o.buyer_name || '-')}</td>
                             <td class="text-success fw-semibold">+¥${o.seller_amount ? o.seller_amount.toFixed(2) : o.price.toFixed(2)}</td>
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
-                                ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${o.id}')">查看投诉</button>` : '<span class="text-muted small">-</span>'}
+                                <button class="btn btn-sm btn-outline" onclick="openSellerOrderInfoModal('${Security.escapeAttr(o.id)}')">订单信息</button>
+                                ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${o.id}')">查看投诉</button>` : ''}
                             </td>
                         </tr>
                     `).join('')}
@@ -603,6 +604,30 @@ async function loadSalesTab(area) {
             </table>
         </div>
     `;
+}
+
+async function openSellerOrderInfoModal(orderId) {
+    const result = await API.getOrder(orderId);
+    if (!result.success) {
+        Toast.error(result.message || '订单不存在');
+        return;
+    }
+    const order = result.order || {};
+    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    document.getElementById('purchaseBody').innerHTML = `
+        <h6 class="fw-bold mb-3"><i class="bi bi-receipt me-1"></i>售出订单信息</h6>
+        <div class="bg-light rounded-3 p-3 small">
+            <div><strong>订单号：</strong><code>${Security.escapeHtml(order.id || '-')}</code></div>
+            <div><strong>商品：</strong>${Security.escapeHtml(order.product_title || '-')}</div>
+            <div><strong>买家：</strong>${order.guest_order ? '<span class="badge badge-secondary">游客买家</span> <span class="text-muted">信息已隐藏</span>' : Security.escapeHtml(order.buyer_name || '-')}</div>
+            <div><strong>数量：</strong>${Security.escapeHtml(order.quantity || 1)}</div>
+            <div><strong>收入：</strong><span class="text-success fw-semibold">¥${Number(order.seller_amount || order.price || 0).toFixed(2)}</span></div>
+            <div><strong>时间：</strong>${Utils.formatDate(order.purchase_date)}</div>
+        </div>
+        ${order.guest_order ? '<div class="alert alert-warning small mt-3 mb-0">这是游客订单，卖家端不会展示游客身份标识、联系方式或游客查询密钥。</div>' : ''}
+    `;
+    document.getElementById('purchaseFooter').innerHTML = '<button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>';
+    modal.show();
 }
 
 async function openComplaintModal(orderId) {

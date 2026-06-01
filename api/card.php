@@ -51,6 +51,20 @@ function validateId($id) {
     return preg_match('/^[a-zA-Z0-9_]+$/', $id);
 }
 
+function checkCardUseRateLimit() {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $key = 'card_use_attempts_' . md5($ip);
+    $attempts = $_SESSION[$key] ?? [];
+    $now = time();
+    $attempts = array_filter($attempts, fn($t) => ($now - $t) < 900);
+    if (count($attempts) >= 20) {
+        return false;
+    }
+    $attempts[] = $now;
+    $_SESSION[$key] = $attempts;
+    return true;
+}
+
 switch ($action) {
     case 'use':
         $userId = requireAuth();
@@ -58,6 +72,9 @@ switch ($action) {
         $user = getCurrentUser();
         $code = trim($_POST['code'] ?? '');
 
+        if (!checkCardUseRateLimit()) {
+            jsonResponse(['success' => false, 'message' => '尝试过于频繁，请15分钟后再试'], 429);
+        }
         if (empty($code) || strlen($code) > 50) {
             jsonResponse(['success' => false, 'message' => '无效的卡密'], 400);
         }
