@@ -854,6 +854,7 @@ function paymentOrderTitle(order = {}) {
         product_purchase_refund: '购买失败退款',
         product_sale_income: '商品销售收入',
         publish_fee: '发布商品扣费',
+        publish_fee_refund: '删除库存退费',
         admin_balance_adjust: amount >= 0 ? '后台加款' : '后台扣款'
     };
     const label = titleMap[type] || (amount < 0 ? '消费支出' : '余额收入');
@@ -1609,6 +1610,7 @@ async function deleteSellerStockItem(productId, stockIndex) {
     const result = await API.deleteProductStock(productId, stockIndex);
     if (!result.success) return Toast.error(result.message || '删除库存失败');
     Toast.success(result.message || '库存已删除');
+    await refreshUserData();
     await openStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
@@ -1622,6 +1624,7 @@ async function deleteSellerStockSelected(productId) {
     const result = await API.deleteProductStockBatch(productId, 'selected', indexes);
     if (!result.success) return Toast.error(result.message || '删除选中库存失败');
     Toast.success(result.message || '库存已删除');
+    await refreshUserData();
     await openStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
@@ -1634,6 +1637,7 @@ async function deleteSellerStockBatch(productId, mode) {
     const result = await API.deleteProductStockBatch(productId, mode);
     if (!result.success) return Toast.error(result.message || `删除${label}失败`);
     Toast.success(result.message || '库存已删除');
+    await refreshUserData();
     await openStockManageModal(productId, 1, currentStockManageState.pageSize);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
@@ -1644,6 +1648,7 @@ async function clearSellerUnsoldStock(productId) {
     const result = await API.clearProductStock(productId);
     if (!result.success) return Toast.error(result.message || '清空库存失败');
     Toast.success(result.message || '未售库存已清空');
+    await refreshUserData();
     await openStockManageModal(productId);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();

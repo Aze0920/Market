@@ -177,6 +177,48 @@ function parseAccountLine($line) {
     ];
 }
 
+function refundableStockFeeForUser($userId) {
+    global $db;
+    $user = $db->getUserById($userId);
+    $levels = $db->getMembershipLevels();
+    $levelName = $user['membership_level'] ?? 'Free';
+    $level = $levels[$levelName] ?? ($levels['Free'] ?? []);
+    return max(0, floatval($level['publish_fee_per_account'] ?? 0));
+}
+
+function refundDeletedUnsoldStock($userId, $productTitle, $unsoldCount) {
+    global $db;
+    $unsoldCount = max(0, intval($unsoldCount));
+    if ($unsoldCount <= 0) {
+        return 0;
+    }
+    $refundPerItem = refundableStockFeeForUser($userId);
+    $refundAmount = $refundPerItem * $unsoldCount;
+    if ($refundAmount <= 0) {
+        return 0;
+    }
+    $user = $db->getUserById($userId);
+    if (!$user) {
+        return 0;
+    }
+    $db->updateUser($userId, ['balance' => floatval($user['balance'] ?? 0) + $refundAmount]);
+    $db->createPaymentOrder([
+        'trade_no' => 'REF' . date('YmdHis') . rand(1000, 9999),
+        'user_id' => $userId,
+        'payment_config_id' => 'balance',
+        'pay_type' => 'balance_refund',
+        'amount' => $refundAmount,
+        'actual_amount' => $refundAmount,
+        'fee' => 0,
+        'status' => 'paid',
+        'type' => 'publish_fee_refund',
+        'title' => '删除未售库存退费',
+        'description' => '删除未售库存退还发布扣费：' . $productTitle . ' × ' . $unsoldCount,
+        'paid_at' => time()
+    ]);
+    return $refundAmount;
+}
+
 function productPublishFail($message, $context = []) {
     if (isset($GLOBALS['api_logger'])) {
         $GLOBALS['api_logger']->logApiRequest('warning', array_merge([
@@ -750,14 +792,22 @@ switch ($action) {
         if (!isset($accountList[$stockIndex])) {
             jsonResponse(['success' => false, 'message' => '库存不存在或已删除'], 404);
         }
+        $deletedItem = $accountList[$stockIndex];
+        $deletedUnsoldCount = empty($deletedItem['sold']) ? 1 : 0;
         array_splice($accountList, $stockIndex, 1);
+        $refundUserId = (string)($product['seller_id'] ?? $userId);
+        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedUnsoldCount);
         $product['account_list'] = array_values($accountList);
         $product['stock'] = count(array_filter($product['account_list'], fn($item) => empty($item['sold'])));
         $product['updated_at'] = time();
         $db->updateProduct($product);
         $safe = $product;
         unset($safe['account_list'], $safe['pickup_password']);
-        jsonResponse(['success' => true, 'message' => '库存已删除', 'product' => $safe]);
+        $message = '库存已删除';
+        if ($refundAmount > 0) {
+            $message .= '，已退还 ¥' . number_format($refundAmount, 2, '.', '');
+        }
+        jsonResponse(['success' => true, 'message' => $message, 'product' => $safe, 'refund_amount' => $refundAmount]);
 
     case 'delete_stock_batch':
         $userId = requireAuth();
@@ -795,9 +845,13 @@ switch ($action) {
         $deleteMap = array_flip($deleteIndexes);
         $newAccountList = [];
         $deletedCount = 0;
+        $deletedUnsoldCount = 0;
         foreach ($accountList as $index => $item) {
             if (isset($deleteMap[$index])) {
                 $deletedCount++;
+                if (empty($item['sold'])) {
+                    $deletedUnsoldCount++;
+                }
                 continue;
             }
             $newAccountList[] = $item;
@@ -805,13 +859,19 @@ switch ($action) {
         if ($deletedCount <= 0) {
             jsonResponse(['success' => false, 'message' => '库存不存在或已删除'], 404);
         }
+        $refundUserId = (string)($product['seller_id'] ?? $userId);
+        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedUnsoldCount);
         $product['account_list'] = array_values($newAccountList);
         $product['stock'] = count(array_filter($product['account_list'], fn($item) => empty($item['sold'])));
         $product['updated_at'] = time();
         $db->updateProduct($product);
         $safe = $product;
         unset($safe['account_list'], $safe['pickup_password']);
-        jsonResponse(['success' => true, 'message' => '已删除库存 ' . $deletedCount . ' 条', 'product' => $safe, 'deleted_count' => $deletedCount]);
+        $message = '已删除库存 ' . $deletedCount . ' 条';
+        if ($refundAmount > 0) {
+            $message .= '，已退还 ¥' . number_format($refundAmount, 2, '.', '');
+        }
+        jsonResponse(['success' => true, 'message' => $message, 'product' => $safe, 'deleted_count' => $deletedCount, 'deleted_unsold_count' => $deletedUnsoldCount, 'refund_amount' => $refundAmount]);
 
     case 'clear_stock':
         $userId = requireAuth();
@@ -832,13 +892,19 @@ switch ($action) {
         if ($deletedCount <= 0) {
             jsonResponse(['success' => false, 'message' => '没有可清空的未售库存'], 400);
         }
+        $refundUserId = (string)($product['seller_id'] ?? $userId);
+        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedCount);
         $product['account_list'] = $soldAccounts;
         $product['stock'] = 0;
         $product['updated_at'] = time();
         $db->updateProduct($product);
         $safe = $product;
         unset($safe['account_list'], $safe['pickup_password']);
-        jsonResponse(['success' => true, 'message' => '已清空未售库存 ' . $deletedCount . ' 条', 'product' => $safe, 'deleted_count' => $deletedCount]);
+        $message = '已清空未售库存 ' . $deletedCount . ' 条';
+        if ($refundAmount > 0) {
+            $message .= '，已退还 ¥' . number_format($refundAmount, 2, '.', '');
+        }
+        jsonResponse(['success' => true, 'message' => $message, 'product' => $safe, 'deleted_count' => $deletedCount, 'refund_amount' => $refundAmount]);
 
     case 'delete':
         $userId = requireAuth();
