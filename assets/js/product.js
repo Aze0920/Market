@@ -358,14 +358,72 @@ async function handleBuyNow() {
 async function confirmGuestPurchaseRisk() {
     if (App.currentUser) return true;
     const message = '游客购买仅支持在线支付，支付后请保存订单号且无法维权，是否继续';
-    for (let i = 1; i <= 3; i += 1) {
-        const ok = window.confirm(`${message}\n\n第 ${i} / 3 次确认`);
-        if (!ok) {
-            Toast.info('已取消游客购买');
-            return false;
+    const total = 3;
+
+    return new Promise(resolve => {
+        let step = 1;
+        const overlay = document.createElement('div');
+        overlay.className = 'guest-risk-confirm-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.56);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:18px;';
+
+        const render = () => {
+            overlay.innerHTML = `
+                <div class="guest-risk-confirm-card" style="width:min(440px,100%);background:#fff;border-radius:24px;box-shadow:0 24px 80px rgba(15,23,42,.28);overflow:hidden;border:1px solid rgba(148,163,184,.25);animation:guestRiskPop .18s ease-out;">
+                    <div style="padding:24px 24px 18px;background:linear-gradient(135deg,#fff7ed 0%,#fff 55%,#eef2ff 100%);">
+                        <div style="display:flex;gap:14px;align-items:flex-start;">
+                            <div style="width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,#f97316,#ef4444);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 28px rgba(239,68,68,.28);flex:none;">
+                                <i class="bi bi-shield-exclamation" style="font-size:24px;"></i>
+                            </div>
+                            <div style="min-width:0;">
+                                <div style="font-size:18px;font-weight:800;color:#0f172a;line-height:1.25;">游客购买风险确认</div>
+                                <div style="font-size:13px;color:#64748b;margin-top:5px;">请仔细阅读，第 ${step} / ${total} 次确认</div>
+                            </div>
+                        </div>
+                        <div style="height:8px;background:#e2e8f0;border-radius:999px;margin-top:20px;overflow:hidden;">
+                            <div style="height:100%;width:${(step / total) * 100}%;background:linear-gradient(90deg,#f97316,#ef4444);border-radius:999px;transition:width .2s ease;"></div>
+                        </div>
+                    </div>
+                    <div style="padding:0 24px 22px;">
+                        <div style="border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;border-radius:16px;padding:14px 16px;font-size:14px;line-height:1.7;font-weight:650;">
+                            ${Security.escapeHtml(message)}
+                        </div>
+                        <div style="margin-top:12px;color:#64748b;font-size:13px;line-height:1.6;">
+                            游客订单无法在账号中心维权，请务必在支付完成后保存订单号，后续只能通过“查询订单”入口查看。
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;padding:16px 24px 22px;border-top:1px solid #f1f5f9;background:#fff;">
+                        <button type="button" class="btn btn-outline" id="guestRiskCancelBtn">取消购买</button>
+                        <button type="button" class="btn btn-primary" id="guestRiskContinueBtn">${step >= total ? '我已确认，继续支付' : '继续确认'}</button>
+                    </div>
+                </div>
+            `;
+            const cancel = overlay.querySelector('#guestRiskCancelBtn');
+            const next = overlay.querySelector('#guestRiskContinueBtn');
+            cancel.onclick = () => {
+                overlay.remove();
+                Toast.info('已取消游客购买');
+                resolve(false);
+            };
+            next.onclick = () => {
+                if (step >= total) {
+                    overlay.remove();
+                    resolve(true);
+                    return;
+                }
+                step += 1;
+                render();
+            };
+        };
+
+        if (!document.getElementById('guestRiskConfirmStyle')) {
+            const style = document.createElement('style');
+            style.id = 'guestRiskConfirmStyle';
+            style.textContent = '@keyframes guestRiskPop{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}';
+            document.head.appendChild(style);
         }
-    }
-    return true;
+        render();
+        document.body.appendChild(overlay);
+    });
 }
 
 async function confirmPurchase(quantity = 1) {
