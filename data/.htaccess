@@ -1,17 +1,10 @@
-# 保护数据目录
-<Files "*.json">
+# 禁止通过 Web 直接访问 data 目录（含历史 JSON、install.lock 等）
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
     Order Allow,Deny
     Deny from all
-</Files>
+</IfModule>
 
-# 保护核心文件
-<FilesMatch "\.(php|json)$">
-    Order Allow,Deny
-    Deny from all
-</FilesMatch>
-
-# 允许API目录的PHP文件
-<FilesMatch "^[^.]+\.php$">
-    Order Allow,Deny
-    Allow from all
-</FilesMatch>
+Options -Indexes

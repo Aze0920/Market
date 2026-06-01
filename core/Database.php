@@ -7,6 +7,7 @@
 class Database {
     private static $instance = null;
     private $pdo;
+    private $store;
     private $data = [];
     private $tables = [
         'users',
@@ -27,6 +28,8 @@ class Database {
         keynest_require_installed(true);
 
         $this->connect();
+        require_once __DIR__ . '/RelationalStore.php';
+        $this->store = new RelationalStore($this->pdo);
         $this->ensureSchema();
         $this->loadAll();
     }
@@ -133,8 +136,6 @@ class Database {
             }
         }
 
-        $this->importLegacyJsonIfEmpty();
-
         $this->data['membership_levels'] = $this->loadMembershipLevels();
         if (empty($this->data['membership_levels'])) {
             $this->data['membership_levels'] = $this->getDefaultMembershipLevels();
@@ -155,73 +156,12 @@ class Database {
         return preg_replace('/[^a-z0-9_]/', '', strtolower((string)$name));
     }
 
-    private function importLegacyJsonIfEmpty() {
-        $hasDatabaseData = false;
-        foreach ($this->tables as $table) {
-            if ($table !== 'system_config' && !empty($this->data[$table])) {
-                $hasDatabaseData = true;
-                break;
-            }
-        }
-        if ($hasDatabaseData) {
-            return;
-        }
-
-        $legacyPath = dirname(__DIR__) . '/data';
-        if (!is_dir($legacyPath)) {
-            return;
-        }
-
-        foreach ($this->tables as $table) {
-            $file = $legacyPath . '/' . $table . '.json';
-            if (!is_file($file)) {
-                continue;
-            }
-            $content = file_get_contents($file);
-            $legacyData = json_decode($content, true);
-            if (json_last_error() !== JSON_ERROR_NONE || !is_array($legacyData)) {
-                continue;
-            }
-
-            if ($table === 'system_config') {
-                $this->data['system_config'] = array_merge($this->getDefaultSystemConfig(), $legacyData);
-                $this->saveSystemConfig();
-                continue;
-            }
-
-            foreach ($legacyData as $record) {
-                if (is_array($record) && !empty($record['id'])) {
-                    $this->data[$table][] = $record;
-                    $this->saveRecord($table, $record);
-                }
-            }
-        }
-    }
-
     private function loadTable($name) {
-        $name = $this->normalizeTableName($name);
-        $stmt = $this->pdo->prepare('SELECT data FROM kn_records WHERE table_name = ? ORDER BY created_at ASC');
-        $stmt->execute([$name]);
-
-        $rows = [];
-        while ($row = $stmt->fetch()) {
-            $data = json_decode($row['data'], true);
-            if (is_array($data)) {
-                $rows[] = $data;
-            }
-        }
-        return $rows;
+        return $this->store->loadTable($this->normalizeTableName($name));
     }
 
     private function loadSystemConfig() {
-        $stmt = $this->pdo->prepare('SELECT data FROM kn_records WHERE table_name = ? AND record_id = ? LIMIT 1');
-        $stmt->execute(['system_config', 'default']);
-        $row = $stmt->fetch();
-        if (!$row) {
-            return [];
-        }
-        $config = json_decode($row['data'], true);
-        return is_array($config) ? $config : [];
+        return $this->store->loadSystemConfig();
     }
 
     private function normalizeMembershipInteger($value, $default = 1, $min = 0, $max = 999999) {
@@ -343,55 +283,15 @@ class Database {
         if (!is_array($record) || empty($record['id'])) {
             return false;
         }
-
-        $now = time();
-        $username = $table === 'users' ? ($record['username'] ?? null) : null;
-        $createdAt = (int)($record['created_at'] ?? $record['purchase_date'] ?? $now);
-        $json = json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
-        if ($json === false) {
-            $json = json_encode($this->sanitizeRecordForJson($record), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
-        }
-        if ($json === false) {
-            return false;
-        }
-
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_records (table_name, record_id, username, data, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE username = VALUES(username), data = VALUES(data), updated_at = VALUES(updated_at)'
-        );
-        return $stmt->execute([$table, $record['id'], $username, $json, $createdAt, $now]);
-    }
-
-    private function sanitizeRecordForJson($value) {
-        if (is_array($value)) {
-            $clean = [];
-            foreach ($value as $k => $v) {
-                $clean[$k] = $this->sanitizeRecordForJson($v);
-            }
-            return $clean;
-        }
-        if (is_string($value)) {
-            return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
-        }
-        return $value;
+        return $this->store->saveRecord($table, $record);
     }
 
     private function deleteRecord($table, $id) {
-        $table = $this->normalizeTableName($table);
-        $stmt = $this->pdo->prepare('DELETE FROM kn_records WHERE table_name = ? AND record_id = ?');
-        return $stmt->execute([$table, $id]);
+        return $this->store->deleteRecord($this->normalizeTableName($table), $id);
     }
 
     private function saveSystemConfig() {
-        $now = time();
-        $json = json_encode($this->data['system_config'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_records (table_name, record_id, username, data, created_at, updated_at)
-             VALUES (?, ?, NULL, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE data = VALUES(data), updated_at = VALUES(updated_at)'
-        );
-        return $stmt->execute(['system_config', 'default', $json, $now, $now]);
+        return $this->store->saveSystemConfig($this->data['system_config']);
     }
 
     private function getDefaultMembershipLevels() {
@@ -866,20 +766,7 @@ class Database {
         if (!isset($this->data[$name]) || !is_array($this->data[$name])) {
             return false;
         }
-
-        $this->pdo->beginTransaction();
-        try {
-            $stmt = $this->pdo->prepare('DELETE FROM kn_records WHERE table_name = ?');
-            $stmt->execute([$name]);
-            foreach ($this->data[$name] as $record) {
-                $this->saveRecord($name, $record);
-            }
-            $this->pdo->commit();
-            return true;
-        } catch (Throwable $e) {
-            $this->pdo->rollBack();
-            return false;
-        }
+        return $this->store->saveTable($name, $this->data[$name]);
     }
 
     public function getTable($name) {

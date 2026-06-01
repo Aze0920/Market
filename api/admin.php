@@ -620,6 +620,8 @@ function adminTestEmailPayload() {
     return $email;
 }
 
+adminRequireAdmin();
+
 switch ($action) {
     case 'users':
         $users = array_map('adminSafeUser', $db->getTable('users'));
@@ -939,7 +941,6 @@ switch ($action) {
         }
 
     case 'test_email':
-        adminRequireAdmin();
         $to = adminTestEmailPayload();
         $config = $db->getSystemConfig();
         $siteName = $config['site_name'] ?? 'KeyNest';

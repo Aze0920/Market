@@ -462,7 +462,6 @@ async function loadOverviewTab(area) {
     const o = result.overview;
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-speedometer2 me-2 text-primary"></i>控制台概览</h5>
-        ${accountStatusCardsHtml(App.currentUser)}
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="stat-card primary">
@@ -1825,35 +1824,6 @@ function merchantStatusInfo(user = App.currentUser || {}) {
         return { ok: false, label: '未通过', badge: 'danger', desc: '审核未通过，请修改认证资料后重新提交' };
     }
     return { ok: false, label: '未完成', badge: 'warning', desc: '请完善收款方式，并阅读同意商家守则声明' };
-}
-
-function accountStatusCardsHtml(user = App.currentUser || {}) {
-    const qqBound = !!user.qq_bound;
-    const merchant = merchantStatusInfo(user);
-    return `
-        <div class="row g-3 mb-4 account-status-grid">
-            <div class="col-md-6">
-                <div class="account-status-card ${qqBound ? 'success' : 'warning'}">
-                    <div class="account-status-icon"><i class="bi bi-tencent-qq"></i></div>
-                    <div class="flex-grow-1">
-                        <div class="account-status-title">QQ 绑定</div>
-                        <div class="account-status-desc">${qqBound ? `已绑定：${Security.escapeHtml(user.qq_nickname || 'QQ账号')}` : '未绑定，绑定后可使用 QQ 一键登录'}</div>
-                    </div>
-                    <span class="badge ${qqBound ? 'badge-success' : 'badge-warning'}">${qqBound ? '已绑定' : '未绑定'}</span>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="account-status-card ${merchant.ok ? 'success' : 'warning'}">
-                    <div class="account-status-icon"><i class="bi bi-shop-window"></i></div>
-                    <div class="flex-grow-1">
-                        <div class="account-status-title">商家认证</div>
-                        <div class="account-status-desc">${Security.escapeHtml(merchant.desc)}</div>
-                    </div>
-                    <span class="badge badge-${merchant.badge}">${Security.escapeHtml(merchant.label)}</span>
-                </div>
-            </div>
-        </div>
-    `;
 }
 
 function scrollToMerchantCertification() {
