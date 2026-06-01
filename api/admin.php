@@ -325,19 +325,40 @@ function adminDeleteDirectory($dir) {
     rmdir($dir);
 }
 
-function adminPathIsPreserved($relative, $preserve) {
+function adminUpdaterDataAllowUpdate() {
+    return ['data/.htaccess', 'data/index.php'];
+}
+
+function adminPathIsPreserved($relative) {
     $relative = str_replace('\\', '/', trim($relative, '/'));
-    foreach ($preserve as $skip) {
-        if ($relative === $skip || str_starts_with($relative, $skip . '/')) {
+    if ($relative === '') {
+        return true;
+    }
+    if (in_array($relative, adminUpdaterDataAllowUpdate(), true)) {
+        return false;
+    }
+    if (preg_match('#^data/.+\.json$#i', $relative)) {
+        return true;
+    }
+    $exact = ['.git', 'config/database.php', 'data/install.lock', 'data/update_version.json'];
+    foreach ($exact as $skip) {
+        if ($relative === $skip) {
             return true;
         }
+    }
+    foreach (['logs', 'data/update_repo'] as $prefix) {
+        if ($relative === $prefix || str_starts_with($relative, $prefix . '/')) {
+            return true;
+        }
+    }
+    if ($relative === 'data' || str_starts_with($relative, 'data/')) {
+        return true;
     }
     return false;
 }
 
 function adminCopyDirectory($source, $target, $rootSource = null) {
     $rootSource = $rootSource ?: $source;
-    $preserve = ['.git', 'config/database.php', 'data', 'logs', 'data/install.lock', 'data/update_version.json'];
     if (!is_dir($target)) {
         mkdir($target, 0755, true);
     }
@@ -346,7 +367,7 @@ function adminCopyDirectory($source, $target, $rootSource = null) {
         $src = $source . DIRECTORY_SEPARATOR . $item;
         $dst = $target . DIRECTORY_SEPARATOR . $item;
         $relative = str_replace('\\', '/', ltrim(substr($src, strlen($rootSource)), DIRECTORY_SEPARATOR));
-        if (adminPathIsPreserved($relative, $preserve)) {
+        if (adminPathIsPreserved($relative)) {
             continue;
         }
         if (is_dir($src)) {
@@ -362,32 +383,33 @@ function adminCopyDirectory($source, $target, $rootSource = null) {
 
 function adminCopyFileFromRepo($config, $relative) {
     $relative = str_replace('\\', '/', trim($relative, '/'));
-    $preserve = ['.git', 'config/database.php', 'data', 'logs', 'data/install.lock', 'data/update_version.json'];
-    if ($relative === '' || str_contains($relative, '..') || adminPathIsPreserved($relative, $preserve)) {
-        return false;
+    if ($relative === '' || str_contains($relative, '..')) {
+        return ['ok' => false, 'reason' => '非法路径'];
     }
     $src = $config['work_dir'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
     $dst = $config['site_dir'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
     if (!is_file($src)) {
-        return false;
+        return ['ok' => false, 'reason' => 'Git 仓库中不存在该文件'];
     }
     $dir = dirname($dst);
     if (!is_dir($dir) && !mkdir($dir, 0755, true)) {
-        return false;
+        return ['ok' => false, 'reason' => '无法创建目标目录'];
     }
     if (is_file($dst) && !is_writable($dst)) {
-        return false;
+        return ['ok' => false, 'reason' => '目标文件不可写，请把所有者改为 www'];
     }
     if (!is_file($dst) && !is_writable($dir)) {
-        return false;
+        return ['ok' => false, 'reason' => '目标目录不可写，请把所有者改为 www'];
     }
-    return @copy($src, $dst);
+    if (!@copy($src, $dst)) {
+        return ['ok' => false, 'reason' => '复制失败'];
+    }
+    return ['ok' => true];
 }
 
 function adminDeleteSiteFile($config, $relative) {
     $relative = str_replace('\\', '/', trim($relative, '/'));
-    $preserve = ['.git', 'config/database.php', 'data', 'logs', 'data/install.lock', 'data/update_version.json'];
-    if ($relative === '' || str_contains($relative, '..') || adminPathIsPreserved($relative, $preserve)) {
+    if ($relative === '' || str_contains($relative, '..') || adminPathIsPreserved($relative)) {
         return false;
     }
     $path = $config['site_dir'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
@@ -428,6 +450,10 @@ function adminApplyChangedFiles($config, $files) {
         $status = strtoupper($file['status'] ?? '');
         $path = $file['path'] ?? '';
         if ($path === '') continue;
+        if (adminPathIsPreserved($path)) {
+            $skipped[] = '跳过（保留本地） ' . $path;
+            continue;
+        }
         if (str_starts_with($status, 'D')) {
             if (adminDeleteSiteFile($config, $path)) {
                 $changed[] = '删除 ' . $path;
@@ -435,10 +461,11 @@ function adminApplyChangedFiles($config, $files) {
                 $skipped[] = '跳过删除 ' . $path;
             }
         } else {
-            if (adminCopyFileFromRepo($config, $path)) {
+            $result = adminCopyFileFromRepo($config, $path);
+            if (!empty($result['ok'])) {
                 $changed[] = '更新 ' . $path;
             } else {
-                $failed[] = '更新失败 ' . $path . '（目标文件或目录无写入权限）';
+                $failed[] = '更新失败 ' . $path . '（' . ($result['reason'] ?? '未知错误') . '）';
             }
         }
     }
@@ -506,7 +533,7 @@ function adminApplyUpdate() {
         ]));
         adminJsonResponse([
             'success' => false,
-            'message' => '更新未完成：部分文件没有写入权限，请在宝塔把网站目录和文件所有者改为 PHP 运行用户（通常是 www）后重试。',
+            'message' => '更新未完成：' . count($applied['failed']) . ' 个文件未能写入。请查看下方日志中的具体原因；若为不可写，请在宝塔把网站目录所有者改为 www 后重试。',
             'output' => $output,
             'status' => adminUpdateStatus()
         ], 500);
