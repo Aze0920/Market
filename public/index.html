@@ -173,10 +173,6 @@
             <div class="modal-content auth-modal-content" id="authModalContent">
                 <div class="auth-art-pane">
                     <img class="auth-anime-image" id="authAnimeImage" src="https://api.elaina.cat/random/pc" data-pc-src="https://api.elaina.cat/random/pc" data-mobile-src="https://api.elaina.cat/random/mobile" alt="随机动漫图" loading="lazy">
-                    <div class="auth-art-caption">
-                        <h4>KeyNest</h4>
-                        <p>安全交易、自动发货，欢迎回来继续逛市场。</p>
-                    </div>
                 </div>
                 <div class="auth-form-shell">
                     <div class="auth-form-track" id="authFormTrack">
@@ -190,12 +186,9 @@
                                     <label class="form-label">用户名或邮箱</label>
                                     <input type="text" class="form-control" id="loginUsername" name="username" autocomplete="username" placeholder="输入用户名或邮箱">
                                 </div>
-                                <div class="form-group mb-2">
+                                <div class="form-group mb-3">
                                     <label class="form-label">密码</label>
                                     <input type="password" class="form-control" id="loginPassword" name="password" autocomplete="current-password" placeholder="输入密码">
-                                </div>
-                                <div class="text-end mb-3">
-                                    <a href="#" class="small fw-bold" onclick="switchToForgotPassword(); return false;">忘记密码？</a>
                                 </div>
                                 <div id="loginErrorBox" class="alert alert-danger py-2 small hidden"></div>
                                 <div id="loginCaptchaBox" class="captcha-inline-box"></div>
@@ -205,6 +198,8 @@
                                 </button>
                                 <p class="text-center mt-3 mb-0 text-muted">
                                     没有账号？<a href="#" onclick="switchToRegister(); return false;">立即注册</a>
+                                    <span class="mx-2 text-white-50">|</span>
+                                    <a href="#" onclick="switchToForgotPassword(); return false;">忘记密码？</a>
                                 </p>
                             </div>
                         </div>
