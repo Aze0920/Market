@@ -136,7 +136,7 @@ function filterProducts() {
     loadProducts({ forceAll: false });
 }
 
-async function openProductDetail(id) {
+async function openProductDetail(id, options = {}) {
     const result = await API.getProduct(id);
     if (!result.success) {
         Toast.error('商品不存在');
@@ -167,7 +167,7 @@ async function openProductDetail(id) {
                 <p><small>库存: <strong>${Security.escapeHtml(product.stock)}</strong> | 已售: <strong>${Security.escapeHtml(product.sales)}</strong> | 卖家: <strong>${Security.escapeHtml(product.seller_name)}</strong></small></p>
                 <div class="mb-2">${sellerMembershipBadge(product)}</div>
                 <p class="small mb-2"><span class="text-success">好评 ${Security.escapeHtml(stats.good || 0)}</span><span class="text-danger ms-3">差评 ${Security.escapeHtml(stats.bad || 0)}</span></p>
-                ${(!App.currentUser || App.currentUser.id !== product.seller_id) ? `
+                ${(!options.readonly && Number(product.stock || 0) > 0 && (!App.currentUser || App.currentUser.id !== product.seller_id)) ? `
                     <div class="purchase-quantity-box mb-3">
                         <label class="form-label">购买数量</label>
                         <input type="number" id="buyQuantity" class="form-control" min="1" max="${Security.escapeAttr(product.stock)}" value="1" oninput="updatePurchaseQuantityTotal()">
@@ -195,7 +195,7 @@ async function openProductDetail(id) {
 
     // 控制购买按钮显示
     const buyBtn = document.getElementById('btnBuyNow');
-    if (App.currentUser && App.currentUser.id === product.seller_id) {
+    if (options.readonly || Number(product.stock || 0) <= 0 || (App.currentUser && App.currentUser.id === product.seller_id)) {
         buyBtn.classList.add('hidden');
     } else {
         buyBtn.classList.remove('hidden');

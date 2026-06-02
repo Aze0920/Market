@@ -598,41 +598,90 @@ function adminComplaintOrders() {
 function adminResolveComplaintFunds(&$order, $status) {
     global $db;
     if (!in_array($status, ['resolved', 'rejected'], true)) return [true, ''];
-    if (!empty($order['complaint']['funds_settled'])) return [true, '该投诉资金已处理，请勿重复操作'];
-    if (empty($order['balance_frozen'])) {
+
+    $amount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? $order['seller_amount'] ?? $order['price'] ?? 0));
+    if ($amount <= 0) {
         $order['complaint']['funds_settled'] = true;
         $order['complaint']['funds_settled_at'] = time();
         $order['complaint']['funds_action'] = 'none';
-        return [true, '该订单没有冻结金额，仅更新投诉状态'];
+        $order['complaint']['funds_amount'] = 0;
+        return [true, '该订单没有可处理金额，仅更新判定状态'];
     }
 
-    $amount = max(0, floatval($order['frozen_amount'] ?? 0));
     $seller = $db->getUserById($order['seller_id'] ?? '');
     if (!$seller) return [false, '卖家不存在，无法处理冻结金额'];
-    $sellerFrozen = floatval($seller['frozen_balance'] ?? 0);
+    $buyer = $db->getUserById($order['buyer_id'] ?? '');
+    if (!$buyer) return [false, '买家不存在，无法处理冻结金额'];
 
-    if ($status === 'resolved') {
+    $targetAction = $status === 'resolved' ? 'release_to_seller' : 'refund_to_buyer';
+    $currentAction = (string)($order['complaint']['funds_action'] ?? '');
+    $message = '';
+
+    if ($currentAction === $targetAction && !empty($order['complaint']['funds_settled'])) {
+        return [true, $status === 'resolved' ? '当前已是卖家胜，资金已归卖家' : '当前已是买家胜，资金已归买家'];
+    }
+
+    if (!empty($order['balance_frozen'])) {
+        $sellerFrozen = floatval($seller['frozen_balance'] ?? 0);
+        if ($targetAction === 'release_to_seller') {
+            $db->updateUser($seller['id'], [
+                'balance' => floatval($seller['balance'] ?? 0) + $amount,
+                'frozen_balance' => max(0, $sellerFrozen - $amount)
+            ]);
+            $message = '已判定卖家胜，冻结金额已放款给卖家';
+        } else {
+            $db->updateUser($seller['id'], [
+                'frozen_balance' => max(0, $sellerFrozen - $amount)
+            ]);
+            $db->updateUser($buyer['id'], [
+                'balance' => floatval($buyer['balance'] ?? 0) + $amount
+            ]);
+            $message = '已判定买家胜，冻结金额已退还给买家';
+        }
+        $order['balance_frozen'] = false;
+        $order['frozen_released_at'] = time();
+    } elseif ($currentAction === 'release_to_seller' && $targetAction === 'refund_to_buyer') {
         $db->updateUser($seller['id'], [
-            'balance' => floatval($seller['balance'] ?? 0) + $amount,
-            'frozen_balance' => max(0, $sellerFrozen - $amount)
-        ]);
-        $order['complaint']['funds_action'] = 'release_to_seller';
-        $message = '投诉已解决，冻结金额已放款给卖家';
-    } else {
-        $buyer = $db->getUserById($order['buyer_id'] ?? '');
-        if (!$buyer) return [false, '买家不存在，无法退还冻结金额'];
-        $db->updateUser($seller['id'], [
-            'frozen_balance' => max(0, $sellerFrozen - $amount)
+            'balance' => floatval($seller['balance'] ?? 0) - $amount
         ]);
         $db->updateUser($buyer['id'], [
             'balance' => floatval($buyer['balance'] ?? 0) + $amount
         ]);
-        $order['complaint']['funds_action'] = 'refund_to_buyer';
-        $message = '投诉已驳回，冻结金额已退还给买家';
+        $message = '已改判买家胜，金额已从卖家转给买家';
+    } elseif ($currentAction === 'refund_to_buyer' && $targetAction === 'release_to_seller') {
+        $db->updateUser($buyer['id'], [
+            'balance' => floatval($buyer['balance'] ?? 0) - $amount
+        ]);
+        $db->updateUser($seller['id'], [
+            'balance' => floatval($seller['balance'] ?? 0) + $amount
+        ]);
+        $message = '已改判卖家胜，金额已从买家转给卖家';
+    } elseif ($currentAction === '' || $currentAction === 'none') {
+        if ($targetAction === 'release_to_seller') {
+            $db->updateUser($seller['id'], [
+                'balance' => floatval($seller['balance'] ?? 0) + $amount
+            ]);
+            $message = '已判定卖家胜，金额已补发给卖家';
+        } else {
+            $db->updateUser($buyer['id'], [
+                'balance' => floatval($buyer['balance'] ?? 0) + $amount
+            ]);
+            $message = '已判定买家胜，金额已补发给买家';
+        }
+    } else {
+        return [false, '当前资金状态异常，无法自动改判'];
     }
 
-    $order['balance_frozen'] = false;
-    $order['frozen_released_at'] = time();
+    if (!isset($order['complaint']['funds_history']) || !is_array($order['complaint']['funds_history'])) {
+        $order['complaint']['funds_history'] = [];
+    }
+    $order['complaint']['funds_history'][] = [
+        'from' => $currentAction ?: 'frozen',
+        'to' => $targetAction,
+        'amount' => $amount,
+        'created_at' => time()
+    ];
+    $order['complaint']['funds_action'] = $targetAction;
     $order['complaint']['funds_settled'] = true;
     $order['complaint']['funds_settled_at'] = time();
     $order['complaint']['funds_amount'] = $amount;
@@ -879,8 +928,8 @@ switch ($action) {
         if (!in_array($status, $allowed, true)) {
             adminJsonResponse(['success' => false, 'message' => '投诉状态无效，后台不能操作撤诉'], 400);
         }
-        if (in_array(($order['complaint']['status'] ?? ''), ['resolved', 'rejected', 'withdrawn'], true)) {
-            adminJsonResponse(['success' => false, 'message' => '该投诉已结束，不能重复修改状态'], 400);
+        if (($order['complaint']['status'] ?? '') === 'withdrawn') {
+            adminJsonResponse(['success' => false, 'message' => '该投诉已撤诉，不能修改状态'], 400);
         }
         $adminUser = $db->getUserById($_SESSION['user_id'] ?? '');
         [$fundsOk, $fundsMessage] = adminResolveComplaintFunds($order, $status);

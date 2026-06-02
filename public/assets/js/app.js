@@ -498,7 +498,7 @@ async function loadOverviewTab(area) {
             `<div class="bg-light rounded-3 p-3">
                 ${o.recent_orders.map(o => `
                     <div class="d-flex justify-content-between py-2 border-bottom">
-                        <span>${Utils.truncate(o.product_title, 25)}</span>
+                        <button type="button" class="btn btn-link p-0 text-start fw-semibold text-decoration-none" onclick="openOrderProductDetail('${Security.escapeAttr(o.product_id)}')">${Utils.truncate(o.product_title, 25)}</button>
                         <span class="text-danger fw-semibold">-¥${o.price.toFixed(2)}</span>
                         <span class="text-muted small">${Utils.formatDate(o.purchase_date)}</span>
                     </div>
@@ -506,6 +506,19 @@ async function loadOverviewTab(area) {
             </div>`
         }
     `;
+}
+
+async function openOrderProductDetail(productId) {
+    if (!productId) return Toast.warning('商品信息不存在');
+    if (typeof openProductDetail !== 'function') {
+        return Toast.error('商品详情组件未加载，请刷新页面后重试');
+    }
+    const activeModal = document.getElementById('purchaseConfirmModal');
+    if (activeModal?.classList.contains('show')) {
+        hideModalSafely(activeModal);
+        setTimeout(cleanupBootstrapModalArtifacts, 120);
+    }
+    await openProductDetail(productId, { readonly: true, allowSoldOut: true });
 }
 
 async function loadOrdersTab(area) {
@@ -538,7 +551,9 @@ async function loadOrdersTab(area) {
                     ${result.orders.map(o => `
                         <tr>
                             <td>
-                                ${Utils.truncate(o.product_title, 20)}
+                                <button type="button" class="btn btn-link p-0 text-start fw-semibold text-decoration-none order-product-link" onclick="openOrderProductDetail('${Security.escapeAttr(o.product_id)}')" title="查看商品详情">
+                                    ${Utils.truncate(o.product_title, 20)}
+                                </button>
                                 ${o.complaint && o.complaint.status === 'open' ? '<div><span class="badge badge-warning">投诉中</span></div>' : ''}
                                 ${o.complaint && o.complaint.status === 'withdrawn' ? '<div><span class="badge badge-secondary">已撤诉</span></div>' : ''}
                             </td>
@@ -714,8 +729,8 @@ async function openSellerComplaintModal(orderId) {
             open: ['warning', '待处理'],
             processing: ['primary', '处理中'],
             following: ['info', '跟进中'],
-            resolved: ['success', '已解决'],
-            rejected: ['danger', '已驳回'],
+            resolved: ['success', '卖家胜'],
+            rejected: ['danger', '买家胜'],
             withdrawn: ['secondary', '已撤诉']
         };
         return map[complaint.status || 'open'] || ['info', complaint.status || '已记录'];
@@ -3701,8 +3716,8 @@ async function loadComplaintsTab(area) {
             open: ['warning', '待处理'],
             processing: ['primary', '处理中'],
             following: ['info', '跟进中'],
-            resolved: ['success', '已解决'],
-            rejected: ['danger', '已驳回'],
+            resolved: ['success', '卖家胜'],
+            rejected: ['danger', '买家胜'],
             withdrawn: ['secondary', '已撤诉']
         };
         return map[status] || ['info', status || '已记录'];
@@ -3806,8 +3821,8 @@ async function openComplaintThreadModal(orderId, role = 'buyer') {
             open: ['warning', '待处理'],
             processing: ['primary', '处理中'],
             following: ['info', '跟进中'],
-            resolved: ['success', '已解决'],
-            rejected: ['danger', '已驳回'],
+            resolved: ['success', '卖家胜'],
+            rejected: ['danger', '买家胜'],
             withdrawn: ['secondary', '已撤诉']
         };
         return map[complaint.status || 'open'] || ['info', complaint.status || '已记录'];

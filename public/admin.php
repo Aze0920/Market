@@ -965,7 +965,7 @@ function memberLimitText(value, unit) {
     return number === 0 ? '无限制' : `${number} ${unit}`;
 }
 function complaintStatusBadge(status) {
-    const map = { open: ['warning', '处理中'], processing: ['info', '跟进中'], resolved: ['success', '已解决'], rejected: ['danger', '已驳回'] };
+    const map = { open: ['warning', '处理中'], processing: ['info', '跟进中'], resolved: ['success', '卖家胜'], rejected: ['danger', '买家胜'] };
     const item = map[status] || ['info', status || '-'];
     return `<span class="badge-soft ${item[0]}">${item[1]}</span>`;
 }
@@ -989,7 +989,7 @@ function renderComplaints() {
                 <div class="col-md-4"><input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="renderComplaints()"></div>
                 <div class="col-md-3">
                     <select id="complaintStatusFilter" class="form-select" onchange="renderComplaints()">
-                        ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','已解决'],['rejected','已驳回']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
+                        ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','卖家胜'],['rejected','买家胜']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
                     </select>
                 </div>
             </div>
@@ -1023,7 +1023,7 @@ function renderComplaintAdminCard(order) {
             </div>
         </div>`;
 }
-function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '已解决', rejected: '已驳回' })[status] || status; }
+function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '卖家胜', rejected: '买家胜' })[status] || status; }
 async function saveAdminComplaintReply(orderId) {
     const reply = document.getElementById('adminComplaintReply-' + orderId)?.value?.trim() || '';
     const res = await request('admin.php?action=reply_complaint', 'POST', { order_id: orderId, reply });
@@ -1034,8 +1034,8 @@ async function saveAdminComplaintReply(orderId) {
 }
 async function updateAdminComplaintStatus(orderId, status) {
     const tipMap = {
-        resolved: '确认标记为已解决吗？冻结余额会放款给卖家。',
-        rejected: '确认标记为已驳回吗？冻结余额会退还给买家。'
+        resolved: '确认判定卖家胜吗？资金会归卖家；如果之前已判买家胜，将自动从买家改转给卖家。',
+        rejected: '确认判定买家胜吗？资金会归买家；如果之前已判卖家胜，将自动从卖家改转给买家。'
     };
     if (tipMap[status]) {
         const ok = await adminConfirm({
