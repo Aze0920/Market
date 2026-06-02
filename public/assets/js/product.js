@@ -15,6 +15,43 @@ function plainTextSummary(markdown, maxLength = 80) {
     return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
 }
 
+function deliveryItemLineText(item) {
+    if (!item || typeof item !== 'object') return '';
+    if (item.content) return String(item.content).trim();
+    return [item.email, item.password, item.client_id, item.fresh_token]
+        .filter(value => value && value !== 'N/A')
+        .map(value => String(value).trim())
+        .join('----');
+}
+
+function deliveryInfoExportText(d) {
+    const items = Array.isArray(d?.items) ? d.items : (d ? [d] : []);
+    return items.map(deliveryItemLineText).filter(Boolean).join('\n');
+}
+
+function safeTxtFileName(name) {
+    const safe = String(name || '订单').replace(/[\\/:*?"<>|]/g, '_').trim();
+    return (safe || '订单') + '.txt';
+}
+
+function downloadTextFile(fileName, text) {
+    if (!text) return Toast.warning('暂无可导出的卡密');
+    const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeTxtFileName(fileName);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    Toast.success('已导出TXT文件');
+}
+
+function exportDeliveryInfoTxt(orderId, d) {
+    downloadTextFile(orderId, deliveryInfoExportText(d));
+}
+
 function deliveryInfoHtml(d) {
     const items = Array.isArray(d?.items) ? d.items : [d];
     return items.map((item, index) => {
@@ -258,6 +295,16 @@ async function handleBuyNow() {
         if (App.currentUser && App.currentUser.id === App.currentDetailProduct.seller_id) {
             Toast.warning('不能购买自己的商品');
             return;
+        }
+
+        if (!App.currentUser) {
+            const sysConfigResult = await API.getSystemConfig();
+            const allowGuestPurchase = sysConfigResult.success ? (sysConfigResult.config?.allow_guest_purchase !== false && sysConfigResult.config?.allow_guest_purchase !== '0') : true;
+            if (!allowGuestPurchase) {
+                Toast.warning('当前已关闭游客购买，请先登录后再购买');
+                openLoginModal();
+                return;
+            }
         }
 
         const quantityInput = document.getElementById('buyQuantity');
@@ -561,6 +608,7 @@ async function viewDeliveryInfo(orderId, pickupPassword = '') {
     }
 
     const d = order.delivery_info;
+    window.currentDeliveryInfoForExport = d;
     const modalEl = document.getElementById('purchaseConfirmModal');
     document.getElementById('purchaseBody').innerHTML = `
         <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
@@ -573,6 +621,7 @@ async function viewDeliveryInfo(orderId, pickupPassword = '') {
         ` : ''}
         ${needsPassword ? '' : `
         <div class="delivery-card">
+            ${deliveryInfoExportText(d) ? `<div class="d-flex justify-content-end mb-3"><button class="btn btn-sm btn-outline-primary" onclick="exportDeliveryInfoTxt('${Security.escapeAttr(order.id || orderId)}', window.currentDeliveryInfoForExport)"><i class="bi bi-download me-1"></i>导出TXT</button></div>` : ''}
             <div class="small">
                 ${deliveryInfoHtml(d)}
             </div>

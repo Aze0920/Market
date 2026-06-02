@@ -814,6 +814,12 @@ switch ($action) {
         $sessionUserId = $_SESSION['user_id'] ?? '';
         $guestToken = trim((string)($_POST['guest_token'] ?? ''));
         $isGuestOrder = $sessionUserId === '';
+        if ($isGuestOrder) {
+            $systemConfig = $db->getSystemConfig();
+            if (array_key_exists('allow_guest_purchase', $systemConfig) && !filter_var($systemConfig['allow_guest_purchase'], FILTER_VALIDATE_BOOLEAN)) {
+                jsonResponse(['success' => false, 'message' => '当前已关闭游客购买，请先登录后再购买'], 403);
+            }
+        }
         if ($isGuestOrder && !preg_match('/^[a-f0-9]{32,64}$/i', $guestToken)) {
             jsonResponse(['success' => false, 'message' => '游客订单标识无效，请刷新页面后重试'], 400);
         }

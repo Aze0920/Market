@@ -962,6 +962,34 @@ function deliveryItemDisplayText(item) {
     if (item.content) parts.push(String(item.content));
     return parts.join('\n') || '-';
 }
+function deliveryItemLineText(item) {
+    if (!item || typeof item !== 'object') return '';
+    if (item.content) return String(item.content).trim();
+    return [item.email, item.password, item.client_id, item.fresh_token]
+        .filter(value => value && value !== 'N/A')
+        .map(value => String(value).trim())
+        .join('----');
+}
+function deliveryItemsExportText(items) {
+    return (items || []).map(deliveryItemLineText).filter(Boolean).join('\n');
+}
+function safeTxtFileName(name) {
+    const safe = String(name || '订单').replace(/[\\/:*?"<>|]/g, '_').trim();
+    return (safe || '订单') + '.txt';
+}
+function downloadTextFile(fileName, text) {
+    if (!text) return showToast('暂无可导出的卡密', 'error');
+    const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeTxtFileName(fileName);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('已导出TXT文件', 'success');
+}
 function findPaymentOrderById(id) {
     return (Admin.cache.payOrders || []).find(o => String(o.id || '') === String(id || '')) || null;
 }
@@ -1001,7 +1029,7 @@ function openPaymentOrderDataModal(id) {
                     ${purchaseOrder.guest_order ? '<div class="alert alert-warning small py-2">这是游客订单，后台仅展示订单与发货数据，不展示游客查询密钥。</div>' : ''}
                     ${itemsHtml}
                 </div>
-                <div class="modal-footer">${items.length ? `<button class="btn btn-outline-primary" onclick="copyAllOrderDeliveryItems('${escapeHtml(id)}')">复制全部数据</button>` : ''}<button class="btn btn-primary" data-bs-dismiss="modal">关闭</button></div>
+                <div class="modal-footer">${items.length ? `<button class="btn btn-outline-success" onclick="exportOrderDeliveryItems('${escapeHtml(id)}')"><i class="bi bi-download me-1"></i>导出TXT</button><button class="btn btn-outline-primary" onclick="copyAllOrderDeliveryItems('${escapeHtml(id)}')">复制全部数据</button>` : ''}<button class="btn btn-primary" data-bs-dismiss="modal">关闭</button></div>
             </div>
         </div>`;
     document.body.appendChild(modal);
@@ -1015,9 +1043,15 @@ function copyOrderDeliveryItem(id, index) {
 }
 function copyAllOrderDeliveryItems(id) {
     const order = findPaymentOrderById(id);
-    const text = deliveryItemsForOrder(order).map(deliveryItemDisplayText).join('\n\n');
+    const text = deliveryItemsExportText(deliveryItemsForOrder(order));
     if (!text) return showToast('没有可复制的数据', 'error');
     navigator.clipboard?.writeText(text).then(() => showToast('全部发货数据已复制', 'success')).catch(() => showToast('复制失败，请手动复制', 'error'));
+}
+function exportOrderDeliveryItems(id) {
+    const order = findPaymentOrderById(id);
+    const purchaseOrder = order?.purchase_order || {};
+    const fileName = purchaseOrder.id || order?.related_id || order?.trade_no || id;
+    downloadTextFile(fileName, deliveryItemsExportText(deliveryItemsForOrder(order)));
 }
 function findAdminUserById(id) {
     return (Admin.cache.users || []).find(u => String(u.id || '') === String(id || '')) || null;
@@ -1947,9 +1981,10 @@ function renderSettingsContent() {
 }
 function renderBasicSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>基础设置</h5></div><div class="row g-3"><div class="col-md-6"><label class="form-label">站点名称</label><input id="setSiteName" class="form-control" value="${escapeHtml(c.site_name || 'KeyNest')}"></div><div class="col-md-6"><label class="form-label">站点描述</label><input id="setSiteDescription" class="form-control" value="${escapeHtml(c.site_description || '')}"></div><div class="col-md-6"><label class="form-label">最低提现金额</label><input id="setMinWithdraw" class="form-control" type="number" value="${escapeHtml(c.min_withdraw_amount || 10)}"></div><div class="col-md-6"><label class="form-label">提现手续费比例</label><input id="setWithdrawFee" class="form-control" type="number" step="0.001" value="${escapeHtml(c.withdraw_fee_rate || 0.01)}"></div><div class="col-12"><button class="btn btn-primary" onclick="saveSettings()">保存基础设置</button></div></div></div>`;
+    const allowGuestPurchase = c.allow_guest_purchase !== false && c.allow_guest_purchase !== '0';
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>基础设置</h5></div><div class="row g-3"><div class="col-md-6"><label class="form-label">站点名称</label><input id="setSiteName" class="form-control" value="${escapeHtml(c.site_name || 'KeyNest')}"></div><div class="col-md-6"><label class="form-label">站点描述</label><input id="setSiteDescription" class="form-control" value="${escapeHtml(c.site_description || '')}"></div><div class="col-md-6"><label class="form-label">最低提现金额</label><input id="setMinWithdraw" class="form-control" type="number" value="${escapeHtml(c.min_withdraw_amount || 10)}"></div><div class="col-md-6"><label class="form-label">提现手续费比例</label><input id="setWithdrawFee" class="form-control" type="number" step="0.001" value="${escapeHtml(c.withdraw_fee_rate || 0.01)}"></div><div class="col-12"><div class="form-check form-switch p-3 border rounded-3 bg-light"><input class="form-check-input" type="checkbox" id="setAllowGuestPurchase" ${allowGuestPurchase ? 'checked' : ''}><label class="form-check-label ms-2" for="setAllowGuestPurchase"><strong>允许游客购买</strong><span class="d-block text-muted small">开启后未登录用户可用在线支付购买；关闭后必须登录后才能购买商品。</span></label></div></div><div class="col-12"><button class="btn btn-primary" onclick="saveSettings()">保存基础设置</button></div></div></div>`;
 }
-async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
+async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
 async function saveSystemConfigFields(data, successMessage = '保存成功') { const res = await request('finance.php?action=update_system_config', 'POST', data); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast(successMessage, 'success'); await loadAdminData(); }
 function checkedValue(id) { return document.getElementById(id)?.checked ? '1' : '0'; }
 function fieldValue(id) { return document.getElementById(id)?.value || ''; }

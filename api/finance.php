@@ -409,6 +409,8 @@ switch ($action) {
 
         $booleanFields = [
             'enable_recharge',
+            'enable_withdraw',
+            'allow_guest_purchase',
             'oauth_qq_enabled',
             'oauth_wechat_enabled',
             'oauth_caihong_enabled',
