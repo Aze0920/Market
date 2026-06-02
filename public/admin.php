@@ -108,6 +108,18 @@ keynest_require_installed(false);
         .settings-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
         .settings-tab { border: 1px solid var(--border); background: #fff; color: #475569; border-radius: 999px; padding: 9px 14px; font-weight: 700; }
         .settings-tab.active { color: #fff; border-color: var(--primary); background: linear-gradient(135deg, var(--primary), var(--primary2)); }
+        .admin-setting-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; width: 100%; padding: 16px; border: 1px solid #e0e7ff; border-radius: 20px; background: linear-gradient(135deg, #f8fafc 0%, #ffffff 55%, #eef2ff 100%); box-shadow: 0 12px 32px rgba(79,70,229,.08); cursor: pointer; transition: .18s ease; }
+        .admin-setting-card:hover { transform: translateY(-1px); border-color: #c7d2fe; box-shadow: 0 18px 42px rgba(79,70,229,.12); }
+        .admin-setting-card.is-off { border-color: #fee2e2; background: linear-gradient(135deg, #fff7ed 0%, #ffffff 55%, #fff1f2 100%); }
+        .admin-setting-icon { width: 46px; height: 46px; border-radius: 16px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary2)); box-shadow: 0 12px 24px rgba(79,70,229,.22); font-size: 1.25rem; }
+        .admin-setting-card.is-off .admin-setting-icon { background: linear-gradient(135deg, #f97316, #ef4444); box-shadow: 0 12px 24px rgba(239,68,68,.18); }
+        .admin-setting-copy { min-width: 0; display: grid; gap: 4px; }
+        .admin-setting-title { color: #111827; font-weight: 850; }
+        .admin-setting-desc { color: #64748b; font-size: .86rem; line-height: 1.6; }
+        .admin-setting-state { color: #4f46e5; font-size: .78rem; font-weight: 800; }
+        .admin-setting-card.is-off .admin-setting-state { color: #dc2626; }
+        .admin-setting-switch { margin: 0; padding-left: 0; min-height: auto; }
+        .admin-setting-switch .form-check-input { margin: 0; width: 3rem; height: 1.55rem; cursor: pointer; }
         .method-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 9px; background: #eef2ff; color: #3730a3; font-size: .78rem; font-weight: 700; margin: 2px; }
         .membership-admin-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
         .membership-admin-card { border: 1px solid var(--border); border-radius: 22px; background: #fff; overflow: hidden; box-shadow: 0 14px 34px rgba(15,23,42,.06); cursor: pointer; transition: .18s ease; }
@@ -1977,7 +1989,49 @@ function renderSettingsContent() {
 function renderBasicSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     const allowGuestPurchase = c.allow_guest_purchase !== false && c.allow_guest_purchase !== '0';
-    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>基础设置</h5></div><div class="row g-3"><div class="col-md-6"><label class="form-label">站点名称</label><input id="setSiteName" class="form-control" value="${escapeHtml(c.site_name || 'KeyNest')}"></div><div class="col-md-6"><label class="form-label">站点描述</label><input id="setSiteDescription" class="form-control" value="${escapeHtml(c.site_description || '')}"></div><div class="col-md-6"><label class="form-label">最低提现金额</label><input id="setMinWithdraw" class="form-control" type="number" value="${escapeHtml(c.min_withdraw_amount || 10)}"></div><div class="col-md-6"><label class="form-label">提现手续费比例</label><input id="setWithdrawFee" class="form-control" type="number" step="0.001" value="${escapeHtml(c.withdraw_fee_rate || 0.01)}"></div><div class="col-12"><div class="form-check form-switch p-3 border rounded-3 bg-light"><input class="form-check-input" type="checkbox" id="setAllowGuestPurchase" ${allowGuestPurchase ? 'checked' : ''}><label class="form-check-label ms-2" for="setAllowGuestPurchase"><strong>允许游客购买</strong><span class="d-block text-muted small">开启后未登录用户可用在线支付购买；关闭后必须登录后才能购买商品。</span></label></div></div><div class="col-12"><button class="btn btn-primary" onclick="saveSettings()">保存基础设置</button></div></div></div>`;
+    document.getElementById(targetId).innerHTML = `
+        <div class="panel settings-basic-panel">
+            <div class="panel-title">
+                <div>
+                    <h5 class="mb-1">基础设置</h5>
+                    <div class="text-muted small">维护站点信息、提现规则和游客购买策略</div>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">站点名称</label>
+                    <input id="setSiteName" class="form-control" value="${escapeHtml(c.site_name || 'KeyNest')}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">站点描述</label>
+                    <input id="setSiteDescription" class="form-control" value="${escapeHtml(c.site_description || '')}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">最低提现金额</label>
+                    <input id="setMinWithdraw" class="form-control" type="number" value="${escapeHtml(c.min_withdraw_amount || 10)}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">提现手续费比例</label>
+                    <input id="setWithdrawFee" class="form-control" type="number" step="0.001" value="${escapeHtml(c.withdraw_fee_rate || 0.01)}">
+                </div>
+                <div class="col-12">
+                    <label class="admin-setting-card ${allowGuestPurchase ? 'is-on' : 'is-off'}" for="setAllowGuestPurchase">
+                        <span class="admin-setting-icon"><i class="bi bi-person-check"></i></span>
+                        <span class="admin-setting-copy">
+                            <span class="admin-setting-title">允许游客购买</span>
+                            <span class="admin-setting-desc">开启后未登录用户可使用在线支付购买；关闭后前台“立即购买”会直接置灰，需要登录后才能购买。</span>
+                            <span class="admin-setting-state">当前状态：${allowGuestPurchase ? '已开启' : '已关闭'}</span>
+                        </span>
+                        <span class="form-check form-switch admin-setting-switch">
+                            <input class="form-check-input" type="checkbox" id="setAllowGuestPurchase" ${allowGuestPurchase ? 'checked' : ''}>
+                        </span>
+                    </label>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary" onclick="saveSettings()"><i class="bi bi-check2-circle me-1"></i>保存基础设置</button>
+                </div>
+            </div>
+        </div>`;
 }
 async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
 async function saveSystemConfigFields(data, successMessage = '保存成功') { const res = await request('finance.php?action=update_system_config', 'POST', data); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast(successMessage, 'success'); await loadAdminData(); }

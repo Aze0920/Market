@@ -231,6 +231,24 @@ async function openProductDetail(id, options = {}) {
         buyBtn.classList.add('hidden');
     } else {
         buyBtn.classList.remove('hidden');
+        buyBtn.disabled = false;
+        buyBtn.innerHTML = '<i class="bi bi-cart-plus me-1"></i>立即购买';
+        if (!App.currentUser) {
+            const sysConfigResult = await API.getSystemConfig();
+            const allowGuestPurchase = sysConfigResult.success ? (sysConfigResult.config?.allow_guest_purchase !== false && sysConfigResult.config?.allow_guest_purchase !== '0') : true;
+            if (!allowGuestPurchase) {
+                buyBtn.disabled = true;
+                buyBtn.classList.add('disabled');
+                buyBtn.innerHTML = '<i class="bi bi-lock me-1"></i>请先登录购买';
+                buyBtn.title = '后台已关闭游客购买，请登录账号后购买';
+            } else {
+                buyBtn.classList.remove('disabled');
+                buyBtn.removeAttribute('title');
+            }
+        } else {
+            buyBtn.classList.remove('disabled');
+            buyBtn.removeAttribute('title');
+        }
     }
 
     modal.show();
@@ -296,8 +314,7 @@ async function handleBuyNow() {
             const sysConfigResult = await API.getSystemConfig();
             const allowGuestPurchase = sysConfigResult.success ? (sysConfigResult.config?.allow_guest_purchase !== false && sysConfigResult.config?.allow_guest_purchase !== '0') : true;
             if (!allowGuestPurchase) {
-                Toast.warning('当前已关闭游客购买，请先登录后再购买');
-                openLoginModal();
+                Toast.warning('当前已关闭游客购买，请登录账号后再购买');
                 return;
             }
         }
