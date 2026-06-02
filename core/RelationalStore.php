@@ -248,9 +248,12 @@ class RelationalStore {
     }
 
     private function ensureColumn($table, $column, $definition) {
-        $stmt = $this->pdo->prepare('SHOW COLUMNS FROM `' . $table . '` LIKE ?');
-        $stmt->execute([$column]);
-        if (!$stmt->fetch()) {
+        if (!preg_match('/^kn_[a-z0-9_]+$/', (string)$table) || !preg_match('/^[a-z0-9_]+$/', (string)$column)) {
+            return;
+        }
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?');
+        $stmt->execute([$table, $column]);
+        if ((int)$stmt->fetchColumn() === 0) {
             $this->pdo->exec('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition);
         }
     }
