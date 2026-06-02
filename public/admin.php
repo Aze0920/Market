@@ -1001,14 +1001,9 @@ function openPaymentOrderDataModal(id) {
     const modalId = 'paymentOrderDataModal';
     document.getElementById(modalId)?.remove();
     const buyerText = purchaseOrder.guest_order ? '游客买家' : (purchaseOrder.buyer_id_email || purchaseOrder.buyer_name || recordUserEmail(order, 'user_id', order.user_id || '-'));
-    const itemsHtml = items.length ? items.map((item, index) => `
-        <div class="border rounded-3 p-3 bg-light-subtle mb-2">
-            <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                <strong>发货数据 #${index + 1}</strong>
-                <button class="btn btn-sm btn-outline-primary" onclick="copyOrderDeliveryItem('${escapeHtml(id)}', ${index})">复制</button>
-            </div>
-            <pre class="mb-0 small" style="white-space:pre-wrap;word-break:break-word;">${escapeHtml(deliveryItemDisplayText(item))}</pre>
-        </div>`).join('') : '<div class="text-muted text-center py-4">这条记录没有关联到已发货数据，可能不是商品订单或尚未发货。</div>';
+    const exportText = deliveryItemsExportText(items);
+    const textareaRows = Math.min(Math.max(exportText ? exportText.split('\n').length : 6, 6), 18);
+    const itemsHtml = exportText ? `<div class="border rounded-3 p-3 bg-light-subtle"><div class="d-flex justify-content-between align-items-center gap-2 mb-2"><strong>发货数据</strong><span class="text-muted small">共 ${items.length} 条，一行一个卡密</span></div><textarea class="form-control" readonly rows="${textareaRows}" style="resize:vertical;white-space:pre;word-break:normal;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;line-height:1.55;">${escapeHtml(exportText)}</textarea></div>` : '<div class="text-muted text-center py-4">这条记录没有关联到已发货数据，可能不是商品订单或尚未发货。</div>';
     const modal = document.createElement('div');
     modal.className = 'modal fade';
     modal.id = modalId;
