@@ -53,20 +53,15 @@ function exportDeliveryInfoTxt(orderId, d) {
 }
 
 function deliveryInfoHtml(d) {
-    const items = Array.isArray(d?.items) ? d.items : [d];
-    return items.map((item, index) => {
-        if (item && item.format === 'line' && item.content) {
-            return `<div class="mb-3"><strong>账号信息 ${items.length > 1 ? '#' + (index + 1) : ''}:</strong><pre class="delivery-plain mt-2 mb-2">${Security.escapeHtml(item.content)}</pre><button class="btn btn-sm btn-outline-primary" onclick="Utils.copyText('${Security.escapeAttr(item.content)}')"><i class="bi bi-clipboard me-1"></i>复制账号信息</button></div>`;
-        }
-        return `
-            <div class="mb-3 pb-2 border-bottom">
-                <p class="mb-2"><strong>📧 邮箱:</strong> ${Security.escapeHtml(item?.email || '')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.email || '')}')"></i></p>
-                <p class="mb-2"><strong>🔑 密码:</strong> ${Security.escapeHtml(item?.password || '')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.password || '')}')"></i></p>
-                <p class="mb-2"><strong>🆔 Client ID:</strong> ${Security.escapeHtml(item?.client_id || 'N/A')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.client_id || 'N/A')}')"></i></p>
-                <p class="mb-0"><strong>🔄 Fresh Token:</strong> ${Security.escapeHtml(item?.fresh_token || 'N/A')}<i class="bi bi-clipboard copy-btn" onclick="Utils.copyText('${Security.escapeAttr(item?.fresh_token || 'N/A')}')"></i></p>
-            </div>
-        `;
-    }).join('');
+    const text = deliveryInfoExportText(d);
+    if (!text) return '<div class="text-muted small">暂无发货信息</div>';
+    const rows = text.split('\n').length;
+    return `
+        <textarea class="form-control delivery-plain" readonly rows="${Math.min(Math.max(rows, 6), 16)}" style="resize:vertical;white-space:pre;word-break:normal;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${Security.escapeHtml(text)}</textarea>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <button class="btn btn-sm btn-outline-primary" onclick="Utils.copyText('${Security.escapeAttr(text)}')"><i class="bi bi-clipboard me-1"></i>复制全部卡密</button>
+        </div>
+    `;
 }
 
 function resolveProductImageUrl(image) {
@@ -551,6 +546,7 @@ async function confirmPurchase(quantity = 1) {
 
         const order = result.order;
         const d = order.delivery_info;
+        window.currentSuccessDeliveryInfoForExport = d;
         const pickupWasEnabled = !!App.currentDetailProduct.pickup_password_enabled;
 
         document.getElementById('purchaseBody').innerHTML = `
@@ -560,7 +556,10 @@ async function confirmPurchase(quantity = 1) {
             <p class="text-muted">商品已自动发货，请保存好以下信息${pickupWasEnabled ? '；后续在购买记录查看发货需要输入你刚设置的取卡密码' : ''}</p>
         </div>
         <div class="delivery-card">
-            <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                <h6 class="fw-bold mb-0"><i class="bi bi-box-seam me-1"></i>发货信息</h6>
+                ${deliveryInfoExportText(d) ? `<button class="btn btn-sm btn-outline-primary" onclick="exportDeliveryInfoTxt('${Security.escapeAttr(order.id)}', window.currentSuccessDeliveryInfoForExport)"><i class="bi bi-download me-1"></i>导出TXT</button>` : ''}
+            </div>
             <div class="small">
                 ${deliveryInfoHtml(d)}
             </div>
