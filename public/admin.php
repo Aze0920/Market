@@ -29,8 +29,9 @@ keynest_require_installed(false);
         }
         body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--dark); font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
         .hidden { display: none !important; }
-        .admin-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
-        .sidebar { background: #0f172a; color: #fff; padding: 26px 20px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+        .admin-shell { min-height: 100vh; }
+        .sidebar { background: #0f172a; color: #fff; padding: 26px 20px; position: fixed; left: 0; top: 0; bottom: 0; width: 280px; height: 100vh; overflow-y: auto; z-index: 1000; }
+        .content { margin-left: 280px; min-width: 0; }
         .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; }
         .brand-icon { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 16px; background: linear-gradient(135deg, var(--primary), var(--primary2)); box-shadow: 0 12px 26px rgba(79,70,229,.38); }
         .brand strong { display: block; font-size: 1.08rem; }
@@ -143,15 +144,14 @@ keynest_require_installed(false);
         @media (max-width: 1100px) { .complaint-grid-admin { grid-template-columns: 1fr; } }
         .logs-panel { margin-bottom: 28px; }
         .log-meta { color: var(--muted); font-size: .86rem; }
-        @media (max-width: 980px) { .admin-shell { grid-template-columns: 1fr; } .sidebar { position: relative; height: auto; } .content { padding: 20px; } .topbar { align-items: flex-start; flex-direction: column; } .log-viewer.logs-page-viewer { height: 420px; max-height: 55vh; } }
+        @media (max-width: 980px) { .admin-shell { display: block; } .sidebar { position: relative; left: auto; top: auto; bottom: auto; width: auto; height: auto; } .content { margin-left: 0; padding: 20px; } .topbar { align-items: flex-start; flex-direction: column; } .log-viewer.logs-page-viewer { height: 420px; max-height: 55vh; } }
         html, body { overflow-x: hidden; }
         img, video, canvas, svg { max-width: 100%; }
         .table-responsive { -webkit-overflow-scrolling: touch; }
         @media (min-width: 981px) and (max-width: 1280px) {
-            .admin-shell { grid-template-columns: 240px 1fr; }
-            .sidebar { padding: 22px 14px; }
+            .sidebar { width: 240px; padding: 22px 14px; }
+            .content { margin-left: 240px; padding: 24px; }
             .side-link { padding: 11px 12px; }
-            .content { padding: 24px; }
             .stat-card { padding: 18px; }
         }
         @media (max-width: 980px) {
