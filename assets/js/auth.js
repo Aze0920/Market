@@ -381,6 +381,7 @@ window.getKeynestCaptchaConfig = getKeynestCaptchaConfig;
 function setAuthMode(mode) {
     const content = document.getElementById('authModalContent');
     if (!content) return;
+    content.classList.toggle('is-forgot', mode === 'forgot');
     content.classList.toggle('is-register', mode === 'register');
 }
 
@@ -405,6 +406,19 @@ function resetRegisterForm() {
     updateRegisterSubmitState();
     document.getElementById('registerCaptchaBox')?.replaceChildren();
     setRegisterError('');
+}
+
+function resetForgotPasswordForm() {
+    const email = document.getElementById('forgotEmail');
+    const code = document.getElementById('forgotEmailCode');
+    const password = document.getElementById('forgotPassword');
+    const confirm = document.getElementById('forgotPasswordConfirm');
+    if (email) email.value = '';
+    if (code) code.value = '';
+    if (password) password.value = '';
+    if (confirm) confirm.value = '';
+    document.getElementById('forgotPasswordCaptchaBox')?.replaceChildren();
+    setForgotPasswordMessage('');
 }
 
 function updateAuthBackgroundImage() {
@@ -508,10 +522,137 @@ async function sendRegisterEmailCode() {
 }
 window.sendRegisterEmailCode = sendRegisterEmailCode;
 
+function setForgotPasswordMessage(message, type = 'danger') {
+    const box = document.getElementById('forgotPasswordResultBox');
+    if (!box) return;
+    if (!message) {
+        box.className = 'alert py-2 small hidden';
+        box.textContent = '';
+        return;
+    }
+    box.className = 'alert alert-' + type + ' py-2 small';
+    box.textContent = message;
+}
+
+let forgotEmailCodeCountdown = 0;
+let forgotEmailCodeTimer = null;
+async function sendForgotPasswordCode() {
+    const email = document.getElementById('forgotEmail')?.value.trim() || '';
+    if (!Security.validateEmail(email)) {
+        setForgotPasswordMessage('请输入注册时绑定的有效邮箱');
+        Toast.warning('请输入注册时绑定的有效邮箱');
+        return;
+    }
+    const btn = document.getElementById('sendForgotEmailCodeBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '验证中...';
+    }
+    try {
+        const captchaToken = await window.runCaptcha('email_code', true);
+        if (btn) btn.textContent = '发送中...';
+        const result = await API.sendPasswordResetCode(email, captchaToken);
+        if (!result.success) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '发送验证码';
+            }
+            setForgotPasswordMessage(result.message || '验证码发送失败');
+            Toast.error(result.message || '验证码发送失败');
+            return;
+        }
+        setForgotPasswordMessage(result.message || '验证码已发送，请查收邮箱', 'success');
+        Toast.success(result.message || '验证码已发送');
+    } catch (error) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '发送验证码';
+        }
+        const message = error && error.message === 'captcha_cancelled' ? '已取消人机验证' : (error?.message || '人机验证失败，请重试');
+        setForgotPasswordMessage(message);
+        Toast.error(message);
+        return;
+    }
+    forgotEmailCodeCountdown = 60;
+    clearInterval(forgotEmailCodeTimer);
+    forgotEmailCodeTimer = setInterval(() => {
+        forgotEmailCodeCountdown -= 1;
+        if (!btn) return;
+        if (forgotEmailCodeCountdown <= 0) {
+            clearInterval(forgotEmailCodeTimer);
+            btn.disabled = false;
+            btn.textContent = '发送验证码';
+        } else {
+            btn.disabled = true;
+            btn.textContent = forgotEmailCodeCountdown + '秒后重发';
+        }
+    }, 1000);
+}
+window.sendForgotPasswordCode = sendForgotPasswordCode;
+
+async function handleResetPassword() {
+    const email = document.getElementById('forgotEmail')?.value.trim() || '';
+    const emailCode = document.getElementById('forgotEmailCode')?.value.trim() || '';
+    const password = document.getElementById('forgotPassword')?.value.trim() || '';
+    const passwordConfirm = document.getElementById('forgotPasswordConfirm')?.value.trim() || '';
+    if (!Security.validateEmail(email)) {
+        setForgotPasswordMessage('请输入注册时绑定的有效邮箱');
+        Toast.warning('请输入注册时绑定的有效邮箱');
+        return;
+    }
+    if (!/^\d{6}$/.test(emailCode)) {
+        setForgotPasswordMessage('请输入6位邮箱验证码');
+        Toast.warning('请输入6位邮箱验证码');
+        return;
+    }
+    if (!Security.validatePassword(password)) {
+        setForgotPasswordMessage('新密码至少6位');
+        Toast.warning('新密码至少6位');
+        return;
+    }
+    if (password !== passwordConfirm) {
+        setForgotPasswordMessage('两次密码不一致');
+        Toast.warning('两次密码不一致');
+        return;
+    }
+    const submitBtn = document.getElementById('forgotPasswordSubmitBtn');
+    const originalText = submitBtn ? submitBtn.innerHTML : '重置密码';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>重置中...';
+    }
+    try {
+        const result = await API.resetPassword(email, emailCode, password, passwordConfirm);
+        if (!result.success) {
+            setForgotPasswordMessage(result.message || '密码重置失败');
+            Toast.error(result.message || '密码重置失败');
+            return;
+        }
+        setForgotPasswordMessage(result.message || '密码已重置，请使用新密码登录', 'success');
+        Toast.success(result.message || '密码已重置');
+        setTimeout(() => switchToLogin(), 800);
+    } catch (error) {
+        const message = error?.message || '密码重置请求失败，请稍后重试';
+        setForgotPasswordMessage(message);
+        Toast.error(message);
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    }
+}
+window.handleResetPassword = handleResetPassword;
+
 function switchToRegister() {
     resetRegisterForm();
     setAuthMode('register');
     refreshRegisterEmailVerifyState();
+}
+
+function switchToForgotPassword() {
+    resetForgotPasswordForm();
+    setAuthMode('forgot');
 }
 
 function switchToLogin() {

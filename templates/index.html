@@ -8,7 +8,7 @@
     <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=V1.1.44" rel="stylesheet">
+    <link href="assets/css/style.css?v=V1.1.45" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -190,9 +190,12 @@
                                     <label class="form-label">用户名或邮箱</label>
                                     <input type="text" class="form-control" id="loginUsername" name="username" autocomplete="username" placeholder="输入用户名或邮箱">
                                 </div>
-                                <div class="form-group mb-3">
+                                <div class="form-group mb-2">
                                     <label class="form-label">密码</label>
                                     <input type="password" class="form-control" id="loginPassword" name="password" autocomplete="current-password" placeholder="输入密码">
+                                </div>
+                                <div class="text-end mb-3">
+                                    <a href="#" class="small fw-bold" onclick="switchToForgotPassword(); return false;">忘记密码？</a>
                                 </div>
                                 <div id="loginErrorBox" class="alert alert-danger py-2 small hidden"></div>
                                 <div id="loginCaptchaBox" class="captcha-inline-box"></div>
@@ -202,6 +205,40 @@
                                 </button>
                                 <p class="text-center mt-3 mb-0 text-muted">
                                     没有账号？<a href="#" onclick="switchToRegister(); return false;">立即注册</a>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="auth-form-pane auth-forgot-pane">
+                            <div class="modal-header border-0 pb-0">
+                                <h5 class="modal-title"><i class="bi bi-shield-lock me-2"></i>找回密码</h5>
+                                <button class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body pt-3">
+                                <div class="alert alert-info py-2 small">请输入注册时绑定的邮箱，系统会发送 6 位验证码用于重置密码。</div>
+                                <div class="form-group">
+                                    <label class="form-label">绑定邮箱</label>
+                                    <input type="email" class="form-control" id="forgotEmail" placeholder="your@email.com" autocomplete="email">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">邮箱验证码</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="forgotEmailCode" placeholder="6位验证码" maxlength="6">
+                                        <button class="btn btn-outline-primary" type="button" id="sendForgotEmailCodeBtn" onclick="sendForgotPasswordCode()">发送验证码</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">新密码</label>
+                                    <input type="password" class="form-control" id="forgotPassword" placeholder="至少6位，包含字母和数字" autocomplete="new-password">
+                                </div>
+                                <div class="form-group mb-3">
+                                    <label class="form-label">确认新密码</label>
+                                    <input type="password" class="form-control" id="forgotPasswordConfirm" placeholder="再次输入新密码" autocomplete="new-password">
+                                </div>
+                                <div id="forgotPasswordResultBox" class="alert py-2 small hidden"></div>
+                                <div id="forgotPasswordCaptchaBox" class="captcha-inline-box"></div>
+                                <button type="button" class="btn btn-primary w-100 auth-main-btn" id="forgotPasswordSubmitBtn" onclick="handleResetPassword()">重置密码</button>
+                                <p class="text-center mt-3 mb-0 text-muted">
+                                    想起来了？<a href="#" onclick="switchToLogin(); return false;">返回登录</a>
                                 </p>
                             </div>
                         </div>
@@ -621,13 +658,13 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/api.js?v=V1.1.43"></script>
+    <script src="assets/js/api.js?v=V1.1.45"></script>
     <script src="assets/js/app.js?v=V1.1.44"></script>
     <script src="assets/js/product.js?v=V1.1.44"></script>
     <script src="assets/js/message.js?v=V1.1.43"></script>
-    <script src="assets/js/auth.js?v=V1.1.43"></script>
+    <script src="assets/js/auth.js?v=V1.1.45"></script>
     <script>
-        window.KEYNEST_ASSET_VERSION = 'V1.1.43';
+        window.KEYNEST_ASSET_VERSION = 'V1.1.45';
 
         async function renderFrontMembershipCards(area) {
             if (!area) return;

@@ -84,6 +84,14 @@ const API = {
         return this.request('auth.php?action=send_email_code', 'POST', { email, captcha_token });
     },
 
+    sendPasswordResetCode(email, captcha_token = '') {
+        return this.request('auth.php?action=send_password_reset_code', 'POST', { email, captcha_token });
+    },
+
+    resetPassword(email, email_code, new_password, confirm_password) {
+        return this.request('auth.php?action=reset_password', 'POST', { email, email_code, new_password, confirm_password });
+    },
+
     getCaptchaConfig() {
         return this.request('auth.php?action=captcha_config');
     },

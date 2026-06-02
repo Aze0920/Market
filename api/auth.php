@@ -310,6 +310,69 @@ function verifyProfileEmailCode($user, $code, $consume = false) {
     }
 }
 
+function sendPasswordResetEmailCode($email) {
+    global $db;
+    $config = $db->getSystemConfig();
+    requireCaptcha('send_password_reset_code');
+    $email = strtolower(trim($email));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        jsonResponse(['success' => false, 'message' => '请输入注册时绑定的邮箱'], 400);
+    }
+    $user = $db->getUserByEmail($email);
+    if (!$user) {
+        jsonResponse(['success' => false, 'message' => '该邮箱未注册，请确认邮箱是否正确'], 404);
+    }
+    $lastSentKey = 'password_reset_last_sent_' . md5($email);
+    if (!empty($_SESSION[$lastSentKey]) && time() - $_SESSION[$lastSentKey] < 60) {
+        jsonResponse(['success' => false, 'message' => '发送过于频繁，请稍后再试'], 429);
+    }
+    $code = (string)random_int(100000, 999999);
+    $ttl = max(1, min(60, intval($config['email_code_ttl'] ?? 10)));
+    $_SESSION['password_reset_email_code'][$email] = [
+        'code' => $code,
+        'expires_at' => time() + $ttl * 60,
+        'user_id' => $user['id'] ?? ''
+    ];
+    $_SESSION[$lastSentKey] = time();
+    $siteName = $config['site_name'] ?? 'KeyNest';
+    $subject = $siteName . ' 找回密码验证码';
+    $html = KeyNestMailer::renderTemplate($config, [
+        'site_name' => $siteName,
+        'title' => '找回密码验证码',
+        'message' => '你正在重置 ' . $siteName . ' 账号密码，请在页面中输入下面的验证码。',
+        'code' => $code,
+        'ttl' => $ttl,
+        'footer' => '验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请立即检查账号安全。',
+        'time' => date('Y-m-d H:i:s')
+    ]);
+    $result = KeyNestMailer::send($email, $subject, $html, $config);
+    if (empty($result['success'])) {
+        unset($_SESSION['password_reset_email_code'][$email]);
+        jsonResponse(['success' => false, 'message' => $result['message'] ?? '邮件发送失败'], 500);
+    }
+    jsonResponse(['success' => true, 'message' => '验证码已发送，请查收邮箱']);
+}
+
+function verifyPasswordResetEmailCode($email, $code, $consume = false) {
+    $email = strtolower(trim($email));
+    $code = trim($code);
+    $record = $_SESSION['password_reset_email_code'][$email] ?? null;
+    if (!$record || empty($record['code']) || empty($record['expires_at']) || empty($record['user_id'])) {
+        jsonResponse(['success' => false, 'message' => '请先获取邮箱验证码'], 400);
+    }
+    if (time() > $record['expires_at']) {
+        unset($_SESSION['password_reset_email_code'][$email]);
+        jsonResponse(['success' => false, 'message' => '邮箱验证码已过期，请重新获取'], 400);
+    }
+    if (!hash_equals((string)$record['code'], $code)) {
+        jsonResponse(['success' => false, 'message' => '邮箱验证码错误'], 400);
+    }
+    if ($consume) {
+        unset($_SESSION['password_reset_email_code'][$email]);
+    }
+    return (string)$record['user_id'];
+}
+
 function safeUser($user) {
     if (!is_array($user)) {
         return null;
@@ -423,6 +486,41 @@ switch ($action) {
     case 'send_email_code':
         $email = sanitizeEmail($_POST['email'] ?? '');
         sendRegisterEmailCode($email);
+
+    case 'send_password_reset_code':
+        $email = sanitizeEmail($_POST['email'] ?? '');
+        sendPasswordResetEmailCode($email);
+
+    case 'reset_password':
+        $email = sanitizeEmail($_POST['email'] ?? '');
+        $code = trim($_POST['email_code'] ?? '');
+        $newPassword = $_POST['new_password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            jsonResponse(['success' => false, 'message' => '请输入注册时绑定的邮箱'], 400);
+        }
+        if (!preg_match('/^\d{6}$/', $code)) {
+            jsonResponse(['success' => false, 'message' => '请输入6位邮箱验证码'], 400);
+        }
+        if (!$newPassword || !$confirmPassword) {
+            jsonResponse(['success' => false, 'message' => '请填写新密码和确认密码'], 400);
+        }
+        if ($newPassword !== $confirmPassword) {
+            jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
+        }
+        if (strlen($newPassword) < 6 || !preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{6,}$/', $newPassword)) {
+            jsonResponse(['success' => false, 'message' => '密码至少6位，且需包含字母和数字'], 400);
+        }
+        $userId = verifyPasswordResetEmailCode($email, $code, true);
+        $user = $db->getUserById($userId);
+        if (!$user || strtolower(trim((string)($user['email'] ?? ''))) !== strtolower(trim($email))) {
+            jsonResponse(['success' => false, 'message' => '账号信息异常，请重新获取验证码'], 400);
+        }
+        $ok = $db->updateUser($userId, ['password' => password_hash($newPassword, PASSWORD_DEFAULT)]);
+        if (!$ok) {
+            jsonResponse(['success' => false, 'message' => '密码重置失败'], 500);
+        }
+        jsonResponse(['success' => true, 'message' => '密码已重置，请使用新密码登录']);
 
     case 'register':
         $username = sanitizeUsername($_POST['username'] ?? '');
