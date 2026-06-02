@@ -1065,6 +1065,91 @@ function orderStatusDisplay(order) {
     }
     return orderStatusPill(order);
 }
+function deliveryItemsForOrder(order) {
+    const purchaseOrder = order?.purchase_order || {};
+    const deliveryInfo = purchaseOrder.delivery_info || {};
+    return Array.isArray(deliveryInfo.items) ? deliveryInfo.items : [];
+}
+function hasPurchaseDeliveryData(order) {
+    return deliveryItemsForOrder(order).length > 0;
+}
+function deliveryItemDisplayText(item) {
+    if (!item || typeof item !== 'object') return '-';
+    if ((item.format || '') === 'line' && item.content) return String(item.content);
+    const parts = [];
+    if (item.email) parts.push('邮箱：' + item.email);
+    if (item.password) parts.push('密码：' + item.password);
+    if (item.client_id && item.client_id !== 'N/A') parts.push('Client ID：' + item.client_id);
+    if (item.fresh_token && item.fresh_token !== 'N/A') parts.push('Fresh Token：' + item.fresh_token);
+    if (item.content) parts.push(String(item.content));
+    return parts.join('\n') || '-';
+}
+function findPaymentOrderById(id) {
+    return (Admin.cache.payOrders || []).find(o => String(o.id || '') === String(id || '')) || null;
+}
+function openPaymentOrderDataModal(id) {
+    const order = findPaymentOrderById(id);
+    if (!order) return showToast('订单不存在，请刷新后重试', 'error');
+    const purchaseOrder = order.purchase_order || {};
+    const items = deliveryItemsForOrder(order);
+    const modalId = 'paymentOrderDataModal';
+    document.getElementById(modalId)?.remove();
+    const buyerText = purchaseOrder.guest_order
+        ? '游客买家'
+        : (purchaseOrder.buyer_id_email || purchaseOrder.buyer_name || recordUserEmail(order, 'user_id', order.user_id || '-'));
+    const itemsHtml = items.length ? items.map((item, index) => `
+        <div class="border rounded-3 p-3 bg-light-subtle mb-2">
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                <strong>发货数据 #${index + 1}</strong>
+                <button class="btn btn-sm btn-outline-primary" onclick="copyOrderDeliveryItem('${escapeHtml(id)}', ${index})">复制</button>
+            </div>
+            <pre class="mb-0 small" style="white-space:pre-wrap;word-break:break-word;">${escapeHtml(deliveryItemDisplayText(item))}</pre>
+        </div>
+    `).join('') : '<div class="text-muted text-center py-4">这条记录没有关联到已发货数据，可能不是商品订单或尚未发货。</div>';
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = modalId;
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-box-seam me-2 text-primary"></i>客户购买数据</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3 mb-3 small">
+                        <div class="col-md-6"><div class="text-muted">支付交易号</div><code>${escapeHtml(order.trade_no || order.id || '-')}</code></div>
+                        <div class="col-md-6"><div class="text-muted">购买订单号</div><code>${escapeHtml(purchaseOrder.id || order.related_id || '-')}</code></div>
+                        <div class="col-md-6"><div class="text-muted">商品</div><strong>${escapeHtml(purchaseOrder.product_title || order.title || '-')}</strong></div>
+                        <div class="col-md-3"><div class="text-muted">数量</div><strong>${escapeHtml(purchaseOrder.quantity || order.quantity || 1)}</strong></div>
+                        <div class="col-md-3"><div class="text-muted">金额</div><strong>${money(purchaseOrder.price || order.actual_amount || order.amount || 0)}</strong></div>
+                        <div class="col-md-6"><div class="text-muted">买家</div><strong>${escapeHtml(buyerText)}</strong></div>
+                        <div class="col-md-6"><div class="text-muted">卖家</div><strong>${escapeHtml(purchaseOrder.seller_id_email || purchaseOrder.seller_name || '-')}</strong></div>
+                    </div>
+                    ${purchaseOrder.guest_order ? '<div class="alert alert-warning small py-2">这是游客订单，后台仅展示订单与发货数据，不展示游客查询密钥。</div>' : ''}
+                    ${itemsHtml}
+                </div>
+                <div class="modal-footer">
+                    ${items.length ? `<button class="btn btn-outline-primary" onclick="copyAllOrderDeliveryItems('${escapeHtml(id)}')">复制全部数据</button>` : ''}
+                    <button class="btn btn-primary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    new bootstrap.Modal(modal).show();
+}
+function copyOrderDeliveryItem(id, index) {
+    const order = findPaymentOrderById(id);
+    const item = deliveryItemsForOrder(order)[index];
+    if (!item) return showToast('数据不存在', 'error');
+    navigator.clipboard?.writeText(deliveryItemDisplayText(item)).then(() => showToast('发货数据已复制', 'success')).catch(() => showToast('复制失败，请手动复制', 'error'));
+}
+function copyAllOrderDeliveryItems(id) {
+    const order = findPaymentOrderById(id);
+    const text = deliveryItemsForOrder(order).map(deliveryItemDisplayText).join('\n\n');
+    if (!text) return showToast('没有可复制的数据', 'error');
+    navigator.clipboard?.writeText(text).then(() => showToast('全部发货数据已复制', 'success')).catch(() => showToast('复制失败，请手动复制', 'error'));
+}
 function findAdminUserById(id) {
     return (Admin.cache.users || []).find(u => String(u.id || '') === String(id || '')) || null;
 }
@@ -1274,6 +1359,7 @@ function paymentOrderAdminCard(o) {
             </div>
             <div id="orderStatusEditorCard-${id}" class="order-status-editor-card hidden">${orderStatusEditor(o)}</div>
             <div class="admin-order-actions">
+                ${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success" onclick="openPaymentOrderDataModal('${id}')">查看数据</button>` : ''}
                 <button class="btn btn-sm btn-outline-primary" onclick="toggleOrderStatusEditor('${id}', true)">修改状态</button>
                 <button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${id}')">删除</button>
             </div>
@@ -1341,7 +1427,7 @@ function renderOrders() {
                                 <td>${money(o.actual_amount)}</td>
                                 <td>${orderStatusDisplay(o)}</td>
                                 <td>${dateText(o.created_at)}</td>
-                                <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></td>
+                                <td class="text-end"><div class="d-flex justify-content-end gap-1 flex-wrap">${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success" onclick="openPaymentOrderDataModal('${escapeHtml(o.id)}')">查看数据</button>` : ''}<button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></div></td>
                             </tr>
                             <tr id="orderStatusEditor-${escapeHtml(o.id)}" class="order-status-editor-row hidden">
                                 <td colspan="10">${orderStatusEditor(o)}</td>

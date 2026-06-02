@@ -78,6 +78,51 @@ function attachPaymentOrderEmails($orders) {
     }, $orders);
 }
 
+function attachPaymentOrderPurchaseDetails($orders) {
+    global $db;
+    return array_map(function($order) use ($db) {
+        $relatedId = trim((string)($order['related_id'] ?? ''));
+        if ($relatedId === '') {
+            return $order;
+        }
+        $purchaseOrder = $db->getOrderById($relatedId);
+        if (!$purchaseOrder) {
+            return $order;
+        }
+        $order['purchase_order'] = [
+            'id' => $purchaseOrder['id'] ?? '',
+            'buyer_id' => $purchaseOrder['buyer_id'] ?? '',
+            'buyer_name' => $purchaseOrder['buyer_name'] ?? '',
+            'buyer_id_email' => '',
+            'seller_id' => $purchaseOrder['seller_id'] ?? '',
+            'seller_name' => $purchaseOrder['seller_name'] ?? '',
+            'seller_id_email' => '',
+            'product_id' => $purchaseOrder['product_id'] ?? '',
+            'product_title' => $purchaseOrder['product_title'] ?? '',
+            'quantity' => intval($purchaseOrder['quantity'] ?? 1),
+            'price' => floatval($purchaseOrder['price'] ?? 0),
+            'unit_price' => floatval($purchaseOrder['unit_price'] ?? 0),
+            'pay_method' => $purchaseOrder['pay_method'] ?? '',
+            'guest_order' => !empty($purchaseOrder['guest_order']),
+            'purchase_date' => intval($purchaseOrder['purchase_date'] ?? 0),
+            'delivery_info' => $purchaseOrder['delivery_info'] ?? []
+        ];
+        if (!empty($purchaseOrder['buyer_id']) && empty($purchaseOrder['guest_order'])) {
+            $buyer = $db->getUserById($purchaseOrder['buyer_id']);
+            if ($buyer && !empty($buyer['email'])) {
+                $order['purchase_order']['buyer_id_email'] = $buyer['email'];
+            }
+        }
+        if (!empty($purchaseOrder['seller_id'])) {
+            $seller = $db->getUserById($purchaseOrder['seller_id']);
+            if ($seller && !empty($seller['email'])) {
+                $order['purchase_order']['seller_id_email'] = $seller['email'];
+            }
+        }
+        return $order;
+    }, $orders);
+}
+
 function expirePendingPaymentOrders($orders = null) {
     global $db;
     $orders = $orders === null ? $db->getPaymentOrders() : $orders;
@@ -938,6 +983,7 @@ switch ($action) {
         $orders = expirePendingPaymentOrders($db->getPaymentOrders());
         usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         $orders = attachPaymentOrderEmails($orders);
+        $orders = attachPaymentOrderPurchaseDetails($orders);
         jsonResponse(['success' => true, 'orders' => $orders]);
 
     case 'update_order_status':
