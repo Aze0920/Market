@@ -265,58 +265,37 @@ logs/
 
 运行日志、安装锁等运行辅助信息仍可能保存在 `logs/`、`data/` 等目录中。
 
-## GitHub 自动上传
+## 版本管理与更新
 
-本项目本地网站目录是：
+项目可以使用 GitHub 进行版本管理、备份和更新分发。
 
-```text
-C:\Users\Administrator\Desktop\00
-```
+建议流程：
 
-GitHub 上传工具目录是：
+1. 在本地开发环境修改代码。
+2. 测试确认功能正常。
+3. 提交代码到 Git 仓库。
+4. 推送到自己的 GitHub 仓库。
+5. 服务器从 GitHub 拉取最新版本。
+6. 更新完成后检查配置文件、数据库和运行日志是否正常。
 
-```text
-C:\Users\Administrator\Desktop\github
-```
+公开仓库中不应该包含本机绝对路径、服务器密码、数据库密码、支付密钥、邮箱授权码或真实业务数据。
 
-双击下面文件即可自动上传到 GitHub：
-
-```text
-C:\Users\Administrator\Desktop\github\一键上传Market.bat
-```
-
-上传脚本会执行以下操作：
-
-1. 复制 `C:\Users\Administrator\Desktop\00` 中的网站文件。
-2. 同步到 `C:\Users\Administrator\Desktop\github\Market`。
-3. 自动提交本地变更。
-4. 推送到 GitHub 仓库。
-
-GitHub 仓库地址：
-
-```text
-https://github.com/Aze0920/Market
-```
+如果需要使用本地自动化脚本，建议将脚本放在私有目录，不要把带有个人路径、访问令牌或账号信息的脚本提交到公开仓库。
 
 ## 后台自动更新
 
 后台包含“系统更新”功能。
 
-更新源：
+更新源可以配置为自己的 GitHub 仓库地址。
 
-```text
-https://github.com/Aze0920/Market
-```
+自动更新的一般流程：
 
-自动更新时会先拉取到：
+1. 从配置的 GitHub 仓库拉取最新代码。
+2. 将新版本文件同步到网站目录。
+3. 保留运行环境相关文件。
+4. 完成后在后台检查系统状态。
 
-```text
-C:\Users\Administrator\Desktop\github\Market
-```
-
-再同步到网站目录。
-
-更新时会保留运行数据：
+更新时建议保留运行数据：
 
 ```text
 config/database.php
@@ -333,7 +312,7 @@ logs/
 不要上传以下敏感内容：
 
 ```text
-.github-token
+访问令牌文件
 .env
 logs/
 数据库密码
