@@ -225,11 +225,11 @@ keynest_require_installed(false);
     <div class="login-card">
         <div class="login-logo"><i class="bi bi-shield-lock-fill"></i></div>
         <h2 class="fw-bold mb-1">管理员登录</h2>
-        <p class="text-muted mb-4">请输入管理员账号密码进入 KeyNest 后台。</p>
+        <p class="text-muted mb-4">请输入管理员用户名或邮箱和密码进入 KeyNest 后台。</p>
         <div id="adminLoginError" class="alert alert-danger py-2 small hidden"></div>
         <div class="mb-3">
-            <label class="form-label fw-semibold">用户名</label>
-            <input id="adminUsername" class="form-control form-control-lg" placeholder="admin" autocomplete="username">
+            <label class="form-label fw-semibold">用户名或邮箱</label>
+            <input id="adminUsername" class="form-control form-control-lg" placeholder="输入用户名或邮箱" autocomplete="username">
         </div>
         <div class="mb-4">
             <label class="form-label fw-semibold">密码</label>
@@ -390,7 +390,7 @@ async function adminLogin() {
     const password = document.getElementById('adminPassword').value;
     const errorBox = document.getElementById('adminLoginError');
     if (!username || !password) {
-        errorBox.textContent = '请填写用户名和密码';
+        errorBox.textContent = '请填写用户名或邮箱和密码';
         errorBox.classList.remove('hidden');
         return;
     }
@@ -401,7 +401,7 @@ async function adminLogin() {
     btn.disabled = false;
     btn.textContent = '登录后台';
     if (!result.success) {
-        errorBox.textContent = result.message || '登录失败，请检查用户名和密码';
+        errorBox.textContent = result.message || '登录失败，请检查用户名或邮箱和密码';
         errorBox.classList.remove('hidden');
         showToast(errorBox.textContent, 'error');
         return;

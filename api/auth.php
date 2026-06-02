@@ -376,11 +376,11 @@ function jsonResponse($data, $code = 200) {
 
 switch ($action) {
     case 'login':
-        $username = sanitizeUsername($_POST['username'] ?? '');
+        $account = safeTrimString($_POST['username'] ?? '', 190);
         $password = $_POST['password'] ?? '';
 
-        if (empty($username) || empty($password)) {
-            jsonResponse(['success' => false, 'message' => '请填写用户名和密码'], 400);
+        if ($account === '' || empty($password)) {
+            jsonResponse(['success' => false, 'message' => '请填写用户名或邮箱和密码'], 400);
         }
 
         $captchaConfig = captchaClientConfig();
@@ -389,13 +389,16 @@ switch ($action) {
         }
 
         // 检查速率限制
-        if (!checkLoginRateLimit($username)) {
+        if (!checkLoginRateLimit($account)) {
             jsonResponse(['success' => false, 'message' => '登录尝试过于频繁，请稍后再试'], 429);
         }
 
-        $user = $db->getUserByUsername($username);
+        $user = $db->getUserByUsername(sanitizeUsername($account));
+        if (!$user && filter_var($account, FILTER_VALIDATE_EMAIL)) {
+            $user = $db->getUserByEmail($account);
+        }
         if (!$user) {
-            jsonResponse(['success' => false, 'message' => '用户不存在，请检查用户名是否正确'], 401);
+            jsonResponse(['success' => false, 'message' => '账号不存在，请检查用户名或邮箱是否正确'], 401);
         }
         if (!password_verify($password, $user['password'])) {
             jsonResponse(['success' => false, 'message' => '密码错误，请重新输入'], 401);
@@ -403,7 +406,7 @@ switch ($action) {
 
         // 登录成功，清除速率限制记录
         $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        $key = 'login_attempts_' . md5($username . '|' . $ip);
+        $key = 'login_attempts_' . md5($account . '|' . $ip);
         unset($_SESSION[$key]);
 
         // 生成新的会话ID防止会话固定攻击

@@ -805,6 +805,22 @@ class Database {
         return null;
     }
 
+    public function getUserByEmail($email) {
+        if (!is_string($email) || strlen($email) > 190) {
+            return null;
+        }
+        $email = strtolower(trim($email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+        foreach ($this->data['users'] as $user) {
+            if (isset($user['email']) && strtolower(trim((string)$user['email'])) === $email) {
+                return $user;
+            }
+        }
+        return null;
+    }
+
     public function getUserById($id) {
         if (!is_string($id) || strlen($id) > 80) {
             return null;

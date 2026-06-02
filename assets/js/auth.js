@@ -529,8 +529,8 @@ async function handleLogin() {
     const password = document.getElementById('loginPassword').value.trim();
 
     if (!username || !password) {
-        setLoginError('请填写用户名和密码');
-        Toast.warning('请填写用户名和密码');
+        setLoginError('请填写用户名或邮箱和密码');
+        Toast.warning('请填写用户名或邮箱和密码');
         return;
     }
 
@@ -547,7 +547,7 @@ async function handleLogin() {
         const result = await API.login(username, password, captchaToken);
 
         if (!result.success) {
-            const message = result.message || '登录失败，请检查用户名和密码';
+            const message = result.message || '登录失败，请检查用户名或邮箱和密码';
             setLoginError(message);
             Toast.error(message);
             return;
