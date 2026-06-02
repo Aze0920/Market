@@ -964,7 +964,13 @@ async function openGuestOrdersModal(orderId = '') {
     const inputValue = orderId || orders[0]?.id || '';
     document.getElementById('purchaseBody').innerHTML = `
         <h5 class="fw-bold mb-3"><i class="bi bi-search me-1"></i>查询订单</h5>
-        <div class="alert alert-info small">该入口专门用于未登录购买。系统会优先读取当前电脑缓存的游客订单；如果换了设备，请输入订单号查询。</div>
+        <div class="alert alert-warning small" style="border-left:4px solid #f97316;"><strong>换设备查询：</strong>请输入购买时填写的真实邮箱和邮件里的 8 位查询码，即可直接从数据库查询卡密。</div>
+        <div class="row g-2 mb-3">
+            <div class="col-md-5"><input type="email" class="form-control" id="guestOrderEmailInput" placeholder="购买时填写的邮箱"></div>
+            <div class="col-md-4"><input class="form-control text-uppercase" id="guestOrderCodeInput" maxlength="8" placeholder="8位查询码"></div>
+            <div class="col-md-3"><button class="btn btn-primary w-100" onclick="queryGuestOrderByEmailCode()">查询卡密</button></div>
+        </div>
+        <div class="alert alert-info small">该入口也会读取当前电脑缓存的游客订单；如果只在当前电脑查询，也可以输入订单号刷新状态。</div>
         <div class="input-group mb-3">
             <input class="form-control" id="guestOrderQueryInput" value="${Security.escapeAttr(inputValue)}" placeholder="请输入订单号">
             <button class="btn btn-primary" onclick="queryGuestOrder()">查询</button>
@@ -1013,7 +1019,50 @@ async function queryGuestOrder(orderId = '') {
     if (box) box.innerHTML = renderGuestOrdersList([order]);
 }
 
-let guestDeliveryContext = { orderId: '', guestToken: '' };
+let guestDeliveryContext = { orderId: '', guestToken: '', guestEmail: '', guestQueryCode: '' };
+
+async function queryGuestOrderByEmailCode(pickupPassword = '') {
+    const email = document.getElementById('guestOrderEmailInput')?.value?.trim().toLowerCase() || '';
+    const code = document.getElementById('guestOrderCodeInput')?.value?.trim().toUpperCase() || '';
+    const box = document.getElementById('guestOrderResultBox');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Toast.warning('请输入购买时填写的真实邮箱');
+    if (!/^[A-Z0-9]{8}$/.test(code)) return Toast.warning('请输入邮件中的8位查询码');
+    if (box) box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    const result = await API.queryGuestOrderByCode(email, code, pickupPassword);
+    if (!result.success) {
+        if (box) box.innerHTML = `<div class="alert alert-danger">${Security.escapeHtml(result.message || '查询失败')}</div>`;
+        return;
+    }
+    const order = result.order || {};
+    saveGuestOrder({
+        id: order.id || '',
+        guest_email: email,
+        guest_query_code: code,
+        product_title: order.product_title || '游客订单',
+        quantity: order.quantity || 1,
+        amount: order.price || 0,
+        created_at: order.purchase_date || Math.floor(Date.now() / 1000),
+        related_id: order.id || '',
+        status: 'paid',
+        pickup_password_enabled: !!order.pickup_password_required || !!order.delivery_info?.pickup_password_enabled
+    });
+    if (order.pickup_password_required) {
+        guestDeliveryContext = { orderId: order.id || '', guestToken: '', guestEmail: email, guestQueryCode: code };
+        await renderGuestDeliveryModal('', order);
+        return;
+    }
+    await viewGuestDeliveryInfoByCode(order.id || '', email, code, pickupPassword, order);
+}
+
+async function viewGuestDeliveryInfoByCode(orderId, guestEmail, guestQueryCode, pickupPassword = '', prefetchedOrder = null) {
+    guestDeliveryContext = {
+        orderId: orderId || '',
+        guestToken: '',
+        guestEmail: guestEmail || '',
+        guestQueryCode: guestQueryCode || ''
+    };
+    await renderGuestDeliveryModal(pickupPassword, prefetchedOrder);
+}
 
 async function submitGuestPickupPassword() {
     const password = document.getElementById('guestPickupPasswordInput')?.value?.trim() || '';
@@ -1028,16 +1077,18 @@ async function submitGuestPickupPassword() {
 async function viewGuestDeliveryInfo(orderId, guestToken = '', pickupPassword = '') {
     guestDeliveryContext = {
         orderId: orderId || '',
-        guestToken: guestToken || getGuestOrderToken()
+        guestToken: guestToken || getGuestOrderToken(),
+        guestEmail: '',
+        guestQueryCode: ''
     };
     await renderGuestDeliveryModal(pickupPassword);
 }
 
-async function renderGuestDeliveryModal(pickupPassword = '') {
-    const { orderId, guestToken } = guestDeliveryContext;
+async function renderGuestDeliveryModal(pickupPassword = '', prefetchedOrder = null) {
+    const { orderId, guestToken, guestEmail, guestQueryCode } = guestDeliveryContext;
     if (!orderId) return;
 
-    const result = await API.getOrder(orderId, pickupPassword, guestToken);
+    const result = prefetchedOrder ? { success: true, order: prefetchedOrder } : (guestEmail && guestQueryCode ? await API.getOrder(orderId, pickupPassword, '', guestEmail, guestQueryCode) : await API.getOrder(orderId, pickupPassword, guestToken));
     if (!result.success) {
         Toast.error(result.message || '订单不存在');
         return;
@@ -1054,7 +1105,7 @@ async function renderGuestDeliveryModal(pickupPassword = '') {
     const d = order.delivery_info;
     document.getElementById('purchaseBody').innerHTML = `
         <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i>游客订单发货信息</h6>
-        <div class="alert alert-warning small">您尚未登录，请保存好订单号：<code>${Security.escapeHtml(order.id)}</code></div>
+        <div class="alert alert-warning small">您尚未登录，请保存好订单号：<code>${Security.escapeHtml(order.id)}</code>${guestEmail && guestQueryCode ? `；当前使用邮箱 <strong>${Security.escapeHtml(guestEmail)}</strong> + 查询码查询` : ''}</div>
         ${needsPassword ? `
             <div class="alert alert-info small">该订单设置了取卡密码，请输入购买时填写的取卡密码。</div>
             <div class="input-group mb-3">
@@ -1062,7 +1113,7 @@ async function renderGuestDeliveryModal(pickupPassword = '') {
                 <button type="button" class="btn btn-primary" onclick="submitGuestPickupPassword()">确认取卡</button>
             </div>
         ` : ''}
-        ${needsPassword ? '' : `<div class="delivery-card"><div class="small">${deliveryInfoHtml(d)}</div></div>`}
+        ${needsPassword ? '' : `<div class="delivery-card"><div class="d-flex justify-content-between align-items-center gap-2 mb-3"><h6 class="fw-bold mb-0"><i class="bi bi-box-seam me-1"></i>卡密信息</h6>${deliveryInfoExportText(d) ? `<button class="btn btn-sm btn-outline-primary" onclick="exportDeliveryInfoTxt('${Security.escapeAttr(order.id)}', ${JSON.stringify(d).replace(/"/g, '&quot;')})"><i class="bi bi-download me-1"></i>导出TXT</button>` : ''}</div><div class="small">${deliveryInfoHtml(d)}</div></div>`}
     `;
     document.getElementById('purchaseFooter').innerHTML = '<button type="button" class="btn btn-outline" onclick="openGuestOrdersModal()">返回订单</button><button type="button" class="btn btn-primary" data-bs-dismiss="modal">关闭</button>';
 

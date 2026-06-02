@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/Mailer.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -218,6 +219,36 @@ function acquireProductPurchaseLock($productId) {
     return $handle;
 }
 
+function genGuestQueryCode() {
+    $chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $code = '';
+    for ($i = 0; $i < 8; $i++) {
+        $code .= $chars[random_int(0, strlen($chars) - 1)];
+    }
+    return $code;
+}
+
+function sendGuestQueryCodeEmail($email, $code, $paymentOrder, $productOrder = null) {
+    global $db;
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[A-Z0-9]{8}$/', $code)) {
+        return ['success' => false, 'message' => '游客邮箱或查询码无效'];
+    }
+    $config = $db->getSystemConfig();
+    $siteName = trim((string)($config['site_name'] ?? 'KeyNest')) ?: 'KeyNest';
+    $orderNo = $productOrder['id'] ?? $paymentOrder['related_id'] ?? $paymentOrder['id'] ?? '';
+    $title = $productOrder['product_title'] ?? $paymentOrder['title'] ?? '游客订单';
+    $html = KeyNestMailer::renderTemplate($config, [
+        'site_name' => $siteName,
+        'title' => '游客订单查询码',
+        'message' => '您购买的商品“' . $title . '”已生成游客查询码。请务必保存该邮件，之后可在任意设备使用邮箱 + 查询码查询卡密。订单号：' . $orderNo,
+        'code' => $code,
+        'ttl' => '永久有效',
+        'footer' => '请勿把查询码发送给他人，泄露后可能导致卡密被他人查看。',
+        'time' => date('Y-m-d H:i:s')
+    ]);
+    return KeyNestMailer::send($email, $siteName . ' 游客订单查询码', $html, $config);
+}
+
 function refundFailedProductPaymentOrder($order, $reason = '库存不足，购买失败，款项已退回余额') {
     global $db;
     if (!empty($order['guest_order'])) {
@@ -363,6 +394,8 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
         'buyer_name' => sanitizeString($buyer['username']),
         'guest_order' => $isGuestOrder,
         'guest_token' => $order['guest_token'] ?? '',
+        'guest_email' => $order['guest_email'] ?? '',
+        'guest_query_code' => $order['guest_query_code'] ?? '',
         'seller_id' => $product['seller_id'],
         'seller_name' => sanitizeString($product['seller_name']),
         'product_id' => $product['id'],
@@ -412,6 +445,13 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
     }
 
     $db->updatePaymentOrder($order['id'], ['related_id' => $productOrder['id'], 'fee' => $fee, 'delivery_status' => 'delivered', 'delivery_error' => '']);
+    if ($isGuestOrder && !empty($productOrder['guest_email']) && !empty($productOrder['guest_query_code'])) {
+        $mailResult = sendGuestQueryCodeEmail($productOrder['guest_email'], $productOrder['guest_query_code'], $order, $productOrder);
+        $db->updatePaymentOrder($order['id'], [
+            'guest_code_email_sent' => !empty($mailResult['success']),
+            'guest_code_email_error' => empty($mailResult['success']) ? ($mailResult['message'] ?? '查询码邮件发送失败') : ''
+        ]);
+    }
     return $productOrder;
 }
 
@@ -829,6 +869,11 @@ switch ($action) {
         $quantity = max(1, min(100, intval($_POST['quantity'] ?? 1)));
         $payType = sanitizeString($_POST['pay_type'] ?? 'alipay');
         $pickupPassword = trim((string)($_POST['pickup_password'] ?? ''));
+        $guestEmail = strtolower(trim((string)($_POST['guest_email'] ?? '')));
+        $guestQueryCode = $isGuestOrder ? genGuestQueryCode() : '';
+        if ($isGuestOrder && !filter_var($guestEmail, FILTER_VALIDATE_EMAIL)) {
+            jsonResponse(['success' => false, 'message' => '游客购买必须填写真实邮箱，用于接收查询码'], 400);
+        }
         $user = $isGuestOrder ? null : $db->getUserById($userId);
 
         if (!$isGuestOrder && !$user) {
@@ -880,6 +925,8 @@ switch ($action) {
             'pickup_password_hash' => !empty($product['pickup_password_enabled']) ? password_hash($pickupPassword, PASSWORD_DEFAULT) : '',
             'guest_token' => $isGuestOrder ? hash('sha256', $guestToken) : '',
             'guest_order' => $isGuestOrder,
+            'guest_email' => $isGuestOrder ? $guestEmail : '',
+            'guest_query_code' => $guestQueryCode,
             'buyer_name' => $isGuestOrder ? '游客买家' : ($user['username'] ?? ''),
             'title' => '在线支付商品订单',
             'description' => '购买商品：' . ($product['title'] ?? '') . ' × ' . $quantity

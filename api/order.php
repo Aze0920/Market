@@ -42,6 +42,34 @@ function genComplaintPassword() {
     return str_pad((string)random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
 }
 
+function genGuestQueryCode() {
+    $chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $code = '';
+    for ($i = 0; $i < 8; $i++) {
+        $code .= $chars[random_int(0, strlen($chars) - 1)];
+    }
+    return $code;
+}
+
+function safeGuestOrderForResponse($order) {
+    unset($order['guest_token']);
+    unset($order['guest_query_code']);
+    return safeOrderForResponse($order);
+}
+
+function findGuestOrderByEmailCode($email, $code) {
+    global $db;
+    $email = strtolower(trim((string)$email));
+    $code = strtoupper(trim((string)$code));
+    foreach ($db->getOrders() as $order) {
+        if (empty($order['guest_order'])) continue;
+        if (strtolower((string)($order['guest_email'] ?? '')) === $email && strtoupper((string)($order['guest_query_code'] ?? '')) === $code) {
+            return $order;
+        }
+    }
+    return null;
+}
+
 function maskDeliveryInfo($deliveryInfo) {
     if (!is_array($deliveryInfo)) return $deliveryInfo;
     if (isset($deliveryInfo['pickup_password_hash'])) unset($deliveryInfo['pickup_password_hash']);
@@ -141,6 +169,8 @@ switch ($action) {
     case 'get':
         $sessionUserId = $_SESSION['user_id'] ?? '';
         $guestToken = trim((string)($_GET['guest_token'] ?? $_POST['guest_token'] ?? ''));
+        $guestEmail = strtolower(trim((string)($_GET['guest_email'] ?? $_POST['guest_email'] ?? '')));
+        $guestQueryCode = strtoupper(trim((string)($_GET['guest_query_code'] ?? $_POST['guest_query_code'] ?? '')));
         $userId = $sessionUserId;
         $id = $_GET['id'] ?? '';
         if (!validateId($id)) {
@@ -151,7 +181,9 @@ switch ($action) {
         if (!$order) {
             jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
         }
-        $guestAllowed = !empty($order['guest_order']) && $guestToken !== '' && hash_equals((string)($order['guest_token'] ?? ''), hash('sha256', $guestToken));
+        $guestAllowedByToken = !empty($order['guest_order']) && $guestToken !== '' && hash_equals((string)($order['guest_token'] ?? ''), hash('sha256', $guestToken));
+        $guestAllowedByCode = !empty($order['guest_order']) && filter_var($guestEmail, FILTER_VALIDATE_EMAIL) && preg_match('/^[A-Z0-9]{8}$/', $guestQueryCode) && strtolower((string)($order['guest_email'] ?? '')) === $guestEmail && hash_equals(strtoupper((string)($order['guest_query_code'] ?? '')), $guestQueryCode);
+        $guestAllowed = $guestAllowedByToken || $guestAllowedByCode;
         if (($sessionUserId === '' || ($order['buyer_id'] !== $userId && $order['seller_id'] !== $userId)) && !$guestAllowed) {
             jsonResponse(['success' => false, 'message' => '无权查看'], 403);
         }
@@ -173,7 +205,34 @@ switch ($action) {
             $order = anonymizeGuestBuyerForSeller($order);
         }
 
-        jsonResponse(['success' => true, 'order' => safeOrderForResponse($order)]);
+        jsonResponse(['success' => true, 'order' => $guestAllowed ? safeGuestOrderForResponse($order) : safeOrderForResponse($order)]);
+
+    case 'guest_query':
+        $email = strtolower(trim((string)($_POST['email'] ?? $_GET['email'] ?? '')));
+        $code = strtoupper(trim((string)($_POST['query_code'] ?? $_GET['query_code'] ?? '')));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            jsonResponse(['success' => false, 'message' => '请输入购买时填写的真实邮箱'], 400);
+        }
+        if (!preg_match('/^[A-Z0-9]{8}$/', $code)) {
+            jsonResponse(['success' => false, 'message' => '请输入8位查询码'], 400);
+        }
+        $order = findGuestOrderByEmailCode($email, $code);
+        if (!$order) {
+            jsonResponse(['success' => false, 'message' => '未找到订单，请确认邮箱和查询码是否正确'], 404);
+        }
+        $pickupPassword = trim((string)($_POST['pickup_password'] ?? $_GET['pickup_password'] ?? ''));
+        if (!empty($order['delivery_info']['pickup_password_enabled'])) {
+            $hash = (string)($order['delivery_info']['pickup_password_hash'] ?? '');
+            if ($hash === '' || $pickupPassword === '' || !password_verify($pickupPassword, $hash)) {
+                $order['delivery_info'] = maskDeliveryInfo($order['delivery_info'] ?? []);
+                $order['pickup_password_required'] = true;
+            } else {
+                if (isset($order['delivery_info']['locked'])) $order['delivery_info']['locked'] = false;
+                $order['delivery_info']['password_required'] = false;
+                $order['pickup_password_required'] = false;
+            }
+        }
+        jsonResponse(['success' => true, 'order' => safeGuestOrderForResponse($order)]);
 
     case 'complain':
         $userId = requireAuth();

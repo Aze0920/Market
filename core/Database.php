@@ -562,6 +562,8 @@ class Database {
             'pickup_password_hash' => $orderData['pickup_password_hash'] ?? '',
             'guest_token' => $orderData['guest_token'] ?? '',
             'guest_order' => $orderData['guest_order'] ?? false,
+            'guest_email' => $orderData['guest_email'] ?? '',
+            'guest_query_code' => $orderData['guest_query_code'] ?? '',
             'buyer_name' => $orderData['buyer_name'] ?? '',
             'related_id' => $orderData['related_id'] ?? '',
             'created_at' => time(),

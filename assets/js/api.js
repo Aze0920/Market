@@ -297,8 +297,12 @@ const API = {
         return this.request('order.php?action=my_sales');
     },
 
-    getOrder(id, pickupPassword = '', guestToken = '') {
-        return this.request('order.php?action=get&id=' + encodeURIComponent(id) + (pickupPassword ? '&pickup_password=' + encodeURIComponent(pickupPassword) : '') + (guestToken ? '&guest_token=' + encodeURIComponent(guestToken) : ''));
+    getOrder(id, pickupPassword = '', guestToken = '', guestEmail = '', guestQueryCode = '') {
+        return this.request('order.php?action=get&id=' + encodeURIComponent(id) + (pickupPassword ? '&pickup_password=' + encodeURIComponent(pickupPassword) : '') + (guestToken ? '&guest_token=' + encodeURIComponent(guestToken) : '') + (guestEmail ? '&guest_email=' + encodeURIComponent(guestEmail) : '') + (guestQueryCode ? '&guest_query_code=' + encodeURIComponent(guestQueryCode) : ''));
+    },
+
+    queryGuestOrderByCode(email, queryCode, pickupPassword = '') {
+        return this.request('order.php?action=guest_query', 'POST', { email, query_code: queryCode, pickup_password: pickupPassword });
     },
 
     complainOrder(orderId, email, reason) {
@@ -433,14 +437,15 @@ const API = {
         });
     },
 
-    createProductPaymentOrder(paymentConfigId, productId, quantity, payType, pickupPassword = '', guestToken = '') {
+    createProductPaymentOrder(paymentConfigId, productId, quantity, payType, pickupPassword = '', guestToken = '', guestEmail = '') {
         return this.request('payment.php?action=create_product_order', 'POST', {
             payment_config_id: paymentConfigId,
             product_id: productId,
             quantity,
             pay_type: payType,
             pickup_password: pickupPassword,
-            guest_token: guestToken
+            guest_token: guestToken,
+            guest_email: guestEmail
         });
     },
 

@@ -103,6 +103,8 @@ class RelationalStore {
                 `pay_method` varchar(50) NOT NULL DEFAULT '',
                 `guest_order` tinyint(1) NOT NULL DEFAULT 0,
                 `guest_token` varchar(120) NOT NULL DEFAULT '',
+                `guest_email` varchar(190) NOT NULL DEFAULT '',
+                `guest_query_code` char(8) NOT NULL DEFAULT '',
                 `balance_frozen` tinyint(1) NOT NULL DEFAULT 0,
                 `frozen_amount` decimal(14,2) NOT NULL DEFAULT 0.00,
                 `frozen_released_at` int unsigned NOT NULL DEFAULT 0,
@@ -198,6 +200,8 @@ class RelationalStore {
                 `pickup_password_hash` varchar(255) NOT NULL DEFAULT '',
                 `guest_token` varchar(120) NOT NULL DEFAULT '',
                 `guest_order` tinyint(1) NOT NULL DEFAULT 0,
+                `guest_email` varchar(190) NOT NULL DEFAULT '',
+                `guest_query_code` char(8) NOT NULL DEFAULT '',
                 `buyer_name` varchar(80) NOT NULL DEFAULT '',
                 `related_id` varchar(80) NOT NULL DEFAULT '',
                 `delivery_status` varchar(30) NOT NULL DEFAULT '',
@@ -236,6 +240,18 @@ class RelationalStore {
         ];
         foreach ($statements as $sql) {
             $this->pdo->exec($sql);
+        }
+        $this->ensureColumn('kn_orders', 'guest_email', "varchar(190) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_payment_orders', 'guest_email', "varchar(190) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_payment_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
+    }
+
+    private function ensureColumn($table, $column, $definition) {
+        $stmt = $this->pdo->prepare('SHOW COLUMNS FROM `' . $table . '` LIKE ?');
+        $stmt->execute([$column]);
+        if (!$stmt->fetch()) {
+            $this->pdo->exec('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition);
         }
     }
 
@@ -663,6 +679,8 @@ class RelationalStore {
             'pay_method' => $row['pay_method'],
             'guest_order' => !empty($row['guest_order']),
             'guest_token' => $row['guest_token'],
+            'guest_email' => $row['guest_email'] ?? '',
+            'guest_query_code' => $row['guest_query_code'] ?? '',
             'balance_frozen' => !empty($row['balance_frozen']),
             'frozen_amount' => floatval($row['frozen_amount']),
             'frozen_released_at' => intval($row['frozen_released_at']),
@@ -680,9 +698,9 @@ class RelationalStore {
     private function upsertOrder(array $order) {
         $complaint = $order['complaint'] ?? [];
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_orders (id, buyer_id, buyer_name, seller_id, seller_name, product_id, product_title, price, unit_price, quantity, fee, seller_amount, pay_method, guest_order, guest_token, balance_frozen, frozen_amount, frozen_released_at, complaint_withdrawn_at, purchase_date, delivery_info_json, complaint_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE buyer_id = VALUES(buyer_id), buyer_name = VALUES(buyer_name), seller_id = VALUES(seller_id), seller_name = VALUES(seller_name), product_id = VALUES(product_id), product_title = VALUES(product_title), price = VALUES(price), unit_price = VALUES(unit_price), quantity = VALUES(quantity), fee = VALUES(fee), seller_amount = VALUES(seller_amount), pay_method = VALUES(pay_method), guest_order = VALUES(guest_order), guest_token = VALUES(guest_token), balance_frozen = VALUES(balance_frozen), frozen_amount = VALUES(frozen_amount), frozen_released_at = VALUES(frozen_released_at), complaint_withdrawn_at = VALUES(complaint_withdrawn_at), purchase_date = VALUES(purchase_date), delivery_info_json = VALUES(delivery_info_json), complaint_json = VALUES(complaint_json)'
+            'INSERT INTO kn_orders (id, buyer_id, buyer_name, seller_id, seller_name, product_id, product_title, price, unit_price, quantity, fee, seller_amount, pay_method, guest_order, guest_token, guest_email, guest_query_code, balance_frozen, frozen_amount, frozen_released_at, complaint_withdrawn_at, purchase_date, delivery_info_json, complaint_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE buyer_id = VALUES(buyer_id), buyer_name = VALUES(buyer_name), seller_id = VALUES(seller_id), seller_name = VALUES(seller_name), product_id = VALUES(product_id), product_title = VALUES(product_title), price = VALUES(price), unit_price = VALUES(unit_price), quantity = VALUES(quantity), fee = VALUES(fee), seller_amount = VALUES(seller_amount), pay_method = VALUES(pay_method), guest_order = VALUES(guest_order), guest_token = VALUES(guest_token), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), balance_frozen = VALUES(balance_frozen), frozen_amount = VALUES(frozen_amount), frozen_released_at = VALUES(frozen_released_at), complaint_withdrawn_at = VALUES(complaint_withdrawn_at), purchase_date = VALUES(purchase_date), delivery_info_json = VALUES(delivery_info_json), complaint_json = VALUES(complaint_json)'
         );
         return $stmt->execute([
             $order['id'],
@@ -700,6 +718,8 @@ class RelationalStore {
             $order['pay_method'] ?? '',
             !empty($order['guest_order']) ? 1 : 0,
             $order['guest_token'] ?? '',
+            $order['guest_email'] ?? '',
+            $order['guest_query_code'] ?? '',
             !empty($order['balance_frozen']) ? 1 : 0,
             floatval($order['frozen_amount'] ?? 0),
             intval($order['frozen_released_at'] ?? 0),
@@ -891,6 +911,8 @@ class RelationalStore {
             'pickup_password_hash' => $row['pickup_password_hash'],
             'guest_token' => $row['guest_token'],
             'guest_order' => !empty($row['guest_order']),
+            'guest_email' => $row['guest_email'] ?? '',
+            'guest_query_code' => $row['guest_query_code'] ?? '',
             'buyer_name' => $row['buyer_name'],
             'related_id' => $row['related_id'],
             'delivery_status' => $row['delivery_status'],
@@ -902,9 +924,9 @@ class RelationalStore {
 
     private function upsertPaymentOrder(array $order) {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_payment_orders (id, trade_no, user_id, payment_config_id, pay_type, amount, actual_amount, fee, status, order_type, title, description, target_level, product_id, quantity, pickup_password_hash, guest_token, guest_order, buyer_name, related_id, delivery_status, delivery_error, created_at, paid_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE trade_no = VALUES(trade_no), user_id = VALUES(user_id), payment_config_id = VALUES(payment_config_id), pay_type = VALUES(pay_type), amount = VALUES(amount), actual_amount = VALUES(actual_amount), fee = VALUES(fee), status = VALUES(status), order_type = VALUES(order_type), title = VALUES(title), description = VALUES(description), target_level = VALUES(target_level), product_id = VALUES(product_id), quantity = VALUES(quantity), pickup_password_hash = VALUES(pickup_password_hash), guest_token = VALUES(guest_token), guest_order = VALUES(guest_order), buyer_name = VALUES(buyer_name), related_id = VALUES(related_id), delivery_status = VALUES(delivery_status), delivery_error = VALUES(delivery_error), created_at = VALUES(created_at), paid_at = VALUES(paid_at)'
+            'INSERT INTO kn_payment_orders (id, trade_no, user_id, payment_config_id, pay_type, amount, actual_amount, fee, status, order_type, title, description, target_level, product_id, quantity, pickup_password_hash, guest_token, guest_order, guest_email, guest_query_code, buyer_name, related_id, delivery_status, delivery_error, created_at, paid_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE trade_no = VALUES(trade_no), user_id = VALUES(user_id), payment_config_id = VALUES(payment_config_id), pay_type = VALUES(pay_type), amount = VALUES(amount), actual_amount = VALUES(actual_amount), fee = VALUES(fee), status = VALUES(status), order_type = VALUES(order_type), title = VALUES(title), description = VALUES(description), target_level = VALUES(target_level), product_id = VALUES(product_id), quantity = VALUES(quantity), pickup_password_hash = VALUES(pickup_password_hash), guest_token = VALUES(guest_token), guest_order = VALUES(guest_order), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), buyer_name = VALUES(buyer_name), related_id = VALUES(related_id), delivery_status = VALUES(delivery_status), delivery_error = VALUES(delivery_error), created_at = VALUES(created_at), paid_at = VALUES(paid_at)'
         );
         return $stmt->execute([
             $order['id'],
@@ -925,6 +947,8 @@ class RelationalStore {
             $order['pickup_password_hash'] ?? '',
             $order['guest_token'] ?? '',
             !empty($order['guest_order']) ? 1 : 0,
+            $order['guest_email'] ?? '',
+            $order['guest_query_code'] ?? '',
             $order['buyer_name'] ?? '',
             $order['related_id'] ?? '',
             $order['delivery_status'] ?? '',

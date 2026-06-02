@@ -367,6 +367,15 @@ async function handleBuyNow() {
                 <small class="text-muted">这个密码由买家自己设置，购买成功后会立即显示卡密；之后在购买记录查看发货需要输入此密码。</small>
             </div>
         ` : ''}
+        ${!App.currentUser ? `
+            <div class="mt-3 p-3 rounded-4" style="border:2px solid #f97316;background:linear-gradient(135deg,#fff7ed,#ffffff);box-shadow:0 10px 24px rgba(249,115,22,.12);">
+                <label class="form-label fw-bold text-danger"><i class="bi bi-envelope-exclamation me-1"></i>游客购买必须填写真实邮箱</label>
+                <input type="email" class="form-control" id="guestPurchaseEmail" maxlength="190" placeholder="请输入你能正常接收邮件的邮箱">
+                <div class="small mt-2" style="color:#9a3412;font-weight:700;line-height:1.7;">
+                    查询码会发送到该邮箱。换设备、清缓存后只能通过“邮箱 + 查询码”找回卡密；邮箱填错将无法找回订单卡密。
+                </div>
+            </div>
+        ` : ''}
         <div class="mt-3">
             <div class="form-label fw-semibold mb-2">选择支付方式</div>
             <div class="purchase-payment-options">
@@ -495,6 +504,15 @@ async function confirmPurchase(quantity = 1) {
             Toast.warning('请选择可用的支付方式');
             return;
         }
+        let guestEmail = '';
+        if (!App.currentUser) {
+            guestEmail = document.getElementById('guestPurchaseEmail')?.value?.trim().toLowerCase() || '';
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+                Toast.warning('游客购买必须填写真实有效的邮箱，用于接收查询码');
+                document.getElementById('guestPurchaseEmail')?.focus();
+                return;
+            }
+        }
 
         if (!App.currentUser) {
             const guestConfirmed = await confirmGuestPurchaseRisk();
@@ -509,7 +527,8 @@ async function confirmPurchase(quantity = 1) {
                 quantity,
                 selectedOption.payType,
                 pickupPassword,
-                guestToken
+                guestToken,
+                guestEmail
             );
             if (!result.success) {
                 Toast.error(result.message || '创建支付订单失败');
@@ -520,6 +539,7 @@ async function confirmPurchase(quantity = 1) {
                     id: result.order?.id || '',
                     trade_no: result.order?.trade_no || '',
                     guest_token: guestToken,
+                    guest_email: guestEmail,
                     product_title: App.currentDetailProduct.title || '',
                     quantity,
                     amount: result.order?.actual_amount || result.order?.amount || 0,
@@ -532,7 +552,7 @@ async function confirmPurchase(quantity = 1) {
                 methodLabel: selectedOption.label,
                 guestToken,
                 guestOrder: !App.currentUser,
-                successMessage: App.currentUser ? '支付成功，商品已发货，页面即将刷新' : '支付成功，商品已发货，请保存好订单号'
+                successMessage: App.currentUser ? '支付成功，商品已发货，页面即将刷新' : '支付成功，商品已发货，查询码已发送到邮箱，请保存好订单号和查询码'
             });
             return;
         }
