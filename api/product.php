@@ -177,7 +177,7 @@ function parseAccountLine($line) {
     ];
 }
 
-function refundableStockFeeForUser($userId) {
+function publishFeePerAccountForUser($userId) {
     global $db;
     $user = $db->getUserById($userId);
     $levels = $db->getMembershipLevels();
@@ -186,14 +186,53 @@ function refundableStockFeeForUser($userId) {
     return max(0, floatval($level['publish_fee_per_account'] ?? 0));
 }
 
-function refundDeletedUnsoldStock($userId, $productTitle, $unsoldCount) {
+function markDeferredPublishFee(array &$accounts, $feePerItem) {
+    $feePerItem = max(0, floatval($feePerItem));
+    foreach ($accounts as &$account) {
+        if (!is_array($account)) {
+            continue;
+        }
+        $account['publish_fee_pending'] = $feePerItem > 0;
+        $account['publish_fee_amount'] = $feePerItem;
+    }
+    unset($account);
+}
+
+function deferredPublishFeeForDelivery(array $deliveryList) {
+    $amount = 0;
+    foreach ($deliveryList as $delivery) {
+        if (!empty($delivery['publish_fee_pending'])) {
+            $amount += max(0, floatval($delivery['publish_fee_amount'] ?? 0));
+        }
+    }
+    return $amount;
+}
+
+function refundableStockFeeForDeletedItems(array $deletedItems) {
+    $count = 0;
+    foreach ($deletedItems as $item) {
+        if (!is_array($item) || !empty($item['sold'])) {
+            continue;
+        }
+        if (!array_key_exists('publish_fee_pending', $item) || empty($item['publish_fee_pending'])) {
+            $count++;
+        }
+    }
+    return $count;
+}
+
+function refundDeletedUnsoldStock($userId, $productTitle, $deletedItems) {
     global $db;
-    $unsoldCount = max(0, intval($unsoldCount));
-    if ($unsoldCount <= 0) {
+    if (is_int($deletedItems)) {
+        $refundableCount = max(0, $deletedItems);
+    } else {
+        $refundableCount = refundableStockFeeForDeletedItems(is_array($deletedItems) ? $deletedItems : []);
+    }
+    if ($refundableCount <= 0) {
         return 0;
     }
-    $refundPerItem = refundableStockFeeForUser($userId);
-    $refundAmount = $refundPerItem * $unsoldCount;
+    $refundPerItem = publishFeePerAccountForUser($userId);
+    $refundAmount = $refundPerItem * $refundableCount;
     if ($refundAmount <= 0) {
         return 0;
     }
@@ -213,7 +252,7 @@ function refundDeletedUnsoldStock($userId, $productTitle, $unsoldCount) {
         'status' => 'paid',
         'type' => 'publish_fee_refund',
         'title' => '删除未售库存退费',
-        'description' => '删除未售库存退还发布扣费：' . $productTitle . ' × ' . $unsoldCount,
+        'description' => '删除未售库存退还历史发布扣费：' . $productTitle . ' × ' . $refundableCount,
         'paid_at' => time()
     ]);
     return $refundAmount;
@@ -311,7 +350,6 @@ function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'bala
     $sellerLevel = $levels[$sellerLevelName] ?? $levels['Free'];
     $feeRate = floatval($sellerLevel['fee_rate'] ?? 0);
     $price = floatval($product['price']) * $quantity;
-    $sellerAmount = $price * (1 - $feeRate);
     $fee = $price * $feeRate;
 
     $deliveryList = [];
@@ -333,12 +371,16 @@ function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'bala
         return ['success' => false, 'message' => '该商品需要买家设置取卡密码'];
     }
 
+    $deferredPublishFee = deferredPublishFeeForDelivery($deliveryList);
+    $sellerAmount = max(0, $price - $fee - $deferredPublishFee);
     $buyerLabel = sanitizeString($buyer['username'] ?? '游客');
     foreach ($deliveryList as $delivery) {
         $idx = $delivery['account_index'];
         $product['account_list'][$idx]['sold'] = true;
         $product['account_list'][$idx]['buyer_name'] = $buyerLabel;
         $product['account_list'][$idx]['buyer_id'] = (string)($buyer['id'] ?? '');
+        $product['account_list'][$idx]['publish_fee_pending'] = false;
+        $product['account_list'][$idx]['publish_fee_charged_at'] = time();
     }
     $product['stock'] -= $quantity;
     $product['sales'] += $quantity;
@@ -359,7 +401,7 @@ function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'bala
         'price' => $price,
         'unit_price' => $product['price'],
         'quantity' => $quantity,
-        'fee' => $fee,
+        'fee' => $fee + $deferredPublishFee,
         'seller_amount' => $sellerAmount,
         'pay_method' => $payMethod,
         'purchase_date' => time(),
@@ -390,17 +432,17 @@ function completeProductPurchase($product, $buyer, $quantity, $payMethod = 'bala
             'pay_type' => 'balance_income',
             'amount' => $sellerAmount,
             'actual_amount' => $sellerAmount,
-            'fee' => $fee,
+            'fee' => $fee + $deferredPublishFee,
             'status' => 'paid',
             'type' => 'product_sale_income',
             'title' => '商品销售收入',
-            'description' => '售出商品：' . $product['title'] . ' × ' . $quantity,
+            'description' => '售出商品：' . $product['title'] . ' × ' . $quantity . ($deferredPublishFee > 0 ? '，已扣售出发布费 ¥' . number_format($deferredPublishFee, 2, '.', '') : ''),
             'related_id' => $order['id'],
             'paid_at' => time()
         ]);
     }
 
-    return ['success' => true, 'order' => $order, 'price' => $price, 'fee' => $fee];
+    return ['success' => true, 'order' => $order, 'price' => $price, 'fee' => $fee + $deferredPublishFee];
 }
 
 switch ($action) {
@@ -568,31 +610,8 @@ switch ($action) {
             ]);
         }
 
-        $publishFee = $userLevel['publish_fee_per_account'] * count($accountList);
-        if ($user['balance'] < $publishFee) {
-            productPublishFail("发布费用不足，需要{$publishFee}元", [
-                'balance' => $user['balance'],
-                'publish_fee' => $publishFee
-            ]);
-        }
-
-        if ($publishFee > 0) {
-            $db->updateUser($userId, ['balance' => $user['balance'] - $publishFee]);
-            $db->createPaymentOrder([
-                'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
-                'user_id' => $userId,
-                'payment_config_id' => 'balance',
-                'pay_type' => 'balance',
-                'amount' => -$publishFee,
-                'actual_amount' => -$publishFee,
-                'fee' => 0,
-                'status' => 'paid',
-                'type' => 'publish_fee',
-                'title' => '余额支付发布费用',
-                'description' => '发布商品扣费：' . $title,
-                'paid_at' => time()
-            ]);
-        }
+        $publishFeePerItem = floatval($userLevel['publish_fee_per_account'] ?? 0);
+        markDeferredPublishFee($accountList, $publishFeePerItem);
 
         $images = ['🎮', '📺', '🎨', '🎵', '🤖', '📦', '🔑', '💎', '🌟', '🚀'];
 
@@ -695,27 +714,8 @@ switch ($action) {
         if ($maxAccountsPerProduct > 0 && count($oldAccounts) + count($newAccounts) > $maxAccountsPerProduct) {
             jsonResponse(['success' => false, 'message' => "您当前会员等级单个商品最多{$maxAccountsPerProduct}个账户，当前已有" . count($oldAccounts) . '个，本次添加' . count($newAccounts) . '个'], 400);
         }
-        $publishFee = floatval($userLevel['publish_fee_per_account'] ?? 0) * count($newAccounts);
-        if (floatval($user['balance'] ?? 0) < $publishFee) {
-            jsonResponse(['success' => false, 'message' => "添加库存费用不足，需要{$publishFee}元"], 400);
-        }
-        if ($publishFee > 0) {
-            $db->updateUser($userId, ['balance' => floatval($user['balance'] ?? 0) - $publishFee]);
-            $db->createPaymentOrder([
-                'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
-                'user_id' => $userId,
-                'payment_config_id' => 'balance',
-                'pay_type' => 'balance',
-                'amount' => -$publishFee,
-                'actual_amount' => -$publishFee,
-                'fee' => 0,
-                'status' => 'paid',
-                'type' => 'publish_fee',
-                'title' => '余额支付添加库存费用',
-                'description' => '添加库存扣费：' . ($product['title'] ?? ''),
-                'paid_at' => time()
-            ]);
-        }
+        $publishFeePerItem = floatval($userLevel['publish_fee_per_account'] ?? 0);
+        markDeferredPublishFee($newAccounts, $publishFeePerItem);
         $product['account_list'] = array_merge($oldAccounts, $newAccounts);
         $product['stock'] = count(array_filter($product['account_list'], fn($item) => empty($item['sold'])));
         $product['updated_at'] = time();
@@ -793,10 +793,9 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '库存不存在或已删除'], 404);
         }
         $deletedItem = $accountList[$stockIndex];
-        $deletedUnsoldCount = empty($deletedItem['sold']) ? 1 : 0;
         array_splice($accountList, $stockIndex, 1);
         $refundUserId = (string)($product['seller_id'] ?? $userId);
-        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedUnsoldCount);
+        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', [$deletedItem]);
         $product['account_list'] = array_values($accountList);
         $product['stock'] = count(array_filter($product['account_list'], fn($item) => empty($item['sold'])));
         $product['updated_at'] = time();
@@ -846,9 +845,11 @@ switch ($action) {
         $newAccountList = [];
         $deletedCount = 0;
         $deletedUnsoldCount = 0;
+        $deletedItems = [];
         foreach ($accountList as $index => $item) {
             if (isset($deleteMap[$index])) {
                 $deletedCount++;
+                $deletedItems[] = $item;
                 if (empty($item['sold'])) {
                     $deletedUnsoldCount++;
                 }
@@ -860,7 +861,7 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '库存不存在或已删除'], 404);
         }
         $refundUserId = (string)($product['seller_id'] ?? $userId);
-        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedUnsoldCount);
+        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedItems);
         $product['account_list'] = array_values($newAccountList);
         $product['stock'] = count(array_filter($product['account_list'], fn($item) => empty($item['sold'])));
         $product['updated_at'] = time();
@@ -892,8 +893,9 @@ switch ($action) {
         if ($deletedCount <= 0) {
             jsonResponse(['success' => false, 'message' => '没有可清空的未售库存'], 400);
         }
+        $deletedItems = array_values(array_filter($accountList, fn($item) => empty($item['sold'])));
         $refundUserId = (string)($product['seller_id'] ?? $userId);
-        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedCount);
+        $refundAmount = refundDeletedUnsoldStock($refundUserId, $product['title'] ?? '', $deletedItems);
         $product['account_list'] = $soldAccounts;
         $product['stock'] = 0;
         $product['updated_at'] = time();

@@ -219,6 +219,16 @@ function acquireProductPurchaseLock($productId) {
     return $handle;
 }
 
+function deferredPublishFeeForDelivery(array $deliveryList) {
+    $amount = 0;
+    foreach ($deliveryList as $delivery) {
+        if (!empty($delivery['publish_fee_pending'])) {
+            $amount += max(0, floatval($delivery['publish_fee_amount'] ?? 0));
+        }
+    }
+    return $amount;
+}
+
 function genGuestQueryCode() {
     $chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     $code = '';
@@ -356,7 +366,6 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
     $sellerLevel = $levels[$sellerLevelName] ?? $levels['Free'];
     $feeRate = floatval($sellerLevel['fee_rate'] ?? 0);
     $price = floatval($product['price']) * $quantity;
-    $sellerAmount = $price * (1 - $feeRate);
     $fee = $price * $feeRate;
 
     $deliveryList = [];
@@ -373,12 +382,16 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
         return null;
     }
 
+    $deferredPublishFee = deferredPublishFeeForDelivery($deliveryList);
+    $sellerAmount = max(0, $price - $fee - $deferredPublishFee);
     $buyerLabel = sanitizeString($buyer['username'] ?? '游客');
     foreach ($deliveryList as $delivery) {
         $idx = $delivery['account_index'];
         $product['account_list'][$idx]['sold'] = true;
         $product['account_list'][$idx]['buyer_name'] = $buyerLabel;
         $product['account_list'][$idx]['buyer_id'] = (string)($buyer['id'] ?? '');
+        $product['account_list'][$idx]['publish_fee_pending'] = false;
+        $product['account_list'][$idx]['publish_fee_charged_at'] = time();
     }
     $product['stock'] -= $quantity;
     $product['sales'] += $quantity;
@@ -403,7 +416,7 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
         'price' => $price,
         'unit_price' => $product['price'],
         'quantity' => $quantity,
-        'fee' => $fee,
+        'fee' => $fee + $deferredPublishFee,
         'seller_amount' => $sellerAmount,
         'pay_method' => $payMethod ?: ($order['pay_type'] ?? ''),
         'purchase_date' => time(),
@@ -434,17 +447,17 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
             'pay_type' => 'balance_income',
             'amount' => $sellerAmount,
             'actual_amount' => $sellerAmount,
-            'fee' => $fee,
+            'fee' => $fee + $deferredPublishFee,
             'status' => 'paid',
             'type' => 'product_sale_income',
             'title' => '商品销售收入',
-            'description' => '售出商品：' . $product['title'] . ' × ' . $quantity,
+            'description' => '售出商品：' . $product['title'] . ' × ' . $quantity . ($deferredPublishFee > 0 ? '，已扣售出发布费 ¥' . number_format($deferredPublishFee, 2, '.', '') : ''),
             'related_id' => $productOrder['id'],
             'paid_at' => time()
         ]);
     }
 
-    $db->updatePaymentOrder($order['id'], ['related_id' => $productOrder['id'], 'fee' => $fee, 'delivery_status' => 'delivered', 'delivery_error' => '']);
+    $db->updatePaymentOrder($order['id'], ['related_id' => $productOrder['id'], 'fee' => $fee + $deferredPublishFee, 'delivery_status' => 'delivered', 'delivery_error' => '']);
     if ($isGuestOrder && !empty($productOrder['guest_email']) && !empty($productOrder['guest_query_code'])) {
         $mailResult = sendGuestQueryCodeEmail($productOrder['guest_email'], $productOrder['guest_query_code'], $order, $productOrder);
         $db->updatePaymentOrder($order['id'], [

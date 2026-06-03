@@ -1340,7 +1340,7 @@ async function loadMembershipTab(area) {
                     `单商品最大 ${maxAccountsText}`,
                     `最多商品 ${maxProductsText}`,
                     `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
-                    Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
+                    Number(level.publish_fee_per_account || 0) === 0 ? '售出不扣发布费' : `售出扣费 ¥${level.publish_fee_per_account}/账号`
                 ];
                 const footerHtml = isCurrentLevel
                     ? '<span class="membership-status-text">当前会员</span>'
