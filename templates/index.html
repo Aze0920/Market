@@ -8,7 +8,7 @@
     <title id="siteTitle">KeyNest - 虚拟商品交易平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="assets/css/style.css?v=V1.1.49" rel="stylesheet">
+    <link href="assets/css/style.css?v=V1.1.50" rel="stylesheet">
 </head>
 <body>
     <div class="page-wrapper">
@@ -654,7 +654,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/api.js?v=V1.1.48"></script>
-    <script src="assets/js/app.js?v=V1.1.49"></script>
+    <script src="assets/js/app.js?v=V1.1.50"></script>
     <script src="assets/js/product.js?v=V1.1.46"></script>
     <script src="assets/js/message.js?v=V1.1.43"></script>
     <script src="assets/js/auth.js?v=V1.1.45"></script>
@@ -698,7 +698,7 @@
                             `单商品最大 ${maxAccountsText}`,
                             `最多商品 ${maxProductsText}`,
                             `手续费 ${(Number(level.fee_rate || 0) * 100).toFixed(2).replace(/\.00$/, '')}%`,
-                            Number(level.publish_fee_per_account || 0) === 0 ? '发布免费' : `发布费 ¥${level.publish_fee_per_account}/账号`
+                            Number(level.publish_fee_per_account || 0) === 0 ? '售出不扣发布费' : `售出扣费 ¥${level.publish_fee_per_account}/账号`
                         ];
                         const footerHtml = isCurrentLevel
                             ? '<span class="membership-status-text">当前会员</span>'

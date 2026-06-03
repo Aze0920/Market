@@ -2187,10 +2187,6 @@ body:has(.auth-modal.show) .modal-backdrop.show {
     z-index: 1;
 }
 
-.activation-fixed-badge {
-    background: rgba(255,255,255,0.24) !important;
-}
-
 .membership-card .card-header {
     background: var(--card-gradient);
     color: white;

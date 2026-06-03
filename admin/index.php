@@ -1742,16 +1742,53 @@ async function deleteSelectedFinanceRequests() {
     showToast(res.message || '已删除选中记录', 'success');
     await loadAdminData();
 }
+function cardMembershipLevelsAdmin() {
+    return Object.values(Admin.cache.membershipLevels || {})
+        .filter(level => level && level.name && String(level.name).toLowerCase() !== 'free')
+        .sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
+}
+function cardMembershipOptionsAdmin() {
+    const levels = cardMembershipLevelsAdmin();
+    return levels.map(level => `<option value="${escapeHtml(level.name)}">${escapeHtml(level.name)}</option>`).join('') || '<option value="">暂无可生成的会员等级</option>';
+}
+function toggleAdminCardCreateType() {
+    const type = document.getElementById('cardType')?.value || 'balance';
+    document.getElementById('cardAmountWrap')?.classList.toggle('d-none', type !== 'balance');
+    document.getElementById('cardMembershipWrap')?.classList.toggle('d-none', type !== 'membership');
+}
 function renderCards() {
     setTitle('卡密管理');
     const cards = Admin.cache.cards || [];
+    const hasMembershipLevels = cardMembershipLevelsAdmin().length > 0;
     document.getElementById('adminContent').innerHTML = `
         <div class="panel mb-4">
-            <div class="panel-title"><h5>生成卡密</h5></div>
-            <div class="row g-3">
-                <div class="col-md-5"><input id="cardAmount" class="form-control" type="number" placeholder="金额"></div>
-                <div class="col-md-5"><input id="cardCount" class="form-control" type="number" value="1" placeholder="数量"></div>
-                <div class="col-md-2"><button class="btn btn-primary w-100" onclick="createCards()">生成</button></div>
+            <div class="panel-title">
+                <div>
+                    <h5>生成卡密</h5>
+                    <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级，Free 默认等级不可生成。</div>
+                </div>
+            </div>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6 col-lg-3">
+                    <label class="form-label">卡密类型</label>
+                    <select id="cardType" class="form-select" onchange="toggleAdminCardCreateType()">
+                        <option value="balance">余额卡</option>
+                        <option value="membership">会员卡</option>
+                    </select>
+                </div>
+                <div class="col-md-6 col-lg-3" id="cardAmountWrap">
+                    <label class="form-label">充值金额</label>
+                    <input id="cardAmount" class="form-control" type="number" min="0" step="0.01" placeholder="例如：100">
+                </div>
+                <div class="col-md-6 col-lg-4 d-none" id="cardMembershipWrap">
+                    <label class="form-label">会员权益</label>
+                    <select id="cardTargetLevel" class="form-select" ${hasMembershipLevels ? '' : 'disabled'}>${cardMembershipOptionsAdmin()}</select>
+                </div>
+                <div class="col-md-6 col-lg-2">
+                    <label class="form-label">生成数量</label>
+                    <input id="cardCount" class="form-control" type="number" min="1" value="1" placeholder="数量">
+                </div>
+                <div class="col-md-12 col-lg-2"><button class="btn btn-primary w-100" onclick="createCards()">生成</button></div>
             </div>
         </div>
         <div class="panel">
@@ -1775,25 +1812,30 @@ function renderCards() {
                     <thead>
                         <tr>
                             <th style="width:44px"><input class="form-check-input" type="checkbox" id="cardSelectAll" onchange="toggleAllCardSelection(this.checked)" ${cards.length ? '' : 'disabled'}></th>
-                            <th>卡密</th><th>金额</th><th>状态</th><th>使用者</th><th>创建时间</th><th class="text-end">操作</th>
+                            <th>卡密</th><th>类型</th><th>金额</th><th>权益</th><th>状态</th><th>使用者</th><th>创建时间</th><th class="text-end">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${cards.map(c => `
+                        ${cards.map(c => {
+                            const type = (c.card_type || 'balance') === 'membership' ? 'membership' : 'balance';
+                            return `
                             <tr>
                                 <td><input class="form-check-input card-select" type="checkbox" value="${escapeHtml(c.id)}" onchange="updateCardBatchToolbar()"></td>
                                 <td><code>${escapeHtml(c.code)}</code></td>
-                                <td>${money(c.amount)}</td>
+                                <td>${type === 'membership' ? '<span class="badge-soft primary">会员卡</span>' : '<span class="badge-soft success">余额卡</span>'}</td>
+                                <td>${type === 'membership' ? '-' : money(c.amount)}</td>
+                                <td>${type === 'membership' ? escapeHtml(c.target_level || '-') : '余额充值'}</td>
                                 <td>${c.used ? '<span class="badge-soft danger">已使用</span>' : '<span class="badge-soft success">未使用</span>'}</td>
                                 <td>${escapeHtml(c.used_by || '-')}</td>
                                 <td>${dateText(c.created_at)}</td>
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteCardAdmin('${escapeHtml(c.id)}')">删除</button></td>
-                            </tr>
-                        `).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">暂无卡密</td></tr>'}
+                            </tr>`;
+                        }).join('') || '<tr><td colspan="9" class="text-center text-muted py-4">暂无卡密</td></tr>'}
                     </tbody>
                 </table>
             </div>
         </div>`;
+    toggleAdminCardCreateType();
     updateCardBatchToolbar();
 }
 function selectedCardIds() {
@@ -1853,9 +1895,13 @@ async function deleteSelectedCardsAdmin() {
     renderCards();
 }
 async function createCards() {
-    const amount = document.getElementById('cardAmount').value;
-    const count = document.getElementById('cardCount').value;
-    const res = await request('card.php?action=create', 'POST', { amount, count });
+    const cardType = document.getElementById('cardType')?.value || 'balance';
+    const amount = document.getElementById('cardAmount')?.value || '';
+    const count = document.getElementById('cardCount')?.value || '1';
+    const targetLevel = document.getElementById('cardTargetLevel')?.value || '';
+    if (cardType === 'balance' && Number(amount) <= 0) return showToast('请输入大于 0 的充值金额', 'error');
+    if (cardType === 'membership' && !targetLevel) return showToast('请选择要生成的会员权益', 'error');
+    const res = await request('card.php?action=create', 'POST', { amount, count, card_type: cardType, target_level: targetLevel });
     if (!res.success) return showToast(res.message || '生成失败', 'error');
     showToast(res.message || '生成成功', 'success');
     await loadAdminData();
@@ -2326,8 +2372,8 @@ function renderBasicSettings(targetId = 'settingsContent') {
                     <label class="form-label">提现手续费比例</label>
                     <input id="setWithdrawFee" class="form-control" type="number" step="0.001" value="${escapeHtml(c.withdraw_fee_rate || 0.01)}">
                 </div>
-                <div class="col-12">
-                    <label class="admin-setting-card ${allowGuestPurchase ? 'is-on' : 'is-off'}" for="setAllowGuestPurchase">
+                <div class="col-lg-6">
+                    <label class="admin-setting-card ${allowGuestPurchase ? 'is-on' : 'is-off'} h-100" for="setAllowGuestPurchase">
                         <span class="admin-setting-icon"><i class="bi bi-person-check"></i></span>
                         <span class="admin-setting-copy">
                             <span class="admin-setting-title">允许游客购买</span>
@@ -2339,8 +2385,8 @@ function renderBasicSettings(targetId = 'settingsContent') {
                         </span>
                     </label>
                 </div>
-                <div class="col-12">
-                    <label class="admin-setting-card ${enableMembershipCardActivation ? 'is-on' : 'is-off'}" for="setEnableMembershipCardActivation">
+                <div class="col-lg-6">
+                    <label class="admin-setting-card ${enableMembershipCardActivation ? 'is-on' : 'is-off'} h-100" for="setEnableMembershipCardActivation">
                         <span class="admin-setting-icon"><i class="bi bi-credit-card-2-front"></i></span>
                         <span class="admin-setting-copy">
                             <span class="admin-setting-title">开启卡密激活会员</span>

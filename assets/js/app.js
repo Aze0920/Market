@@ -1387,7 +1387,6 @@ function renderMembershipCardActivationCard() {
                 <i class="bi bi-credit-card-2-front"></i>
                 <h5>卡密激活会员</h5>
                 <small>使用会员卡密快速开通权益</small>
-                <span class="current-badge activation-fixed-badge">固定入口</span>
             </div>
             <div class="card-body">
                 <div class="text-center mb-3">
@@ -1396,7 +1395,7 @@ function renderMembershipCardActivationCard() {
                 <ul class="privilege-list">
                     <li><i class="bi bi-check"></i> 支持后台生成的会员卡密</li>
                     <li><i class="bi bi-check"></i> 兑换成功后自动刷新会员等级</li>
-                    <li><i class="bi bi-check"></i> 该卡片为系统固定入口，不能作为会员等级删除</li>
+                    <li><i class="bi bi-check"></i> 独立激活入口，不占用会员等级配置</li>
                     <li><i class="bi bi-check"></i> Free 为默认会员，不支持生成激活卡</li>
                 </ul>
             </div>
