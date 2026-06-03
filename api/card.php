@@ -151,6 +151,13 @@ switch ($action) {
         requireAdmin();
         $onlyUnused = isset($_GET['only_unused']) && $_GET['only_unused'] === '1';
         $cards = $db->getCardCodes($onlyUnused);
+        $cards = array_map(function($card) use ($db) {
+            $usedUserId = $card['used_by'] ?? '';
+            $usedUser = $usedUserId ? $db->getUserById($usedUserId) : null;
+            $card['used_user_id'] = $usedUserId ?: '';
+            $card['used_user_email'] = $usedUser['email'] ?? '';
+            return $card;
+        }, $cards);
         jsonResponse(['success' => true, 'cards' => $cards]);
 
     case 'create':

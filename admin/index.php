@@ -1812,7 +1812,7 @@ function renderCards() {
                     <thead>
                         <tr>
                             <th style="width:44px"><input class="form-check-input" type="checkbox" id="cardSelectAll" onchange="toggleAllCardSelection(this.checked)" ${cards.length ? '' : 'disabled'}></th>
-                            <th>卡密</th><th>类型</th><th>金额</th><th>权益</th><th>状态</th><th>使用者</th><th>创建时间</th><th class="text-end">操作</th>
+                            <th>卡密</th><th>类型</th><th>金额</th><th>权益</th><th>状态</th><th>用户ID</th><th>用户邮箱</th><th>创建时间</th><th class="text-end">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1826,11 +1826,12 @@ function renderCards() {
                                 <td>${type === 'membership' ? '-' : money(c.amount)}</td>
                                 <td>${type === 'membership' ? escapeHtml(c.target_level || '-') : '余额充值'}</td>
                                 <td>${c.used ? '<span class="badge-soft danger">已使用</span>' : '<span class="badge-soft success">未使用</span>'}</td>
-                                <td>${escapeHtml(c.used_by || '-')}</td>
+                                <td><code class="small">${escapeHtml(c.used_user_id || c.used_by || '-')}</code></td>
+                                <td>${escapeHtml(c.used_user_email || '-')}</td>
                                 <td>${dateText(c.created_at)}</td>
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteCardAdmin('${escapeHtml(c.id)}')">删除</button></td>
                             </tr>`;
-                        }).join('') || '<tr><td colspan="9" class="text-center text-muted py-4">暂无卡密</td></tr>'}
+                        }).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">暂无卡密</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -1877,7 +1878,14 @@ async function copySelectedCardsAdmin() {
 async function deleteCardAdmin(id) {
     const card = (Admin.cache.cards || []).find(c => c.id === id);
     if (!card) return showToast('卡密不存在', 'error');
-    if (!confirm('确定删除卡密 ' + card.code + ' 吗？')) return;
+    const confirmed = await adminConfirm({
+        title: '删除卡密？',
+        message: '确定删除卡密 ' + card.code + ' 吗？此操作不可恢复。',
+        confirmText: '删除',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!confirmed) return;
     const res = await request('card.php?action=delete', 'POST', { id });
     if (!res.success) return showToast(res.message || '删除失败', 'error');
     showToast('卡密已删除', 'success');
@@ -1887,7 +1895,14 @@ async function deleteCardAdmin(id) {
 async function deleteSelectedCardsAdmin() {
     const ids = selectedCardIds();
     if (!ids.length) return showToast('请先选择要删除的卡密', 'error');
-    if (!confirm('确定删除选中的 ' + ids.length + ' 张卡密吗？此操作不可恢复。')) return;
+    const confirmed = await adminConfirm({
+        title: '批量删除卡密？',
+        message: '确定删除选中的 ' + ids.length + ' 张卡密吗？此操作不可恢复。',
+        confirmText: '批量删除',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!confirmed) return;
     const res = await request('card.php?action=delete_batch', 'POST', { ids: JSON.stringify(ids) });
     if (!res.success) return showToast(res.message || '批量删除失败', 'error');
     showToast(res.message || ('已删除 ' + ids.length + ' 张卡密'), 'success');
