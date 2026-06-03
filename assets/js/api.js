@@ -390,8 +390,8 @@ const API = {
         return this.request('card.php?action=list' + param);
     },
 
-    createCards(amount, count) {
-        return this.request('card.php?action=create', 'POST', { amount, count });
+    createCards(amount, count, cardType = 'balance', targetLevel = '') {
+        return this.request('card.php?action=create', 'POST', { amount, count, card_type: cardType, target_level: targetLevel });
     },
 
     deleteCard(id) {

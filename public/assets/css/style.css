@@ -2170,6 +2170,27 @@ body:has(.auth-modal.show) .modal-backdrop.show {
     border-color: var(--primary-accent);
 }
 
+.membership-activation-card {
+    border-color: rgba(79, 70, 229, 0.28);
+}
+
+.membership-activation-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at top right, rgba(6, 182, 212, 0.12), transparent 35%);
+}
+
+.membership-activation-card .card-footer {
+    position: relative;
+    z-index: 1;
+}
+
+.activation-fixed-badge {
+    background: rgba(255,255,255,0.24) !important;
+}
+
 .membership-card .card-header {
     background: var(--card-gradient);
     color: white;

@@ -411,6 +411,7 @@ switch ($action) {
             'enable_recharge',
             'enable_withdraw',
             'allow_guest_purchase',
+            'enable_membership_card_activation',
             'oauth_qq_enabled',
             'oauth_wechat_enabled',
             'oauth_caihong_enabled',

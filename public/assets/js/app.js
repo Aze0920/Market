@@ -868,6 +868,8 @@ function paymentOrderTitle(order = {}) {
         product_purchase: '购买商品',
         product_purchase_refund: '购买失败退款',
         product_sale_income: '商品销售收入',
+        card_recharge: '卡密充值',
+        membership_card: '会员卡密兑换',
         publish_fee: '发布商品扣费',
         publish_fee_refund: '删除库存退费',
         admin_balance_adjust: amount >= 0 ? '后台加款' : '后台扣款'
@@ -885,7 +887,7 @@ function paymentOrderStatusText(order = {}) {
     }
     if (type === 'product_purchase_refund') return '已退款';
     if (status === 'paid') {
-        if (['product_purchase', 'product_online_purchase', 'publish_fee', 'membership_upgrade'].includes(type) || Number(order.amount || 0) < 0) {
+        if (['product_purchase', 'product_online_purchase', 'publish_fee', 'membership_upgrade', 'membership_card'].includes(type) || Number(order.amount || 0) < 0) {
             return '已完成';
         }
         return '已到账';
@@ -1306,9 +1308,10 @@ async function loadBalanceTab(area) {
 }
 
 async function loadMembershipTab(area) {
-    const [levelsResult, myLevelResult] = await Promise.all([
+    const [levelsResult, myLevelResult, configResult] = await Promise.all([
         API.getMembershipLevels(),
-        API.getMyMembership()
+        API.getMyMembership(),
+        API.getSystemConfig()
     ]);
 
     if (!levelsResult.success) {
@@ -1321,10 +1324,13 @@ async function loadMembershipTab(area) {
     const myLevelName = myLevelResult.level || 'Free';
     const myLevel = myLevelResult.level_info || levels[myLevelName] || {};
     const currentPriority = Number(myLevel.priority || 0);
+    const systemConfig = configResult.success ? (configResult.config || {}) : {};
+    const showMembershipCardActivation = systemConfig.enable_membership_card_activation !== false && systemConfig.enable_membership_card_activation !== '0';
 
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-gem me-2"></i>会员中心</h5>
         <div class="membership-cards">
+            ${showMembershipCardActivation ? renderMembershipCardActivationCard() : ''}
             ${levelList.map(level => {
                 const levelName = level.name || '';
                 const levelPriority = Number(level.priority || 0);
@@ -1374,14 +1380,48 @@ async function loadMembershipTab(area) {
     `;
 }
 
+function renderMembershipCardActivationCard() {
+    return `
+        <div class="membership-card membership-activation-card" style="--card-gradient: linear-gradient(135deg, #111827 0%, #4f46e5 55%, #06b6d4 100%);">
+            <div class="card-header">
+                <i class="bi bi-credit-card-2-front"></i>
+                <h5>卡密激活会员</h5>
+                <small>使用会员卡密快速开通权益</small>
+                <span class="current-badge activation-fixed-badge">固定入口</span>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <span class="badge bg-primary-light text-primary fs-5"><i class="bi bi-key"></i> 输入卡密</span>
+                </div>
+                <ul class="privilege-list">
+                    <li><i class="bi bi-check"></i> 支持后台生成的会员卡密</li>
+                    <li><i class="bi bi-check"></i> 兑换成功后自动刷新会员等级</li>
+                    <li><i class="bi bi-check"></i> 该卡片为系统固定入口，不能作为会员等级删除</li>
+                    <li><i class="bi bi-check"></i> Free 为默认会员，不支持生成激活卡</li>
+                </ul>
+            </div>
+            <div class="card-footer">
+                <button class="btn btn-primary w-100" onclick="openCardRechargeModal('membership')">
+                    <i class="bi bi-lightning-charge me-1"></i>立即激活
+                </button>
+            </div>
+        </div>
+    `;
+}
+
 async function loadCardManageTab(area) {
-    const result = await API.getCards(false);
-    if (!result.success) {
+    const [cardResult, levelResult] = await Promise.all([API.getCards(false), API.getMembershipLevels()]);
+    if (!cardResult.success) {
         area.innerHTML = '<div class="empty-state"><p>加载失败</p></div>';
         return;
     }
 
-    const cards = result.cards || [];
+    const cards = cardResult.cards || [];
+    const levels = levelResult.success ? Object.values(levelResult.levels || {}) : [];
+    const membershipLevels = levels.filter(level => level && level.name && String(level.name).toLowerCase() !== 'free');
+    const cardValueText = c => (c.card_type === 'membership')
+        ? `会员：${Security.escapeHtml(c.target_level || '-')}`
+        : `¥${Number(c.amount || 0).toFixed(2)}`;
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-credit-card-2-front me-2"></i>卡密管理</h5>
         <div class="card bg-light mb-4">
@@ -1389,14 +1429,28 @@ async function loadCardManageTab(area) {
                 <h6 class="fw-bold mb-3">生成新卡密</h6>
                 <div class="row g-3">
                     <div class="col-md-3">
-                        <label class="form-label">面值</label>
-                        <input type="number" id="cardAmount" class="form-control" placeholder="金额" min="1">
+                        <label class="form-label">卡密类型</label>
+                        <select id="cardType" class="form-select" onchange="toggleCardCreateType()">
+                            <option value="balance">余额卡密</option>
+                            <option value="membership">会员卡密</option>
+                        </select>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-3" id="cardAmountWrap">
+                        <label class="form-label">余额金额</label>
+                        <input type="number" id="cardAmount" class="form-control" placeholder="金额" min="1" step="0.01">
+                    </div>
+                    <div class="col-md-3 d-none" id="cardMembershipWrap">
+                        <label class="form-label">会员权益</label>
+                        <select id="cardTargetLevel" class="form-select" ${membershipLevels.length === 0 ? 'disabled' : ''}>
+                            ${membershipLevels.map(level => `<option value="${Security.escapeAttr(level.name)}">${Security.escapeHtml(level.name)} - ${Security.escapeHtml(level.description || '会员权益')}</option>`).join('') || '<option value="">暂无可生成会员</option>'}
+                        </select>
+                        <small class="text-muted">Free 是默认会员，不可生成卡密。</small>
+                    </div>
+                    <div class="col-md-2">
                         <label class="form-label">数量</label>
                         <input type="number" id="cardCount" class="form-control" placeholder="1-100" min="1" max="100" value="1">
                     </div>
-                    <div class="col-md-2 d-flex align-items-end">
+                    <div class="col-md-1 d-flex align-items-end">
                         <button class="btn btn-primary w-100" onclick="generateCards()">生成</button>
                     </div>
                 </div>
@@ -1418,7 +1472,8 @@ async function loadCardManageTab(area) {
                     <thead>
                         <tr>
                             <th>卡密</th>
-                            <th>面值</th>
+                            <th>类型</th>
+                            <th>权益</th>
                             <th>状态</th>
                             <th>生成时间</th>
                             <th>操作</th>
@@ -1427,8 +1482,9 @@ async function loadCardManageTab(area) {
                     <tbody>
                         ${cards.map(c => `
                             <tr>
-                                <td><code>${c.code}</code></td>
-                                <td>¥${c.amount.toFixed(2)}</td>
+                                <td><code>${Security.escapeHtml(c.code)}</code></td>
+                                <td>${c.card_type === 'membership' ? '<span class="badge badge-primary">会员卡</span>' : '<span class="badge badge-info">余额卡</span>'}</td>
+                                <td>${cardValueText(c)}</td>
                                 <td>
                                     <span class="badge badge-${c.used ? 'secondary' : 'success'}">
                                         ${c.used ? '已使用' : '未使用'}
@@ -1437,8 +1493,8 @@ async function loadCardManageTab(area) {
                                 <td class="text-muted small">${Utils.formatDate(c.created_at)}</td>
                                 <td>
                                     ${!c.used ? `
-                                        <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${c.code}')">复制</button>
-                                        <button class="btn btn-sm btn-danger" onclick="deleteCard('${c.id}')">删除</button>
+                                        <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(c.code)}')">复制</button>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteCard('${Security.escapeAttr(c.id)}')">删除</button>
                                     ` : ''}
                                 </td>
                             </tr>
@@ -3652,12 +3708,24 @@ function getLowerLevels(levelName) {
     return levels.slice(0, currentIndex).join('、');
 }
 
+function toggleCardCreateType() {
+    const type = document.getElementById('cardType')?.value || 'balance';
+    document.getElementById('cardAmountWrap')?.classList.toggle('d-none', type !== 'balance');
+    document.getElementById('cardMembershipWrap')?.classList.toggle('d-none', type !== 'membership');
+}
+
 async function generateCards() {
-    const amount = parseFloat(document.getElementById('cardAmount').value);
+    const cardType = document.getElementById('cardType')?.value || 'balance';
+    const amount = parseFloat(document.getElementById('cardAmount')?.value || '0');
+    const targetLevel = document.getElementById('cardTargetLevel')?.value || '';
     const count = parseInt(document.getElementById('cardCount').value);
 
-    if (!amount || amount <= 0) {
+    if (cardType === 'balance' && (!amount || amount <= 0)) {
         Toast.warning('请输入有效金额');
+        return;
+    }
+    if (cardType === 'membership' && (!targetLevel || targetLevel === 'Free')) {
+        Toast.warning('请选择要生成的会员权益，Free 不可生成卡密');
         return;
     }
     if (!count || count < 1 || count > 100) {
@@ -3665,7 +3733,7 @@ async function generateCards() {
         return;
     }
 
-    const result = await API.createCards(amount, count);
+    const result = await API.createCards(cardType === 'balance' ? amount : 0, count, cardType, targetLevel);
     if (!result.success) {
         Toast.error(result.message);
         return;
@@ -3676,15 +3744,14 @@ async function generateCards() {
     const newCardsSection = document.getElementById('newCardsSection');
     const newCardsList = document.getElementById('newCardsList');
     newCardsSection.style.display = 'block';
-    newCardsList.innerHTML = result.cards.map(c =>
-        `<div class="d-flex justify-content-between align-items-center py-1">
-            <code>${c.code}</code>
-            <span>¥${c.amount.toFixed(2)}</span>
-            <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${c.code}')">复制</button>
-        </div>`
-    ).join('');
-
-    loadCardManageTab(document.getElementById('dashContentArea'));
+    newCardsList.innerHTML = result.cards.map(c => {
+        const valueText = c.card_type === 'membership' ? `会员：${Security.escapeHtml(c.target_level || '-')}` : `¥${Number(c.amount || 0).toFixed(2)}`;
+        return `<div class="d-flex justify-content-between align-items-center py-1">
+            <code>${Security.escapeHtml(c.code)}</code>
+            <span>${valueText}</span>
+            <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(c.code)}')">复制</button>
+        </div>`;
+    }).join('');
 }
 
 async function deleteCard(id) {
@@ -3973,9 +4040,19 @@ async function submitComment(productId, orderId) {
     }
 }
 
-function openCardRechargeModal() {
+function openCardRechargeModal(mode = 'balance') {
     const modal = new bootstrap.Modal(document.getElementById('cardRechargeModal'));
-    document.getElementById('cardRechargeInput').value = '';
+    const title = document.getElementById('cardRechargeTitle');
+    const submitBtn = document.getElementById('cardRechargeSubmitBtn');
+    const label = document.getElementById('cardRechargeLabel');
+    const input = document.getElementById('cardRechargeInput');
+    if (title) title.innerHTML = mode === 'membership' ? '<i class="bi bi-credit-card-2-front me-2"></i>会员卡密激活' : '<i class="bi bi-credit-card-2-front me-2"></i>卡密充值';
+    if (submitBtn) submitBtn.textContent = mode === 'membership' ? '立即激活' : '充值';
+    if (label) label.textContent = mode === 'membership' ? '请输入会员卡密' : '请输入卡密';
+    if (input) {
+        input.value = '';
+        input.placeholder = mode === 'membership' ? '输入会员卡密代码' : '输入卡密代码';
+    }
     modal.show();
 }
 
@@ -3992,7 +4069,7 @@ async function useCardRecharge() {
         bootstrap.Modal.getInstance(document.getElementById('cardRechargeModal')).hide();
         await refreshUserData();
         if (App.currentPage === 'dashboard') {
-            renderDashboardTab('balance');
+            renderDashboardTab(result.card_type === 'membership' ? 'membership' : 'balance');
         }
     } else {
         Toast.error(result.message);

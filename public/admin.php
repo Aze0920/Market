@@ -1989,6 +1989,7 @@ function renderSettingsContent() {
 function renderBasicSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     const allowGuestPurchase = c.allow_guest_purchase !== false && c.allow_guest_purchase !== '0';
+    const enableMembershipCardActivation = c.enable_membership_card_activation !== false && c.enable_membership_card_activation !== '0';
     document.getElementById(targetId).innerHTML = `
         <div class="panel settings-basic-panel">
             <div class="panel-title">
@@ -2028,12 +2029,25 @@ function renderBasicSettings(targetId = 'settingsContent') {
                     </label>
                 </div>
                 <div class="col-12">
+                    <label class="admin-setting-card ${enableMembershipCardActivation ? 'is-on' : 'is-off'}" for="setEnableMembershipCardActivation">
+                        <span class="admin-setting-icon"><i class="bi bi-credit-card-2-front"></i></span>
+                        <span class="admin-setting-copy">
+                            <span class="admin-setting-title">开启卡密激活会员</span>
+                            <span class="admin-setting-desc">开启后前台会员中心会显示独立的“卡密激活会员”卡片；关闭后该入口隐藏，但已生成的会员卡密数据不会被删除。</span>
+                            <span class="admin-setting-state">当前状态：${enableMembershipCardActivation ? '已开启' : '已关闭'}</span>
+                        </span>
+                        <span class="form-check form-switch admin-setting-switch">
+                            <input class="form-check-input" type="checkbox" id="setEnableMembershipCardActivation" ${enableMembershipCardActivation ? 'checked' : ''}>
+                        </span>
+                    </label>
+                </div>
+                <div class="col-12">
                     <button class="btn btn-primary" onclick="saveSettings()"><i class="bi bi-check2-circle me-1"></i>保存基础设置</button>
                 </div>
             </div>
         </div>`;
 }
-async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
+async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0', enable_membership_card_activation: document.getElementById('setEnableMembershipCardActivation')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
 async function saveSystemConfigFields(data, successMessage = '保存成功') { const res = await request('finance.php?action=update_system_config', 'POST', data); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast(successMessage, 'success'); await loadAdminData(); }
 function checkedValue(id) { return document.getElementById(id)?.checked ? '1' : '0'; }
 function fieldValue(id) { return document.getElementById(id)?.value || ''; }

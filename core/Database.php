@@ -410,6 +410,7 @@ class Database {
             'enable_recharge' => true,
             'enable_withdraw' => true,
             'allow_guest_purchase' => true,
+            'enable_membership_card_activation' => true,
             'withdraw_fee_rate' => 0.01,
             'min_withdraw_amount' => 10,
             'admin_wechat_qrcode' => '',

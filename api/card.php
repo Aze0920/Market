@@ -88,6 +88,39 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '该卡密已被使用'], 400);
         }
 
+        $cardType = ($card['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
+        if ($cardType === 'membership') {
+            $levels = $db->getMembershipLevels();
+            $targetLevel = trim((string)($card['target_level'] ?? ''));
+            if ($targetLevel === '' || strcasecmp($targetLevel, 'Free') === 0 || !isset($levels[$targetLevel])) {
+                jsonResponse(['success' => false, 'message' => '无效的会员卡密'], 400);
+            }
+            $db->useCardCode($code, $userId);
+            $db->updateUser($userId, ['membership_level' => $targetLevel]);
+            $db->createPaymentOrder([
+                'trade_no' => 'CARD' . date('YmdHis') . rand(1000, 9999),
+                'user_id' => $userId,
+                'payment_config_id' => 'card',
+                'pay_type' => 'card_code',
+                'amount' => 0,
+                'actual_amount' => 0,
+                'fee' => 0,
+                'status' => 'paid',
+                'type' => 'membership_card',
+                'title' => '会员卡密兑换',
+                'description' => '使用卡密开通 ' . $targetLevel . ' 会员',
+                'target_level' => $targetLevel,
+                'related_id' => $card['id'] ?? '',
+                'paid_at' => time()
+            ]);
+            jsonResponse([
+                'success' => true,
+                'message' => '会员兑换成功，已开通 ' . $targetLevel . ' 会员',
+                'card_type' => 'membership',
+                'target_level' => $targetLevel
+            ]);
+        }
+
         $db->useCardCode($code, $userId);
         $db->updateUser($userId, ['balance' => $user['balance'] + $card['amount']]);
         $db->createPaymentOrder([
@@ -109,6 +142,7 @@ switch ($action) {
         jsonResponse([
             'success' => true,
             'message' => '充值成功',
+            'card_type' => 'balance',
             'amount' => $card['amount'],
             'new_balance' => $user['balance'] + $card['amount']
         ]);
@@ -121,11 +155,20 @@ switch ($action) {
 
     case 'create':
         requireAdmin();
+        $cardType = ($_POST['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
         $amount = floatval($_POST['amount'] ?? 0);
+        $targetLevel = trim((string)($_POST['target_level'] ?? ''));
         $count = intval($_POST['count'] ?? 1);
 
-        if ($amount <= 0 || $amount > 1000000) {
+        if ($cardType === 'balance' && ($amount <= 0 || $amount > 1000000)) {
             jsonResponse(['success' => false, 'message' => '无效的金额'], 400);
+        }
+        if ($cardType === 'membership') {
+            $levels = $db->getMembershipLevels();
+            if ($targetLevel === '' || strcasecmp($targetLevel, 'Free') === 0 || !isset($levels[$targetLevel])) {
+                jsonResponse(['success' => false, 'message' => '请选择有效的会员等级，Free 会员不可生成卡密'], 400);
+            }
+            $amount = 0;
         }
         if ($count < 1 || $count > 100) {
             jsonResponse(['success' => false, 'message' => '单次最多生成100张卡密'], 400);
@@ -137,6 +180,8 @@ switch ($action) {
                 'id' => genId(),
                 'code' => genCardCode(),
                 'amount' => $amount,
+                'card_type' => $cardType,
+                'target_level' => $cardType === 'membership' ? $targetLevel : '',
                 'used' => false,
                 'used_by' => null,
                 'used_at' => null,
