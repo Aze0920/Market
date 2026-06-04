@@ -145,7 +145,15 @@ switch ($action) {
     case 'my_orders':
         $userId = requireAuth();
         $orders = $db->getOrders($userId, 'buyer');
+        $paymentTradeNoByOrderId = [];
+        foreach ($db->getPaymentOrders($userId) as $paymentOrder) {
+            $relatedId = trim((string)($paymentOrder['related_id'] ?? ''));
+            if ($relatedId !== '' && empty($paymentTradeNoByOrderId[$relatedId])) {
+                $paymentTradeNoByOrderId[$relatedId] = $paymentOrder['trade_no'] ?? '';
+            }
+        }
         foreach ($orders as &$order) {
+            $order['payment_trade_no'] = $paymentTradeNoByOrderId[$order['id'] ?? ''] ?? '';
             $order['has_comment'] = $db->hasComment($userId, $order['product_id'] ?? '', $order['id'] ?? '');
             if (!empty($order['delivery_info']['pickup_password_enabled'])) {
                 $order['delivery_info'] = maskDeliveryInfo($order['delivery_info']);

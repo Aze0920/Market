@@ -582,7 +582,7 @@ async function loadOrdersTab(area) {
                                 </button>
                                 ${orderComplaintBadge(o)}
                             </td>
-                            <td><code class="small">${Security.escapeHtml(o.id || '-')}</code></td>
+                            <td><code class="small">${Security.escapeHtml(o.payment_trade_no || o.id || '-')}</code></td>
                             <td>${Security.escapeHtml(o.seller_name || '-')}</td>
                             <td class="text-danger fw-semibold">¥${o.price.toFixed(2)}</td>
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
