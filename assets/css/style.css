@@ -1350,12 +1350,21 @@ body:has(.auth-modal.show) .modal-backdrop.show {
     gap: .75rem;
 }
 
-.seller-stock-summary > div {
+.seller-stock-summary > .seller-stock-stat {
     border: 1px solid var(--border-color);
     border-radius: 14px;
     background: #f8fafc;
     padding: .75rem;
     text-align: center;
+    cursor: pointer;
+    transition: all .18s ease;
+}
+
+.seller-stock-summary > .seller-stock-stat:hover,
+.seller-stock-summary > .seller-stock-stat.active {
+    border-color: var(--primary-color);
+    background: #eef4ff;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.12);
 }
 
 .seller-stock-summary strong {
@@ -1479,7 +1488,7 @@ body:has(.auth-modal.show) .modal-backdrop.show {
         gap: .5rem;
     }
 
-    .seller-stock-summary > div {
+    .seller-stock-summary > .seller-stock-stat {
         padding: .6rem .35rem;
     }
 

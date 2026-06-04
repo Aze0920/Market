@@ -1665,7 +1665,7 @@ async function openSellerProductManage(productId) {
     initEditProductImageDropZone();
 }
 
-let currentStockManageState = { productId: '', page: 1, pageSize: 10 };
+let currentStockManageState = { productId: '', page: 1, pageSize: 10, filter: 'all' };
 
 function stockItemDisplayContent(item = {}) {
     const content = String(item.content || '').trim();
@@ -1680,22 +1680,24 @@ function stockPageSizeOptions(selected = 10) {
     return [10, 20, 50, 100, 200, 500, 1000].map(size => `<option value="${size}" ${Number(selected) === size ? 'selected' : ''}>每页 ${size} 个</option>`).join('');
 }
 
-async function openStockManageModal(productId, page = currentStockManageState.page || 1, pageSize = currentStockManageState.pageSize || 10) {
+async function renderStockManageContent(productId, page = currentStockManageState.page || 1, pageSize = currentStockManageState.pageSize || 10, filter = currentStockManageState.filter || 'all') {
     pageSize = Math.max(10, Math.min(1000, Number(pageSize) || 10));
-    currentStockManageState = { productId, page: Math.max(1, Number(page) || 1), pageSize };
+    filter = ['all', 'unsold', 'sold'].includes(filter) ? filter : 'all';
+    currentStockManageState = { productId, page: Math.max(1, Number(page) || 1), pageSize, filter };
     const result = await API.getProductStock(productId);
     if (!result.success) {
         Toast.error(result.message || '库存读取失败');
-        return;
+        return false;
     }
     const product = result.product || {};
     const stock = Array.isArray(result.stock) ? result.stock : [];
     const unsoldCount = Number(result.unsold_count || stock.filter(item => !item.sold).length || 0);
     const soldCount = Number(result.sold_count || stock.filter(item => item.sold).length || 0);
-    const totalPages = Math.max(1, Math.ceil(stock.length / pageSize));
+    const filteredStock = filter === 'unsold' ? stock.filter(item => !item.sold) : (filter === 'sold' ? stock.filter(item => item.sold) : stock);
+    const totalPages = Math.max(1, Math.ceil(filteredStock.length / pageSize));
     const safePage = Math.min(currentStockManageState.page, totalPages);
     currentStockManageState.page = safePage;
-    const pageStock = stock.slice((safePage - 1) * pageSize, safePage * pageSize);
+    const pageStock = filteredStock.slice((safePage - 1) * pageSize, safePage * pageSize);
     const rowsHtml = pageStock.length ? pageStock.map(item => {
         const content = stockItemDisplayContent(item);
         return `
@@ -1712,8 +1714,7 @@ async function openStockManageModal(productId, page = currentStockManageState.pa
                 </button>
             </div>
         `;
-    }).join('') : '<div class="text-muted text-center py-4">暂无库存</div>';
-    const modal = new bootstrap.Modal(document.getElementById('purchaseConfirmModal'));
+    }).join('') : `<div class="text-muted text-center py-4">${filter === 'unsold' ? '暂无未售库存' : (filter === 'sold' ? '暂无已售库存' : '暂无库存')}</div>`;
     document.getElementById('purchaseBody').innerHTML = `
         <div class="d-flex justify-content-between align-items-start gap-3 mb-3 flex-wrap">
             <div>
@@ -1729,24 +1730,38 @@ async function openStockManageModal(productId, page = currentStockManageState.pa
             </div>
         </div>
         <div class="seller-stock-summary mb-3">
-            <div><strong>${Security.escapeHtml(stock.length)}</strong><span>总库存</span></div>
-            <div><strong>${Security.escapeHtml(unsoldCount)}</strong><span>未售</span></div>
-            <div><strong>${Security.escapeHtml(soldCount)}</strong><span>已售</span></div>
+            <button type="button" class="seller-stock-stat ${filter === 'all' ? 'active' : ''}" onclick="switchStockManageFilter('${Security.escapeAttr(productId)}', 'all')"><strong>${Security.escapeHtml(stock.length)}</strong><span>总库存</span></button>
+            <button type="button" class="seller-stock-stat ${filter === 'unsold' ? 'active' : ''}" onclick="switchStockManageFilter('${Security.escapeAttr(productId)}', 'unsold')"><strong>${Security.escapeHtml(unsoldCount)}</strong><span>未售</span></button>
+            <button type="button" class="seller-stock-stat ${filter === 'sold' ? 'active' : ''}" onclick="switchStockManageFilter('${Security.escapeAttr(productId)}', 'sold')"><strong>${Security.escapeHtml(soldCount)}</strong><span>已售</span></button>
         </div>
         <div class="seller-stock-toolbar mb-3">
-            <select class="form-select form-select-sm" onchange="openStockManageModal('${Security.escapeAttr(productId)}', 1, this.value)">${stockPageSizeOptions(pageSize)}</select>
+            <select class="form-select form-select-sm" onchange="refreshStockManageModal('${Security.escapeAttr(productId)}', 1, this.value, '${Security.escapeAttr(filter)}')">${stockPageSizeOptions(pageSize)}</select>
             <div class="seller-stock-page-actions">
-                <button class="btn btn-sm btn-outline" ${safePage <= 1 ? 'disabled' : ''} onclick="openStockManageModal('${Security.escapeAttr(productId)}', ${safePage - 1}, ${pageSize})">上一页</button>
-                <span class="small text-muted">第 ${safePage} / ${totalPages} 页，共 ${stock.length} 条</span>
-                <button class="btn btn-sm btn-outline" ${safePage >= totalPages ? 'disabled' : ''} onclick="openStockManageModal('${Security.escapeAttr(productId)}', ${safePage + 1}, ${pageSize})">下一页</button>
+                <button class="btn btn-sm btn-outline" ${safePage <= 1 ? 'disabled' : ''} onclick="refreshStockManageModal('${Security.escapeAttr(productId)}', ${safePage - 1}, ${pageSize}, '${Security.escapeAttr(filter)}')">上一页</button>
+                <span class="small text-muted">第 ${safePage} / ${totalPages} 页，共 ${filteredStock.length} 条</span>
+                <button class="btn btn-sm btn-outline" ${safePage >= totalPages ? 'disabled' : ''} onclick="refreshStockManageModal('${Security.escapeAttr(productId)}', ${safePage + 1}, ${pageSize}, '${Security.escapeAttr(filter)}')">下一页</button>
             </div>
         </div>
-        <div class="alert alert-light border small">可选择单条或多条库存进行删除；删除已售库存只会移除库存管理记录，不影响已生成订单。</div>
         <div class="seller-stock-list">${rowsHtml}</div>
     `;
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
     `;
+    return true;
+}
+
+async function refreshStockManageModal(productId = currentStockManageState.productId, page = currentStockManageState.page, pageSize = currentStockManageState.pageSize, filter = currentStockManageState.filter) {
+    await renderStockManageContent(productId, page, pageSize, filter);
+}
+
+async function switchStockManageFilter(productId, filter) {
+    await refreshStockManageModal(productId, 1, currentStockManageState.pageSize, filter);
+}
+
+async function openStockManageModal(productId, page = currentStockManageState.page || 1, pageSize = currentStockManageState.pageSize || 10, filter = currentStockManageState.filter || 'all') {
+    const ok = await renderStockManageContent(productId, page, pageSize, filter);
+    if (!ok) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('purchaseConfirmModal'));
     modal.show();
 }
 
@@ -1756,7 +1771,7 @@ async function deleteSellerStockItem(productId, stockIndex) {
     if (!result.success) return Toast.error(result.message || '删除库存失败');
     Toast.success(result.message || '库存已删除');
     await refreshUserData();
-    await openStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize);
+    await refreshStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize, currentStockManageState.filter);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
 }
@@ -1770,7 +1785,7 @@ async function deleteSellerStockSelected(productId) {
     if (!result.success) return Toast.error(result.message || '删除选中库存失败');
     Toast.success(result.message || '库存已删除');
     await refreshUserData();
-    await openStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize);
+    await refreshStockManageModal(productId, currentStockManageState.page, currentStockManageState.pageSize, currentStockManageState.filter);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
 }
@@ -1783,7 +1798,7 @@ async function deleteSellerStockBatch(productId, mode) {
     if (!result.success) return Toast.error(result.message || `删除${label}失败`);
     Toast.success(result.message || '库存已删除');
     await refreshUserData();
-    await openStockManageModal(productId, 1, currentStockManageState.pageSize);
+    await refreshStockManageModal(productId, 1, currentStockManageState.pageSize, currentStockManageState.filter);
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
 }
@@ -1794,7 +1809,7 @@ async function clearSellerUnsoldStock(productId) {
     if (!result.success) return Toast.error(result.message || '清空库存失败');
     Toast.success(result.message || '未售库存已清空');
     await refreshUserData();
-    await openStockManageModal(productId);
+    await refreshStockManageModal(productId, 1, currentStockManageState.pageSize, 'unsold');
     renderDashboardTab('myproducts');
     if (typeof loadProducts === 'function') loadProducts();
 }
