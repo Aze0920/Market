@@ -1665,7 +1665,7 @@ async function openSellerProductManage(productId) {
     initEditProductImageDropZone();
 }
 
-let currentStockManageState = { productId: '', page: 1, pageSize: 10 };
+let currentStockManageState = { productId: '', page: 1, pageSize: 10, filter: 'all' };
 
 function stockItemDisplayContent(item = {}) {
     const content = String(item.content || '').trim();
