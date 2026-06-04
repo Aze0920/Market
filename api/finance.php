@@ -116,6 +116,9 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '请输入有效金额'], 400);
         }
         
+        if (floatval($user['balance'] ?? 0) < 0) {
+            jsonResponse(['success' => false, 'message' => '当前余额为负数，请先补足欠款后再提现'], 400);
+        }
         if ($user['balance'] < $amount) {
             jsonResponse(['success' => false, 'message' => '余额不足'], 400);
         }

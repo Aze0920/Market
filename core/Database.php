@@ -870,7 +870,10 @@ class Database {
             if ($key === 'role') {
                 $updates[$key] = $value === 'admin' ? 'admin' : 'user';
             }
-            if ($key === 'balance' || $key === 'frozen_balance') {
+            if ($key === 'balance') {
+                $updates[$key] = floatval($value);
+            }
+            if ($key === 'frozen_balance') {
                 $updates[$key] = max(0, floatval($value));
             }
             if ($key === 'email' && $value !== '' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {

@@ -85,6 +85,9 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '请使用支付接口创建在线支付订单'], 400);
         }
 
+        if (floatval($user['balance'] ?? 0) < 0) {
+            jsonResponse(['success' => false, 'message' => '当前余额为负数，请先补足欠款后再使用余额升级会员']);
+        }
         if ($cost > 0 && $user['balance'] < $cost) {
             jsonResponse(['success' => false, 'message' => '余额不足，请选择在线支付或先充值']);
         }

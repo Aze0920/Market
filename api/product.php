@@ -965,6 +965,9 @@ switch ($action) {
         }
 
         $price = $product['price'] * $quantity;
+        if (floatval($user['balance'] ?? 0) < 0) {
+            jsonResponse(['success' => false, 'message' => '当前余额为负数，请先补足欠款后再购买'], 400);
+        }
         if ($user['balance'] < $price) {
             jsonResponse(['success' => false, 'message' => '余额不足'], 400);
         }

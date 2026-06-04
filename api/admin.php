@@ -599,13 +599,13 @@ function adminResolveComplaintFunds(&$order, $status) {
     global $db;
     if (!in_array($status, ['resolved', 'rejected'], true)) return [true, ''];
 
-    $amount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? $order['seller_amount'] ?? $order['price'] ?? 0));
+    $amount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? 0));
     if ($amount <= 0) {
         $order['complaint']['funds_settled'] = true;
         $order['complaint']['funds_settled_at'] = time();
         $order['complaint']['funds_action'] = 'none';
         $order['complaint']['funds_amount'] = 0;
-        return [true, '该订单没有可处理金额，仅更新判定状态'];
+        return [true, '该订单没有可处理冻结金额，仅更新判定状态'];
     }
 
     $seller = $db->getUserById($order['seller_id'] ?? '');
@@ -623,6 +623,9 @@ function adminResolveComplaintFunds(&$order, $status) {
 
     if (!empty($order['balance_frozen'])) {
         $sellerFrozen = floatval($seller['frozen_balance'] ?? 0);
+        if ($sellerFrozen + 0.00001 < $amount) {
+            return [false, '卖家冻结余额不足，资金状态异常，已停止自动裁决'];
+        }
         if ($targetAction === 'release_to_seller') {
             $db->updateUser($seller['id'], [
                 'balance' => floatval($seller['balance'] ?? 0) + $amount,
@@ -647,27 +650,19 @@ function adminResolveComplaintFunds(&$order, $status) {
         $db->updateUser($buyer['id'], [
             'balance' => floatval($buyer['balance'] ?? 0) + $amount
         ]);
-        $message = '已改判买家胜，金额已从卖家转给买家';
+        $message = '已改判买家胜，金额已从卖家转给买家；卖家余额不足时会记为负数';
     } elseif ($currentAction === 'refund_to_buyer' && $targetAction === 'release_to_seller') {
+        $buyerBalance = floatval($buyer['balance'] ?? 0);
+        if ($buyerBalance + 0.00001 < $amount) {
+            return [false, '买家余额不足，无法改判卖家胜；请先让买家补足余额或人工处理'];
+        }
         $db->updateUser($buyer['id'], [
-            'balance' => floatval($buyer['balance'] ?? 0) - $amount
+            'balance' => $buyerBalance - $amount
         ]);
         $db->updateUser($seller['id'], [
             'balance' => floatval($seller['balance'] ?? 0) + $amount
         ]);
         $message = '已改判卖家胜，金额已从买家转给卖家';
-    } elseif ($currentAction === '' || $currentAction === 'none') {
-        if ($targetAction === 'release_to_seller') {
-            $db->updateUser($seller['id'], [
-                'balance' => floatval($seller['balance'] ?? 0) + $amount
-            ]);
-            $message = '已判定卖家胜，金额已补发给卖家';
-        } else {
-            $db->updateUser($buyer['id'], [
-                'balance' => floatval($buyer['balance'] ?? 0) + $amount
-            ]);
-            $message = '已判定买家胜，金额已补发给买家';
-        }
     } else {
         return [false, '当前资金状态异常，无法自动改判'];
     }

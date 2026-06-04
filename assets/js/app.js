@@ -521,6 +521,31 @@ async function openOrderProductDetail(productId) {
     await openProductDetail(productId, { readonly: true, allowSoldOut: true });
 }
 
+function orderComplaintBadge(order) {
+    const status = order?.complaint?.status || '';
+    const map = {
+        open: '<span class="badge badge-warning">投诉中</span>',
+        processing: '<span class="badge badge-info">处理中</span>',
+        withdrawn: '<span class="badge badge-secondary">已撤诉</span>',
+        resolved: '<span class="badge badge-success">卖家胜</span>',
+        rejected: '<span class="badge badge-danger">买家胜</span>'
+    };
+    return map[status] ? `<div>${map[status]}</div>` : '';
+}
+
+function orderComplaintActions(order) {
+    const status = order?.complaint?.status || '';
+    const orderId = Security.escapeAttr(order?.id || '');
+    if (!status) {
+        return `<button class="btn btn-sm btn-danger" onclick="openComplaintModal('${orderId}')">投诉</button>`;
+    }
+    if (status === 'open' || status === 'processing') {
+        return `<button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${orderId}')">撤诉</button>`;
+    }
+    const text = status === 'withdrawn' ? '已撤诉' : (status === 'resolved' ? '卖家胜' : (status === 'rejected' ? '买家胜' : '已结束'));
+    return `<span class="badge badge-secondary">${text}</span>`;
+}
+
 async function loadOrdersTab(area) {
     const result = await API.getMyOrders();
     if (!result.success || result.orders.length === 0) {
@@ -554,8 +579,7 @@ async function loadOrdersTab(area) {
                                 <button type="button" class="btn btn-link p-0 text-start fw-semibold text-decoration-none order-product-link" onclick="openOrderProductDetail('${Security.escapeAttr(o.product_id)}')" title="查看商品详情">
                                     ${Utils.truncate(o.product_title, 20)}
                                 </button>
-                                ${o.complaint && o.complaint.status === 'open' ? '<div><span class="badge badge-warning">投诉中</span></div>' : ''}
-                                ${o.complaint && o.complaint.status === 'withdrawn' ? '<div><span class="badge badge-secondary">已撤诉</span></div>' : ''}
+                                ${orderComplaintBadge(o)}
                             </td>
                             <td>${Security.escapeHtml(o.seller_name || '-')}</td>
                             <td class="text-danger fw-semibold">¥${o.price.toFixed(2)}</td>
@@ -563,7 +587,7 @@ async function loadOrdersTab(area) {
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="viewDeliveryInfo('${o.id}')">查看发货</button>
                                 ${o.has_comment ? '<span class="badge badge-success ms-1">已评价</span>' : `<button class="btn btn-sm btn-primary keynest-review-btn" data-product-id="${Security.escapeAttr(o.product_id)}" data-order-id="${Security.escapeAttr(o.id)}" onclick="openReviewDialog('${o.product_id}', '${o.id}')">评价</button>`}
-                                ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${o.id}')">撤诉</button>` : `<button class="btn btn-sm btn-danger" onclick="openComplaintModal('${o.id}')">投诉</button>`}
+                                ${orderComplaintActions(o)}
                             </td>
                         </tr>
                     `).join('')}
@@ -604,14 +628,14 @@ async function loadSalesTab(area) {
                         <tr>
                             <td>
                                 ${Utils.truncate(o.product_title, 20)}
-                                ${o.complaint && o.complaint.status === 'open' ? '<div><span class="badge badge-warning">投诉中</span></div>' : ''}
+                                ${orderComplaintBadge(o)}
                             </td>
                             <td>${o.guest_order ? '<span class="badge badge-secondary">游客买家</span><div class="small text-muted">已隐藏信息</div>' : Security.escapeHtml(o.buyer_name || '-')}</td>
                             <td class="text-success fw-semibold">+¥${o.seller_amount ? o.seller_amount.toFixed(2) : o.price.toFixed(2)}</td>
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="openSellerOrderInfoModal('${Security.escapeAttr(o.id)}')">订单信息</button>
-                                ${o.complaint && o.complaint.status === 'open' ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${o.id}')">查看投诉</button>` : ''}
+                                ${o.complaint && ['open', 'processing'].includes(o.complaint.status) ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${Security.escapeAttr(o.id)}')">查看投诉</button>` : ''}
                             </td>
                         </tr>
                     `).join('')}

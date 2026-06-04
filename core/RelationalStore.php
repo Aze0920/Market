@@ -249,6 +249,24 @@ class RelationalStore {
         $this->ensureColumn('kn_payment_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_card_codes', 'card_type', "varchar(20) NOT NULL DEFAULT 'balance'");
         $this->ensureColumn('kn_card_codes', 'target_level', "varchar(50) NOT NULL DEFAULT ''");
+        $this->ensureSignedDecimalColumn('kn_users', 'balance', 'decimal(14,2)', '0.00');
+        $this->ensureSignedDecimalColumn('kn_users', 'frozen_balance', 'decimal(14,2)', '0.00');
+    }
+
+    private function ensureSignedDecimalColumn($table, $column, $type, $default) {
+        if (!preg_match('/^kn_[a-z0-9_]+$/', (string)$table) || !preg_match('/^[a-z0-9_]+$/', (string)$column)) {
+            return;
+        }
+        $stmt = $this->pdo->prepare('SELECT COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1');
+        $stmt->execute([$table, $column]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return;
+        }
+        $columnType = strtolower((string)($row['COLUMN_TYPE'] ?? ''));
+        if (strpos($columnType, 'unsigned') !== false) {
+            $this->pdo->exec('ALTER TABLE `' . $table . '` MODIFY COLUMN `' . $column . '` ' . $type . " NOT NULL DEFAULT " . $this->pdo->quote($default));
+        }
     }
 
     private function ensureColumn($table, $column, $definition) {

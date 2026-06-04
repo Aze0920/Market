@@ -114,13 +114,12 @@ function freezeSellerOrderBalance(&$order) {
     $amount = max(0, floatval($order['seller_amount'] ?? $order['price'] ?? 0));
     $currentBalance = floatval($seller['balance'] ?? 0);
     $currentFrozen = floatval($seller['frozen_balance'] ?? 0);
-    $freezeAmount = min($amount, $currentBalance);
     $db->updateUser($seller['id'], [
-        'balance' => $currentBalance - $freezeAmount,
-        'frozen_balance' => $currentFrozen + $freezeAmount
+        'balance' => $currentBalance - $amount,
+        'frozen_balance' => $currentFrozen + $amount
     ]);
-    $order['balance_frozen'] = true;
-    $order['frozen_amount'] = $freezeAmount;
+    $order['balance_frozen'] = $amount > 0;
+    $order['frozen_amount'] = $amount;
     $order['frozen_at'] = time();
     return true;
 }
@@ -256,8 +255,8 @@ switch ($action) {
         if (($order['buyer_id'] ?? '') !== $userId) {
             jsonResponse(['success' => false, 'message' => '只能投诉自己的购买订单'], 403);
         }
-        if (!empty($order['complaint']) && ($order['complaint']['status'] ?? '') === 'open') {
-            jsonResponse(['success' => false, 'message' => '该订单已被投诉，请勿重复提交'], 400);
+        if (!empty($order['complaint']) || intval($order['complaint_withdrawn_at'] ?? 0) > 0) {
+            jsonResponse(['success' => false, 'message' => '该订单已提交过投诉，不能重复投诉'], 400);
         }
 
         $password = genComplaintPassword();
@@ -289,6 +288,9 @@ switch ($action) {
                 'content' => htmlspecialchars($reason, ENT_QUOTES, 'UTF-8'),
                 'created_at' => time()
             ]],
+            'funds_amount' => floatval($order['frozen_amount'] ?? 0),
+            'funds_action' => 'frozen',
+            'funds_settled' => false,
             'created_at' => time(),
             'updated_at' => time()
         ];
@@ -309,17 +311,22 @@ switch ($action) {
         if (($order['buyer_id'] ?? '') !== $userId) {
             jsonResponse(['success' => false, 'message' => '只能撤诉自己的订单'], 403);
         }
-        if (empty($order['complaint']) || ($order['complaint']['status'] ?? '') !== 'open') {
-            jsonResponse(['success' => false, 'message' => '该订单没有进行中的投诉'], 400);
+        if (empty($order['complaint']) || in_array(($order['complaint']['status'] ?? ''), ['resolved', 'rejected', 'withdrawn'], true)) {
+            jsonResponse(['success' => false, 'message' => '该订单没有可撤诉的进行中投诉'], 400);
         }
         if (!password_verify($password, $order['complaint']['password_hash'] ?? '')) {
             jsonResponse(['success' => false, 'message' => '撤诉密码错误'], 400);
         }
         releaseSellerOrderBalance($order);
-        unset($order['complaint']);
+        $order['complaint']['status'] = 'withdrawn';
+        $order['complaint']['withdrawn_at'] = time();
+        $order['complaint']['updated_at'] = time();
+        $order['complaint']['funds_action'] = 'released_to_seller_by_withdrawal';
+        $order['complaint']['funds_settled'] = true;
+        $order['complaint']['funds_settled_at'] = time();
         $order['complaint_withdrawn_at'] = time();
         $db->updateOrder($order);
-        jsonResponse(['success' => true, 'message' => '已撤诉，冻结金额已解冻，投诉记录已删除']);
+        jsonResponse(['success' => true, 'message' => '已撤诉，冻结金额已解冻，投诉记录已保留']);
 
     case 'reply_complaint':
         $userId = requireAuth();
