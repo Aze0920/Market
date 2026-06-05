@@ -684,12 +684,21 @@ function adminPaymentOrderTitle(order = {}) {
     };
     return titleMap[type] || (amount >= 0 ? '余额收入' : '余额支出');
 }
-function openUserBalanceDetails(userId) {
-    const user = (Admin.cache.users || []).find(u => String(u.id || '') === String(userId || ''));
-    if (!user) return showToast('用户不存在', 'error');
-    const orders = userBalanceDetailOrders(userId);
-    const income = orders.reduce((sum, o) => sum + Math.max(0, Number(o.amount || 0)), 0);
-    const expense = orders.reduce((sum, o) => sum + Math.abs(Math.min(0, Number(o.amount || 0))), 0);
+async function openUserBalanceDetails(userId) {
+    const cachedUser = (Admin.cache.users || []).find(u => String(u.id || '') === String(userId || ''));
+    if (!cachedUser) return showToast('用户不存在', 'error');
+    const res = await request(`admin.php?action=user_balance_details&id=${encodeURIComponent(userId)}`);
+    if (!res.success) return showToast(res.message || '加载余额明细失败', 'error');
+    const details = res.details || {};
+    const user = details.user || cachedUser;
+    const entries = Array.isArray(details.entries) ? details.entries : [];
+    const income = Number(details.income || 0);
+    const expense = Number(details.expense || 0);
+    const deltaText = value => {
+        const amount = Number(value || 0);
+        if (Math.abs(amount) < 0.01) return '<span class="text-muted">-</span>';
+        return `<span class="fw-semibold ${amount >= 0 ? 'text-success' : 'text-danger'}">${amount >= 0 ? '+' : '-'}${money(Math.abs(amount))}</span>`;
+    };
     adminModal({
         title: `${escapeHtml(user.username || '-')} 的余额明细`,
         size: 'xl',
@@ -700,16 +709,14 @@ function openUserBalanceDetails(userId) {
                 <div class="col-md-3"><div class="stat-card"><div class="stat-value text-success">+${money(income)}</div><div class="stat-label">累计入账</div></div></div>
                 <div class="col-md-3"><div class="stat-card"><div class="stat-value text-danger">-${money(expense)}</div><div class="stat-label">累计支出</div></div></div>
             </div>
-            ${orders.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>交易号</th><th>类型</th><th>金额</th><th>说明</th><th>时间</th></tr></thead><tbody>${orders.map(o => {
-                const amount = Number(o.amount || 0);
-                return `<tr>
-                    <td><code class="small">${escapeHtml(o.trade_no || o.id || '-')}</code></td>
-                    <td>${escapeHtml(adminPaymentOrderTitle(o))}</td>
-                    <td class="fw-semibold ${amount >= 0 ? 'text-success' : 'text-danger'}">${amount >= 0 ? '+' : '-'}${money(Math.abs(amount))}</td>
-                    <td class="small text-muted">${escapeHtml(o.description || o.title || '-')}</td>
-                    <td class="small text-muted">${dateText(o.paid_at || o.created_at)}</td>
-                </tr>`;
-            }).join('')}</tbody></table></div>` : '<div class="empty-state"><i class="bi bi-wallet2"></i><h5>暂无余额明细</h5><p>该用户还没有产生余额流水记录</p></div>'}
+            ${entries.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>交易号/订单号</th><th>类型</th><th>余额变动</th><th>冻结变动</th><th>说明</th><th>时间</th></tr></thead><tbody>${entries.map(entry => `<tr>
+                <td><code class="small">${escapeHtml(entry.trade_no || '-')}</code></td>
+                <td>${escapeHtml(entry.type_label || '余额明细')}</td>
+                <td>${deltaText(entry.balance_delta)}</td>
+                <td>${deltaText(entry.frozen_delta)}</td>
+                <td class="small text-muted">${escapeHtml(entry.description || '-')}</td>
+                <td class="small text-muted">${dateText(entry.time)}</td>
+            </tr>`).join('')}</tbody></table></div>` : '<div class="empty-state"><i class="bi bi-wallet2"></i><h5>暂无余额明细</h5><p>该用户还没有产生余额或冻结流水记录</p></div>'}
         `,
         footer: '<button class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>'
     });

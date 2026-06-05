@@ -216,7 +216,7 @@ function adminRunCommand($command, $cwd = null) {
 }
 
 function adminAppVersion() {
-    return 'V1.2.0';
+    return 'V1.2.1';
 }
 
 function adminUpdaterVersion($config) {
@@ -595,6 +595,218 @@ function adminComplaintOrders() {
     return array_values($items);
 }
 
+function adminBalanceLedgerLabel($type, $amount = 0) {
+    $map = [
+        'recharge' => '在线充值',
+        'card_recharge' => '卡密充值',
+        'membership_upgrade_balance' => '余额升级会员',
+        'product_purchase' => '余额购买商品',
+        'product_purchase_refund' => '购买失败退款',
+        'product_sale_income' => '商品销售收入',
+        'publish_fee' => '发布商品扣费',
+        'publish_fee_refund' => '删除库存退费',
+        'admin_balance_adjust' => $amount >= 0 ? '后台加款' : '后台扣款',
+        'complaint_freeze' => '投诉冻结',
+        'complaint_withdraw_release' => '撤诉解冻',
+        'complaint_seller_win' => '投诉放款',
+        'complaint_buyer_win' => '投诉退款',
+        'complaint_rejudge_buyer_win' => '改判买家胜',
+        'complaint_rejudge_seller_win' => '改判卖家胜'
+    ];
+    return $map[$type] ?? ($amount >= 0 ? '余额收入' : '余额支出');
+}
+
+function adminAddBalanceLedgerEntry(&$entries, $data) {
+    $balanceDelta = round(floatval($data['balance_delta'] ?? 0), 2);
+    $frozenDelta = round(floatval($data['frozen_delta'] ?? 0), 2);
+    if (abs($balanceDelta) < 0.01 && abs($frozenDelta) < 0.01) return;
+    $type = (string)($data['type'] ?? '');
+    $time = intval($data['time'] ?? 0);
+    $entries[] = [
+        'trade_no' => (string)($data['trade_no'] ?? ''),
+        'type' => $type,
+        'type_label' => adminBalanceLedgerLabel($type, $balanceDelta),
+        'balance_delta' => $balanceDelta,
+        'frozen_delta' => $frozenDelta,
+        'description' => (string)($data['description'] ?? ''),
+        'related_id' => (string)($data['related_id'] ?? ''),
+        'time' => $time,
+    ];
+}
+
+function adminUserBalanceDetails($userId) {
+    global $db;
+    $user = $db->getUserById($userId);
+    if (!$user) {
+        return null;
+    }
+    $entries = [];
+    $balanceTypes = ['recharge', 'card_recharge', 'membership_upgrade_balance', 'product_purchase', 'product_purchase_refund', 'product_sale_income', 'publish_fee', 'publish_fee_refund', 'admin_balance_adjust'];
+    $paymentOrders = $db->getPaymentOrders($userId);
+    foreach ($paymentOrders as $order) {
+        $type = (string)($order['type'] ?? '');
+        $payType = (string)($order['pay_type'] ?? '');
+        $amount = floatval($order['amount'] ?? 0);
+        if (($order['status'] ?? '') === 'paid' && abs($amount) >= 0.01 && (in_array($type, $balanceTypes, true) || strpos($payType, 'balance') !== false || $payType === 'admin_adjust' || $payType === 'card_code')) {
+            adminAddBalanceLedgerEntry($entries, [
+                'trade_no' => $order['trade_no'] ?? $order['id'] ?? '',
+                'type' => $type,
+                'balance_delta' => $amount,
+                'frozen_delta' => 0,
+                'description' => $order['description'] ?? $order['title'] ?? '',
+                'related_id' => $order['related_id'] ?? '',
+                'time' => intval($order['paid_at'] ?? $order['created_at'] ?? 0),
+            ]);
+        }
+    }
+
+    foreach ($paymentOrders as $order) {
+        $refundAmount = floatval($order['refunded_amount'] ?? 0);
+        if (empty($order['refund_applied']) || $refundAmount <= 0) continue;
+        $originId = (string)($order['id'] ?? '');
+        $hasRefundRecord = false;
+        foreach ($entries as $entry) {
+            if (($entry['type'] ?? '') === 'product_purchase_refund' && (string)($entry['related_id'] ?? '') === $originId) {
+                $hasRefundRecord = true;
+                break;
+            }
+        }
+        if (!$hasRefundRecord) {
+            adminAddBalanceLedgerEntry($entries, [
+                'trade_no' => ($order['trade_no'] ?? $originId) . '-退款',
+                'type' => 'product_purchase_refund',
+                'balance_delta' => $refundAmount,
+                'description' => $order['delivery_error'] ?? $order['description'] ?? '订单退款到余额',
+                'time' => intval($order['refunded_at'] ?? $order['paid_at'] ?? $order['created_at'] ?? 0),
+            ]);
+        }
+    }
+
+    foreach ($db->getOrders() as $order) {
+        if (empty($order['complaint']) || !is_array($order['complaint'])) continue;
+        $complaint = $order['complaint'];
+        $amount = max(0, floatval($complaint['funds_amount'] ?? $order['frozen_amount'] ?? 0));
+        if ($amount <= 0) continue;
+        $orderNo = $order['id'] ?? '';
+        $title = $order['product_title'] ?? '订单';
+        $createdAt = intval($complaint['created_at'] ?? $order['frozen_at'] ?? 0);
+        $settledAt = intval($complaint['funds_settled_at'] ?? $complaint['updated_at'] ?? 0);
+        $fundsAction = (string)($complaint['funds_action'] ?? '');
+        $history = is_array($complaint['funds_history'] ?? null) ? $complaint['funds_history'] : [];
+        $hasHistory = count($history) > 0;
+        if (($order['seller_id'] ?? '') === $userId) {
+            adminAddBalanceLedgerEntry($entries, [
+                'trade_no' => $orderNo,
+                'type' => 'complaint_freeze',
+                'balance_delta' => -$amount,
+                'frozen_delta' => $amount,
+                'description' => '订单投诉冻结：' . $title,
+                'time' => $createdAt,
+            ]);
+            if (!$hasHistory && $fundsAction === 'released_to_seller_by_withdrawal') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_withdraw_release',
+                    'balance_delta' => $amount,
+                    'frozen_delta' => -$amount,
+                    'description' => '买家撤诉，冻结金额解冻：' . $title,
+                    'time' => $settledAt,
+                ]);
+            } elseif (!$hasHistory && $fundsAction === 'release_to_seller') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_seller_win',
+                    'balance_delta' => $amount,
+                    'frozen_delta' => -$amount,
+                    'description' => '投诉判定卖家胜，冻结金额放款：' . $title,
+                    'time' => $settledAt,
+                ]);
+            } elseif (!$hasHistory && $fundsAction === 'refund_to_buyer') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_buyer_win',
+                    'balance_delta' => 0,
+                    'frozen_delta' => -$amount,
+                    'description' => '投诉判定买家胜，冻结金额退给买家：' . $title,
+                    'time' => $settledAt,
+                ]);
+            }
+        }
+        if (($order['buyer_id'] ?? '') === $userId && !$hasHistory && $fundsAction === 'refund_to_buyer') {
+            adminAddBalanceLedgerEntry($entries, [
+                'trade_no' => $orderNo,
+                'type' => 'complaint_buyer_win',
+                'balance_delta' => $amount,
+                'frozen_delta' => 0,
+                'description' => '投诉判定买家胜，退款入余额：' . $title,
+                'time' => $settledAt,
+            ]);
+        }
+        foreach ($history as $item) {
+            $from = (string)($item['from'] ?? '');
+            $to = (string)($item['to'] ?? '');
+            $historyAmount = max(0, floatval($item['amount'] ?? 0));
+            if ($historyAmount <= 0) continue;
+            $historyTime = intval($item['created_at'] ?? $settledAt);
+            if (($order['seller_id'] ?? '') === $userId && ($from === 'frozen' || $from === '') && $to === 'release_to_seller') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_seller_win',
+                    'balance_delta' => $historyAmount,
+                    'frozen_delta' => -$historyAmount,
+                    'description' => '投诉判定卖家胜，冻结金额放款：' . $title,
+                    'time' => $historyTime,
+                ]);
+            }
+            if (($order['seller_id'] ?? '') === $userId && ($from === 'frozen' || $from === '') && $to === 'refund_to_buyer') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_buyer_win',
+                    'balance_delta' => 0,
+                    'frozen_delta' => -$historyAmount,
+                    'description' => '投诉判定买家胜，冻结金额退给买家：' . $title,
+                    'time' => $historyTime,
+                ]);
+            }
+            if (($order['buyer_id'] ?? '') === $userId && ($from === 'frozen' || $from === '') && $to === 'refund_to_buyer') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_buyer_win',
+                    'balance_delta' => $historyAmount,
+                    'description' => '投诉判定买家胜，退款入余额：' . $title,
+                    'time' => $historyTime,
+                ]);
+            }
+            if (($order['seller_id'] ?? '') === $userId && $from === 'release_to_seller' && $to === 'refund_to_buyer') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_rejudge_buyer_win',
+                    'balance_delta' => -$historyAmount,
+                    'description' => '改判买家胜，从卖家余额扣回：' . $title,
+                    'time' => $historyTime,
+                ]);
+            }
+            if (($order['buyer_id'] ?? '') === $userId && $from === 'refund_to_buyer' && $to === 'release_to_seller') {
+                adminAddBalanceLedgerEntry($entries, [
+                    'trade_no' => $orderNo,
+                    'type' => 'complaint_rejudge_seller_win',
+                    'balance_delta' => -$historyAmount,
+                    'description' => '改判卖家胜，从买家余额扣回：' . $title,
+                    'time' => $historyTime,
+                ]);
+            }
+        }
+    }
+
+    usort($entries, fn($a, $b) => intval($b['time'] ?? 0) - intval($a['time'] ?? 0));
+    return [
+        'user' => adminSafeUser($user),
+        'entries' => array_values($entries),
+        'income' => array_reduce($entries, fn($sum, $entry) => $sum + max(0, floatval($entry['balance_delta'] ?? 0)), 0),
+        'expense' => array_reduce($entries, fn($sum, $entry) => $sum + abs(min(0, floatval($entry['balance_delta'] ?? 0))), 0),
+    ];
+}
+
 function adminResolveComplaintFunds(&$order, $status) {
     global $db;
     if (!in_array($status, ['resolved', 'rejected'], true)) return [true, ''];
@@ -698,6 +910,17 @@ switch ($action) {
         $users = array_map('adminSafeUser', $db->getTable('users'));
         usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         adminJsonResponse(['success' => true, 'users' => array_values($users)]);
+
+    case 'user_balance_details':
+        $id = trim($_GET['id'] ?? $_POST['id'] ?? '');
+        if ($id === '') {
+            adminJsonResponse(['success' => false, 'message' => '缺少用户ID'], 400);
+        }
+        $details = adminUserBalanceDetails($id);
+        if (!$details) {
+            adminJsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        adminJsonResponse(['success' => true, 'details' => $details]);
 
     case 'update_user':
         $payload = adminUserPayload();

@@ -208,6 +208,9 @@ class RelationalStore {
                 `related_id` varchar(80) NOT NULL DEFAULT '',
                 `delivery_status` varchar(30) NOT NULL DEFAULT '',
                 `delivery_error` varchar(255) NOT NULL DEFAULT '',
+                `refund_applied` tinyint(1) NOT NULL DEFAULT 0,
+                `refunded_amount` decimal(14,2) NOT NULL DEFAULT 0.00,
+                `refunded_at` int unsigned DEFAULT NULL,
                 `created_at` int unsigned NOT NULL DEFAULT 0,
                 `paid_at` int unsigned DEFAULT NULL,
                 PRIMARY KEY (`id`),
@@ -247,6 +250,9 @@ class RelationalStore {
         $this->ensureColumn('kn_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'guest_email', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_payment_orders', 'refund_applied', "tinyint(1) NOT NULL DEFAULT 0");
+        $this->ensureColumn('kn_payment_orders', 'refunded_amount', "decimal(14,2) NOT NULL DEFAULT 0.00");
+        $this->ensureColumn('kn_payment_orders', 'refunded_at', "int unsigned DEFAULT NULL");
         $this->ensureColumn('kn_card_codes', 'card_type', "varchar(20) NOT NULL DEFAULT 'balance'");
         $this->ensureColumn('kn_card_codes', 'target_level', "varchar(50) NOT NULL DEFAULT ''");
         $this->ensureSignedDecimalColumn('kn_users', 'balance', 'decimal(14,2)', '0.00');
@@ -947,6 +953,9 @@ class RelationalStore {
             'related_id' => $row['related_id'],
             'delivery_status' => $row['delivery_status'],
             'delivery_error' => $row['delivery_error'],
+            'refund_applied' => !empty($row['refund_applied']),
+            'refunded_amount' => floatval($row['refunded_amount'] ?? 0),
+            'refunded_at' => isset($row['refunded_at']) && $row['refunded_at'] !== null ? intval($row['refunded_at']) : null,
             'created_at' => intval($row['created_at']),
             'paid_at' => $row['paid_at'] !== null ? intval($row['paid_at']) : null,
         ];
@@ -954,9 +963,9 @@ class RelationalStore {
 
     private function upsertPaymentOrder(array $order) {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_payment_orders (id, trade_no, user_id, payment_config_id, pay_type, amount, actual_amount, fee, status, order_type, title, description, target_level, product_id, quantity, pickup_password_hash, guest_token, guest_order, guest_email, guest_query_code, buyer_name, related_id, delivery_status, delivery_error, created_at, paid_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE trade_no = VALUES(trade_no), user_id = VALUES(user_id), payment_config_id = VALUES(payment_config_id), pay_type = VALUES(pay_type), amount = VALUES(amount), actual_amount = VALUES(actual_amount), fee = VALUES(fee), status = VALUES(status), order_type = VALUES(order_type), title = VALUES(title), description = VALUES(description), target_level = VALUES(target_level), product_id = VALUES(product_id), quantity = VALUES(quantity), pickup_password_hash = VALUES(pickup_password_hash), guest_token = VALUES(guest_token), guest_order = VALUES(guest_order), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), buyer_name = VALUES(buyer_name), related_id = VALUES(related_id), delivery_status = VALUES(delivery_status), delivery_error = VALUES(delivery_error), created_at = VALUES(created_at), paid_at = VALUES(paid_at)'
+            'INSERT INTO kn_payment_orders (id, trade_no, user_id, payment_config_id, pay_type, amount, actual_amount, fee, status, order_type, title, description, target_level, product_id, quantity, pickup_password_hash, guest_token, guest_order, guest_email, guest_query_code, buyer_name, related_id, delivery_status, delivery_error, refund_applied, refunded_amount, refunded_at, created_at, paid_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE trade_no = VALUES(trade_no), user_id = VALUES(user_id), payment_config_id = VALUES(payment_config_id), pay_type = VALUES(pay_type), amount = VALUES(amount), actual_amount = VALUES(actual_amount), fee = VALUES(fee), status = VALUES(status), order_type = VALUES(order_type), title = VALUES(title), description = VALUES(description), target_level = VALUES(target_level), product_id = VALUES(product_id), quantity = VALUES(quantity), pickup_password_hash = VALUES(pickup_password_hash), guest_token = VALUES(guest_token), guest_order = VALUES(guest_order), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), buyer_name = VALUES(buyer_name), related_id = VALUES(related_id), delivery_status = VALUES(delivery_status), delivery_error = VALUES(delivery_error), refund_applied = VALUES(refund_applied), refunded_amount = VALUES(refunded_amount), refunded_at = VALUES(refunded_at), created_at = VALUES(created_at), paid_at = VALUES(paid_at)'
         );
         return $stmt->execute([
             $order['id'],
@@ -983,6 +992,9 @@ class RelationalStore {
             $order['related_id'] ?? '',
             $order['delivery_status'] ?? '',
             $order['delivery_error'] ?? '',
+            !empty($order['refund_applied']) ? 1 : 0,
+            floatval($order['refunded_amount'] ?? 0),
+            isset($order['refunded_at']) ? intval($order['refunded_at']) : null,
             intval($order['created_at'] ?? time()),
             isset($order['paid_at']) ? intval($order['paid_at']) : null,
         ]);
