@@ -17,19 +17,29 @@ header('X-XSS-Protection: 1; mode=block');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('X-Robots-Tag: noindex, nofollow');
 
-// CORS配置 - 只允许当前域名
-$allowedOrigins = [
-    'http://localhost',
-    'https://localhost',
-    $_SERVER['HTTP_HOST'] ?? ''
-];
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $allowedOrigins)) {
-    header('Access-Control-Allow-Origin: ' . $origin);
+// CORS配置 — 从 config/security.php 读取白名单，自动补上当前 HTTP_HOST
+$securityConfigFile = __DIR__ . '/../config/security.php';
+$securityConfig = is_file($securityConfigFile) ? require $securityConfigFile : [];
+$corsConfig = $securityConfig['cors'] ?? [];
+$corsEnabled = $corsConfig['enabled'] ?? true;
+if ($corsEnabled) {
+    $allowedOrigins = $corsConfig['allowed_origins'] ?? [];
+    $currentHost = $_SERVER['HTTP_HOST'] ?? '';
+    if ($currentHost !== '') {
+        $allowedOrigins[] = 'http://' . $currentHost;
+        $allowedOrigins[] = 'https://' . $currentHost;
+    }
+    $allowedOrigins = array_unique($allowedOrigins);
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if (in_array($origin, $allowedOrigins)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+    }
+    $allowedMethods = $corsConfig['allowed_methods'] ?? ['GET', 'POST'];
+    header('Access-Control-Allow-Methods: ' . implode(', ', $allowedMethods) . ', OPTIONS');
+    $allowedHeaders = $corsConfig['allowed_headers'] ?? ['Content-Type', 'X-Requested-With'];
+    header('Access-Control-Allow-Headers: ' . implode(', ', $allowedHeaders));
+    header('Access-Control-Max-Age: 86400');
 }
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-CSRF-Token');
-header('Access-Control-Max-Age: 86400');
 
 // 处理OPTIONS预检请求
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -144,7 +154,8 @@ if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// CSRF Token验证：只对已登录会话的普通 POST 强制校验，避免影响登录、注册、支付回调等流程
+// CSRF Token验证：对所有 POST 请求强制校验（含游客），避免跨站请求伪造
+// 豁免列表：登录、注册、验证码获取、支付回调等无状态或跨站预期的接口
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $scriptName = basename($_SERVER['SCRIPT_NAME'] ?? '');
     $actionName = (string)($_REQUEST['action'] ?? '');
@@ -158,8 +169,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'geetest_register',
         'notify'
     ];
-    $requiresCsrf = isset($_SESSION['user_id'])
-        && $scriptName !== 'oauth.php'
+    // 包括游客在内的所有会话都进行 CSRF 检查
+    $requiresCsrf = $scriptName !== 'oauth.php'
         && !in_array($actionName, $csrfExemptActions, true);
 
     if ($requiresCsrf && ($sessionToken === '' || $sentToken === '' || !hash_equals($sessionToken, $sentToken))) {

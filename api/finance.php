@@ -497,7 +497,11 @@ switch ($action) {
         }
 
         if (isset($_POST['smtp_password']) && $_POST['smtp_password'] !== '') {
-            $config['smtp_password'] = sanitizeString($_POST['smtp_password']);
+            $plainPassword = sanitizeString($_POST['smtp_password']);
+            $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
+            $iv = openssl_random_pseudo_bytes(16);
+            $encrypted = openssl_encrypt($plainPassword, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+            $config['smtp_password'] = $encrypted !== false ? base64_encode($iv . $encrypted) : $plainPassword;
         }
         if (isset($_POST['resend_api_key']) && $_POST['resend_api_key'] !== '') {
             $config['resend_api_key'] = sanitizeString($_POST['resend_api_key']);

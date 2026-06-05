@@ -1054,7 +1054,7 @@ async function queryGuestOrderByEmailCode(pickupPassword = '') {
     const code = document.getElementById('guestOrderCodeInput')?.value?.trim().toUpperCase() || '';
     const box = document.getElementById('guestOrderResultBox');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Toast.warning('请输入购买时填写的真实邮箱');
-    if (!/^[A-Z0-9]{8}$/.test(code)) return Toast.warning('请输入邮件中的8位查询码');
+    if (!/^[A-Z0-9]{8,12}$/.test(code)) return Toast.warning('请输入邮件中的8-12位查询码');
     if (box) box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     const result = await API.queryGuestOrderByCode(email, code, pickupPassword);
     if (!result.success) {

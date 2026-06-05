@@ -6,6 +6,9 @@ class RelationalStore {
     private $pdo;
     private $ready = false;
 
+    // 注意：此列表仅包含通用数据表。
+    // system_config 通过独立的 kn_system_config 表处理（loadSystemConfig/saveSystemConfig），不在此列表中。
+    // membership_levels 通过独立的 kn_membership_levels 表处理，也不在此列表中。
     private $tables = [
         'users',
         'products',
@@ -17,6 +20,7 @@ class RelationalStore {
         'payment_configs',
         'payment_orders',
         'withdraw_requests',
+        'system_config',
     ];
 
     public function __construct(PDO $pdo) {

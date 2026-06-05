@@ -88,6 +88,19 @@ class KeyNestMailer {
         $port = intval($config['smtp_port'] ?? 465);
         $username = trim((string)($config['smtp_username'] ?? ''));
         $password = (string)($config['smtp_password'] ?? '');
+        // 尝试解密 SMTP 密码（支持加密存储）
+        if ($password !== '' && $password !== 'N/A') {
+            $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
+            $data = base64_decode($password, true);
+            if ($data !== false && strlen($data) >= 17) {
+                $iv = substr($data, 0, 16);
+                $encrypted = substr($data, 16);
+                $decrypted = openssl_decrypt($encrypted, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+                if ($decrypted !== false) {
+                    $password = $decrypted;
+                }
+            }
+        }
         $secure = strtolower(trim((string)($config['smtp_secure'] ?? 'ssl')));
         $fromEmail = trim((string)($config['resend_from_email'] ?? '')) ?: $username;
         $fromName = trim((string)($config['resend_from_name'] ?? 'KeyNest'));

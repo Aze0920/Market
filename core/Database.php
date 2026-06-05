@@ -34,11 +34,46 @@ class Database {
         $this->loadAll();
     }
 
+    private function ensureTableLoaded($name) {
+        $name = $this->normalizeTableName($name);
+        if (isset($this->data[$name]) && is_array($this->data[$name])) {
+            return;
+        }
+        if ($name === 'system_config') {
+            $this->data['system_config'] = $this->loadSystemConfig();
+            if (empty($this->data['system_config'])) {
+                $this->data['system_config'] = $this->getDefaultSystemConfig();
+                $this->saveSystemConfig();
+            }
+            return;
+        }
+        if ($name === 'membership_levels') {
+            $this->data['membership_levels'] = $this->loadMembershipLevels();
+            if (empty($this->data['membership_levels'])) {
+                $this->data['membership_levels'] = $this->getDefaultMembershipLevels();
+                $this->saveMembershipLevels();
+            }
+            return;
+        }
+        if (!in_array($name, $this->tables, true)) {
+            $this->data[$name] = [];
+            return;
+        }
+        $this->data[$name] = $this->loadTable($name);
+        if ($name === 'users' && empty($this->data['users'])) {
+            $this->initDefaultData();
+        }
+    }
+
     public static function getInstance() {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
+    }
+
+    public function getPdo() {
+        return $this->pdo;
     }
 
     private function connect() {
@@ -61,17 +96,24 @@ class Database {
             ]);
         } catch (PDOException $e) {
             http_response_code(500);
-            $message = '数据库连接失败，请检查 config/database.php 配置和 MySQL 数据库是否已创建。错误：' . $e->getMessage();
+            // 仅记录详细信息到日志，不暴露给前端
+            $logDir = dirname(__DIR__) . '/logs';
+            if (!is_dir($logDir)) { @mkdir($logDir, 0755, true); }
+            @error_log(
+                '[' . date('Y-m-d H:i:s') . '] Database connection failed: ' . $e->getMessage() . PHP_EOL,
+                3,
+                $logDir . '/database_error.log'
+            );
             $isApiRequest = strpos($_SERVER['REQUEST_URI'] ?? '', '/api/') !== false;
             if ($isApiRequest) {
                 header('Content-Type: application/json; charset=utf-8');
                 echo json_encode([
                     'success' => false,
-                    'message' => $message
+                    'message' => '服务器内部错误，请稍后重试或联系管理员'
                 ], JSON_UNESCAPED_UNICODE);
                 exit;
             }
-            exit(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+            exit('服务器内部错误，请稍后重试或联系管理员。');
         }
     }
 
@@ -128,28 +170,12 @@ class Database {
     }
 
     private function loadAll() {
+        // 仅初始化数据结构为空数组，不预加载数据库
+        // 实际数据在首次访问对应表时通过 ensureTableLoaded() 懒加载
         foreach ($this->tables as $table) {
-            if ($table === 'system_config') {
-                $this->data[$table] = $this->loadSystemConfig();
-            } else {
-                $this->data[$table] = $this->loadTable($table);
-            }
+            $this->data[$table] = [];
         }
-
-        $this->data['membership_levels'] = $this->loadMembershipLevels();
-        if (empty($this->data['membership_levels'])) {
-            $this->data['membership_levels'] = $this->getDefaultMembershipLevels();
-            $this->saveMembershipLevels();
-        }
-
-        if (empty($this->data['users'])) {
-            $this->initDefaultData();
-        }
-
-        if (empty($this->data['system_config'])) {
-            $this->data['system_config'] = $this->getDefaultSystemConfig();
-            $this->saveSystemConfig();
-        }
+        $this->data['membership_levels'] = [];
     }
 
     private function normalizeTableName($name) {
@@ -356,6 +382,7 @@ class Database {
     }
 
     public function getMembershipLevels() {
+        $this->ensureTableLoaded('membership_levels');
         return $this->data['membership_levels'];
     }
 
@@ -363,6 +390,7 @@ class Database {
         if (!is_array($levels)) {
             return false;
         }
+        $this->ensureTableLoaded('membership_levels');
         $normalized = [];
         foreach ($levels as $level) {
             $item = $this->normalizeMembershipLevel($level);
@@ -383,6 +411,7 @@ class Database {
         if (!$item) {
             return false;
         }
+        $this->ensureTableLoaded('membership_levels');
         $this->data['membership_levels'][$item['name']] = $item;
         uasort($this->data['membership_levels'], fn($a, $b) => ($a['priority'] <=> $b['priority']) ?: strcmp($a['name'], $b['name']));
         return $this->saveMembershipLevel($item);
@@ -393,7 +422,9 @@ class Database {
         if ($name === '' || $name === 'Free') {
             return false;
         }
-        foreach ($this->data['users'] ?? [] as $user) {
+        $this->ensureTableLoaded('users');
+        $this->ensureTableLoaded('membership_levels');
+        foreach ($this->data['users'] as $user) {
             if (($user['membership_level'] ?? '') === $name) {
                 return false;
             }
@@ -453,6 +484,7 @@ class Database {
     }
 
     public function getSystemConfig() {
+        $this->ensureTableLoaded('system_config');
         return array_merge($this->getDefaultSystemConfig(), $this->data['system_config'] ?? []);
     }
 
@@ -462,6 +494,7 @@ class Database {
     }
 
     public function getPaymentConfigs() {
+        $this->ensureTableLoaded('payment_configs');
         $configs = $this->data['payment_configs'];
         usort($configs, fn($a, $b) => ($a['sort_order'] ?? 0) <=> ($b['sort_order'] ?? 0));
         return array_map(fn($config) => $this->normalizePaymentConfig($config), $configs);
@@ -481,6 +514,7 @@ class Database {
     }
 
     public function getPaymentConfig($id) {
+        $this->ensureTableLoaded('payment_configs');
         foreach ($this->data['payment_configs'] as $config) {
             if ($config['id'] === $id) {
                 return $this->normalizePaymentConfig($config);
@@ -503,6 +537,7 @@ class Database {
     }
 
     public function updatePaymentConfig($id, $update) {
+        $this->ensureTableLoaded('payment_configs');
         foreach ($this->data['payment_configs'] as &$config) {
             if ($config['id'] === $id) {
                 $config = array_merge($config, $update);
@@ -514,11 +549,13 @@ class Database {
     }
 
     public function deletePaymentConfig($id) {
+        $this->ensureTableLoaded('payment_configs');
         $this->data['payment_configs'] = array_values(array_filter($this->data['payment_configs'], fn($c) => $c['id'] !== $id));
         return $this->deleteRecord('payment_configs', $id);
     }
 
     public function getPaymentOrders($userId = null) {
+        $this->ensureTableLoaded('payment_orders');
         if ($userId === null) {
             return $this->data['payment_orders'];
         }
@@ -526,6 +563,7 @@ class Database {
     }
 
     public function getPaymentOrder($id) {
+        $this->ensureTableLoaded('payment_orders');
         foreach ($this->data['payment_orders'] as $order) {
             if ($order['id'] === $id) {
                 return $order;
@@ -535,6 +573,7 @@ class Database {
     }
 
     public function getPaymentOrderByTradeNo($tradeNo) {
+        $this->ensureTableLoaded('payment_orders');
         foreach ($this->data['payment_orders'] as $order) {
             if ($order['trade_no'] === $tradeNo) {
                 return $order;
@@ -554,7 +593,7 @@ class Database {
             'actual_amount' => $orderData['actual_amount'] ?? ($orderData['amount'] ?? 0),
             'fee' => $orderData['fee'] ?? 0,
             'status' => $orderData['status'] ?? 'pending',
-            'type' => $orderData['type'] ?? 'recharge',
+            'order_type' => $orderData['type'] ?? 'recharge',
             'title' => $orderData['title'] ?? '',
             'description' => $orderData['description'] ?? '',
             'target_level' => $orderData['target_level'] ?? '',
@@ -576,6 +615,7 @@ class Database {
     }
 
     public function updatePaymentOrder($id, $update) {
+        $this->ensureTableLoaded('payment_orders');
         foreach ($this->data['payment_orders'] as &$order) {
             if ($order['id'] === $id) {
                 $order = array_merge($order, $update);
@@ -587,6 +627,7 @@ class Database {
 
     public function deletePaymentOrder($id) {
         $exists = false;
+        $this->ensureTableLoaded('payment_orders');
         $this->data['payment_orders'] = array_values(array_filter($this->data['payment_orders'], function($order) use ($id, &$exists) {
             if (($order['id'] ?? '') === $id) {
                 $exists = true;
@@ -600,6 +641,7 @@ class Database {
     public function deletePaymentOrdersByStatus($statuses) {
         $statuses = (array)$statuses;
         $deleted = [];
+        $this->ensureTableLoaded('payment_orders');
         $this->data['payment_orders'] = array_values(array_filter($this->data['payment_orders'], function($order) use ($statuses, &$deleted) {
             if (in_array($order['status'] ?? 'pending', $statuses, true)) {
                 $deleted[] = $order['id'];
@@ -614,6 +656,7 @@ class Database {
     }
 
     public function deleteAllPaymentOrders() {
+        $this->ensureTableLoaded('payment_orders');
         $count = count($this->data['payment_orders']);
         $this->data['payment_orders'] = [];
         $this->saveTable('payment_orders');
@@ -621,6 +664,7 @@ class Database {
     }
 
     public function getWithdrawRequests($userId = null, $status = null) {
+        $this->ensureTableLoaded('withdraw_requests');
         $requests = $this->data['withdraw_requests'];
         if ($userId !== null) {
             $requests = array_filter($requests, fn($r) => $r['user_id'] === $userId);
@@ -632,6 +676,7 @@ class Database {
     }
 
     public function getWithdrawRequest($id) {
+        $this->ensureTableLoaded('withdraw_requests');
         foreach ($this->data['withdraw_requests'] as $request) {
             if ($request['id'] === $id) {
                 return $request;
@@ -689,6 +734,7 @@ class Database {
     }
 
     public function updateWithdrawRequest($id, $update) {
+        $this->ensureTableLoaded('withdraw_requests');
         foreach ($this->data['withdraw_requests'] as &$request) {
             if ($request['id'] === $id) {
                 $request = array_merge($request, $update);
@@ -700,6 +746,7 @@ class Database {
 
     public function deleteWithdrawRequest($id) {
         $exists = false;
+        $this->ensureTableLoaded('withdraw_requests');
         $this->data['withdraw_requests'] = array_values(array_filter($this->data['withdraw_requests'], function($request) use ($id, &$exists) {
             if (($request['id'] ?? '') === $id) {
                 $exists = true;
@@ -712,6 +759,7 @@ class Database {
 
     public function deleteWithdrawRequests($ids) {
         $count = 0;
+        $this->ensureTableLoaded('withdraw_requests');
         foreach ((array)$ids as $id) {
             if ($this->deleteWithdrawRequest($id)) {
                 $count++;
@@ -722,6 +770,7 @@ class Database {
 
     public function deleteDepositRequest($id) {
         $exists = false;
+        $this->ensureTableLoaded('deposit_requests');
         $this->data['deposit_requests'] = array_values(array_filter($this->data['deposit_requests'], function($request) use ($id, &$exists) {
             if (($request['id'] ?? '') === $id) {
                 $exists = true;
@@ -734,6 +783,7 @@ class Database {
 
     public function deleteDepositRequests($ids) {
         $count = 0;
+        $this->ensureTableLoaded('deposit_requests');
         foreach ((array)$ids as $id) {
             if ($this->deleteDepositRequest($id)) {
                 $count++;
@@ -774,7 +824,9 @@ class Database {
     }
 
     public function getTable($name) {
-        return $this->data[$this->normalizeTableName($name)] ?? [];
+        $name = $this->normalizeTableName($name);
+        $this->ensureTableLoaded($name);
+        return $this->data[$name] ?? [];
     }
 
     public function setTable($name, $data) {
@@ -798,6 +850,7 @@ class Database {
         if (!is_string($username) || strlen($username) > 50) {
             return null;
         }
+        $this->ensureTableLoaded('users');
         foreach ($this->data['users'] as $user) {
             if (isset($user['username']) && $user['username'] === $username) {
                 return $user;
@@ -814,6 +867,7 @@ class Database {
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return null;
         }
+        $this->ensureTableLoaded('users');
         foreach ($this->data['users'] as $user) {
             if (isset($user['email']) && strtolower(trim((string)$user['email'])) === $email) {
                 return $user;
@@ -826,6 +880,7 @@ class Database {
         if (!is_string($id) || strlen($id) > 80) {
             return null;
         }
+        $this->ensureTableLoaded('users');
         foreach ($this->data['users'] as $user) {
             if (isset($user['id']) && $user['id'] === $id) {
                 return $user;
@@ -857,6 +912,7 @@ class Database {
             $userId = $updates['id'];
         }
 
+        $this->ensureTableLoaded('users');
         $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar', 'merchant_rules_accepted', 'merchant_rules_accepted_at', 'merchant_status', 'merchant_opened_once', 'merchant_approved_at', 'merchant_reapply_at', 'custom_label_text', 'custom_label_icon', 'custom_label_gradient'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
@@ -929,6 +985,7 @@ class Database {
     }
 
     public function deleteUser($userId) {
+        $this->ensureTableLoaded('users');
         foreach ($this->data['users'] as $user) {
             if (($user['id'] ?? '') === $userId && (($user['username'] ?? '') === 'admin' || ($user['role'] ?? '') === 'admin')) {
                 return false;
@@ -943,6 +1000,7 @@ class Database {
     }
 
     public function getCardCode($code) {
+        $this->ensureTableLoaded('card_codes');
         foreach ($this->data['card_codes'] as $card) {
             if ($card['code'] === $code) {
                 return $card;
@@ -960,6 +1018,7 @@ class Database {
     }
 
     public function useCardCode($code, $userId) {
+        $this->ensureTableLoaded('card_codes');
         foreach ($this->data['card_codes'] as &$card) {
             if ($card['code'] === $code && empty($card['used'])) {
                 $card['used'] = true;
@@ -972,11 +1031,13 @@ class Database {
     }
 
     public function deleteCardCode($id) {
+        $this->ensureTableLoaded('card_codes');
         $this->data['card_codes'] = array_values(array_filter($this->data['card_codes'], fn($c) => $c['id'] !== $id));
         return $this->deleteRecord('card_codes', $id);
     }
 
     public function getCardCodes($onlyUnused = false) {
+        $this->ensureTableLoaded('card_codes');
         $cards = $this->data['card_codes'];
         if ($onlyUnused) {
             $cards = array_filter($cards, fn($c) => empty($c['used']));
@@ -985,6 +1046,8 @@ class Database {
     }
 
     public function getProducts($filters = []) {
+        $this->ensureTableLoaded('products');
+        $this->ensureTableLoaded('membership_levels');
         $products = $this->data['products'];
         if (isset($filters['stock_min']) && $filters['stock_min'] > 0) {
             $products = array_filter($products, fn($p) => ($p['stock'] ?? 0) > 0);
@@ -1029,6 +1092,7 @@ class Database {
     }
 
     public function getProductById($id) {
+        $this->ensureTableLoaded('products');
         foreach ($this->data['products'] as $product) {
             if ($product['id'] === $id) {
                 return $product;
@@ -1043,6 +1107,7 @@ class Database {
     }
 
     public function updateProduct($product) {
+        $this->ensureTableLoaded('products');
         foreach ($this->data['products'] as &$p) {
             if ($p['id'] === $product['id']) {
                 $p = array_merge($p, $product);
@@ -1053,11 +1118,13 @@ class Database {
     }
 
     public function deleteProduct($id) {
+        $this->ensureTableLoaded('products');
         $this->data['products'] = array_values(array_filter($this->data['products'], fn($p) => $p['id'] !== $id));
         return $this->deleteRecord('products', $id);
     }
 
     public function getOrders($userId = null, $type = 'buyer') {
+        $this->ensureTableLoaded('orders');
         $orders = $this->data['orders'];
         if ($userId) {
             $field = $type === 'buyer' ? 'buyer_id' : 'seller_id';
@@ -1072,6 +1139,7 @@ class Database {
     }
 
     public function updateOrder($order) {
+        $this->ensureTableLoaded('orders');
         foreach ($this->data['orders'] as &$existing) {
             if (($existing['id'] ?? '') === ($order['id'] ?? '')) {
                 $existing = array_merge($existing, $order);
@@ -1082,6 +1150,7 @@ class Database {
     }
 
     public function getOrderById($id) {
+        $this->ensureTableLoaded('orders');
         foreach ($this->data['orders'] as $order) {
             if ($order['id'] === $id) {
                 return $order;
@@ -1091,6 +1160,7 @@ class Database {
     }
 
     public function getComments($productId = null) {
+        $this->ensureTableLoaded('comments');
         $comments = $this->data['comments'];
         if ($productId) {
             $comments = array_filter($comments, fn($c) => ($c['product_id'] ?? '') === $productId);
@@ -1104,6 +1174,7 @@ class Database {
     }
 
     public function hasComment($userId, $productId, $orderId) {
+        $this->ensureTableLoaded('comments');
         foreach ($this->data['comments'] as $c) {
             if ($c['user_id'] === $userId && $c['product_id'] === $productId && $c['order_id'] === $orderId) {
                 return true;
@@ -1114,6 +1185,7 @@ class Database {
 
     public function deleteComment($id) {
         $exists = false;
+        $this->ensureTableLoaded('comments');
         $this->data['comments'] = array_values(array_filter($this->data['comments'], function($comment) use ($id, &$exists) {
             if (($comment['id'] ?? '') === $id) {
                 $exists = true;
@@ -1125,6 +1197,7 @@ class Database {
     }
 
     public function getMessages($user1, $user2 = null) {
+        $this->ensureTableLoaded('messages');
         $msgs = $this->data['messages'];
         if ($user2) {
             $msgs = array_filter($msgs, fn($m) =>
@@ -1143,6 +1216,7 @@ class Database {
     }
 
     public function markMessagesRead($reader, $sender) {
+        $this->ensureTableLoaded('messages');
         foreach ($this->data['messages'] as &$m) {
             if ($m['to'] === $reader && $m['from'] === $sender && empty($m['read'])) {
                 $m['read'] = true;
@@ -1152,6 +1226,7 @@ class Database {
     }
 
     public function getUnreadCount($username) {
+        $this->ensureTableLoaded('messages');
         return count(array_filter($this->data['messages'], fn($m) => $m['to'] === $username && empty($m['read'])));
     }
 
@@ -1185,6 +1260,7 @@ class Database {
     }
 
     public function getDepositRequests($userId = null) {
+        $this->ensureTableLoaded('deposit_requests');
         $requests = $this->data['deposit_requests'];
         if ($userId) {
             $requests = array_filter($requests, fn($r) => $r['user_id'] === $userId);
@@ -1198,6 +1274,7 @@ class Database {
     }
 
     public function updateDepositRequest($request) {
+        $this->ensureTableLoaded('deposit_requests');
         foreach ($this->data['deposit_requests'] as &$r) {
             if ($r['id'] === $request['id']) {
                 $r = array_merge($r, $request);

@@ -88,8 +88,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
         $message = '数据库名只能包含字母、数字和下划线。';
     } elseif (strlen($adminUser) < 3 || strlen($adminUser) > 20) {
         $message = '管理员用户名需为 3-20 位字母、数字或下划线。';
-    } elseif (strlen($adminPassword) < 6) {
-        $message = '管理员密码至少 6 位。';
+    } elseif (strlen($adminPassword) < 8) {
+        $message = '管理员密码至少 8 位。';
     } elseif (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
         $message = '请填写正确的管理员邮箱。';
     } else {
@@ -114,6 +114,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
             $messageType = 'success';
             $message = '安装完成！现在可以进入网站并使用管理员账号登录。';
             $installed = true;
+            // 安装完成后自动删除安装脚本，防止被重复访问
+            $selfFile = __FILE__;
+            if (is_writable($selfFile)) {
+                @unlink($selfFile);
+            }
         } catch (Throwable $e) {
             $message = '安装失败：' . $e->getMessage();
         }

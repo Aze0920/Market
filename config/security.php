@@ -12,16 +12,17 @@ return [
         'rate_limit_window' => 300, // 5分钟
         'session_lifetime' => 86400, // 24小时
         'require_strong_password' => true,
-        'password_min_length' => 6,
+        'password_min_length' => 8,
         'enable_ip_check' => true,
     ],
     
-    // CORS设置
+    // CORS设置 — 本配置由 api/index.php 读取并生效
+    // 注意：留空数组不允许任何来源；填写具体域名白名单列表
     'cors' => [
         'enabled' => true,
-        'allowed_origins' => [], // 空数组表示允许所有来源，或填入具体域名
+        'allowed_origins' => ['http://localhost', 'https://localhost'], // 填入允许的域名，前端会自动补上当前 HTTP_HOST
         'allowed_methods' => ['GET', 'POST'],
-        'allowed_headers' => ['Content-Type', 'X-Requested-With'],
+        'allowed_headers' => ['Content-Type', 'X-Requested-With', 'X-CSRF-Token'],
     ],
     
     // API设置

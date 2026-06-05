@@ -147,6 +147,37 @@ function sanitizeMarkdown($str) {
     return trim((string)$str);
 }
 
+function encryptSensitive($plaintext) {
+    if (empty($plaintext) || $plaintext === 'N/A') {
+        return $plaintext;
+    }
+    $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
+    $iv = openssl_random_pseudo_bytes(16);
+    $encrypted = openssl_encrypt($plaintext, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    if ($encrypted === false) {
+        return $plaintext;
+    }
+    return base64_encode($iv . $encrypted);
+}
+
+function decryptSensitive($ciphertext) {
+    if (empty($ciphertext) || $ciphertext === 'N/A') {
+        return $ciphertext;
+    }
+    $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
+    $data = base64_decode($ciphertext, true);
+    if ($data === false || strlen($data) < 17) {
+        return $ciphertext;
+    }
+    $iv = substr($data, 0, 16);
+    $encrypted = substr($data, 16);
+    $decrypted = openssl_decrypt($encrypted, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    if ($decrypted === false) {
+        return $ciphertext;
+    }
+    return $decrypted;
+}
+
 function parseAccountLine($line) {
     $line = trim((string)$line);
     if ($line === '' || strlen($line) > 2000) {
@@ -157,9 +188,9 @@ function parseAccountLine($line) {
     if (count($parts) >= 2) {
         return [
             'email' => sanitizeString($parts[0]),
-            'password' => $parts[1],
+            'password' => encryptSensitive($parts[1]),
             'client_id' => sanitizeString($parts[2] ?? 'N/A'),
-            'fresh_token' => $parts[3] ?? 'N/A',
+            'fresh_token' => encryptSensitive($parts[3] ?? 'N/A'),
             'content' => $line,
             'format' => 'pipe',
             'sold' => false
@@ -168,9 +199,9 @@ function parseAccountLine($line) {
 
     return [
         'email' => 'N/A',
-        'password' => 'N/A',
+        'password' => encryptSensitive('N/A'),
         'client_id' => 'N/A',
-        'fresh_token' => 'N/A',
+        'fresh_token' => encryptSensitive('N/A'),
         'content' => $line,
         'format' => 'line',
         'sold' => false
@@ -741,6 +772,8 @@ switch ($action) {
         $accountList = is_array($product['account_list'] ?? null) ? $product['account_list'] : [];
         foreach ($accountList as $index => $item) {
             if (is_array($item)) {
+                $item['password'] = decryptSensitive($item['password'] ?? '');
+                $item['fresh_token'] = decryptSensitive($item['fresh_token'] ?? '');
                 $item['content'] = trim((string)($item['content'] ?? ''));
                 if ($item['content'] === '') {
                     $values = array_filter([

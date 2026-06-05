@@ -1127,7 +1127,7 @@ async function queryGuestOrderByEmailCode(pickupPassword = '') {
     const code = document.getElementById('guestOrderCodeInput')?.value?.trim().toUpperCase() || '';
     const box = document.getElementById('guestOrderResultBox');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Toast.warning('请输入购买时填写的真实邮箱');
-    if (!/^[A-Z0-9]{8}$/.test(code)) return Toast.warning('请输入邮件中的8位查询码');
+    if (!/^[A-Z0-9]{8,12}$/.test(code)) return Toast.warning('请输入邮件中的8-12位查询码');
     if (box) box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     const result = await API.queryGuestOrderByCode(email, code, pickupPassword);
     if (!result.success) {
@@ -1488,22 +1488,16 @@ function renderMembershipCardActivationCard() {
             <div class="card-header">
                 <i class="bi bi-credit-card-2-front"></i>
                 <h5>卡密激活会员</h5>
-                <small>使用会员卡密快速开通权益</small>
+                <small>请使用卡密激活会员</small>
             </div>
             <div class="card-body">
-                <div class="text-center mb-3">
-                    <span class="badge bg-primary-light text-primary fs-5"><i class="bi bi-key"></i> 输入卡密</span>
+                <div class="text-center py-4">
+                    <div class="fw-semibold text-muted">请使用卡密激活会员</div>
                 </div>
-                <ul class="privilege-list">
-                    <li><i class="bi bi-check"></i> 支持后台生成的会员卡密</li>
-                    <li><i class="bi bi-check"></i> 兑换成功后自动刷新会员等级</li>
-                    <li><i class="bi bi-check"></i> 独立激活入口，不占用会员等级配置</li>
-                    <li><i class="bi bi-check"></i> Free 为默认会员，不支持生成激活卡</li>
-                </ul>
             </div>
             <div class="card-footer">
                 <button class="btn btn-primary w-100" onclick="openCardRechargeModal('membership')">
-                    <i class="bi bi-lightning-charge me-1"></i>立即激活
+                    <i class="bi bi-key me-1"></i>输入卡密
                 </button>
             </div>
         </div>

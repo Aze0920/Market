@@ -42,10 +42,28 @@ function genComplaintPassword() {
     return str_pad((string)random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
 }
 
+function decryptSensitive($ciphertext) {
+    if (empty($ciphertext) || $ciphertext === 'N/A') {
+        return $ciphertext;
+    }
+    $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
+    $data = base64_decode($ciphertext, true);
+    if ($data === false || strlen($data) < 17) {
+        return $ciphertext;
+    }
+    $iv = substr($data, 0, 16);
+    $encrypted = substr($data, 16);
+    $decrypted = openssl_decrypt($encrypted, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    if ($decrypted === false) {
+        return $ciphertext;
+    }
+    return $decrypted;
+}
+
 function genGuestQueryCode() {
     $chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     $code = '';
-    for ($i = 0; $i < 8; $i++) {
+    for ($i = 0; $i < 12; $i++) {
         $code .= $chars[random_int(0, strlen($chars) - 1)];
     }
     return $code;
@@ -98,6 +116,13 @@ function anonymizeGuestBuyerForSeller($order) {
 function safeOrderForResponse($order) {
     if (isset($order['delivery_info']) && is_array($order['delivery_info'])) {
         unset($order['delivery_info']['pickup_password_hash']);
+        if (isset($order['delivery_info']['items']) && is_array($order['delivery_info']['items'])) {
+            foreach ($order['delivery_info']['items'] as &$item) {
+                $item['password'] = decryptSensitive($item['password'] ?? '');
+                $item['fresh_token'] = decryptSensitive($item['fresh_token'] ?? '');
+            }
+            unset($item);
+        }
     }
     if (isset($order['complaint']) && is_array($order['complaint'])) {
         unset($order['complaint']['password_hash']);
@@ -189,7 +214,7 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
         }
         $guestAllowedByToken = !empty($order['guest_order']) && $guestToken !== '' && hash_equals((string)($order['guest_token'] ?? ''), hash('sha256', $guestToken));
-        $guestAllowedByCode = !empty($order['guest_order']) && filter_var($guestEmail, FILTER_VALIDATE_EMAIL) && preg_match('/^[A-Z0-9]{8}$/', $guestQueryCode) && strtolower((string)($order['guest_email'] ?? '')) === $guestEmail && hash_equals(strtoupper((string)($order['guest_query_code'] ?? '')), $guestQueryCode);
+        $guestAllowedByCode = !empty($order['guest_order']) && filter_var($guestEmail, FILTER_VALIDATE_EMAIL) && preg_match('/^[A-Z0-9]{8,12}$/', $guestQueryCode) && strtolower((string)($order['guest_email'] ?? '')) === $guestEmail && hash_equals(strtoupper((string)($order['guest_query_code'] ?? '')), $guestQueryCode);
         $guestAllowed = $guestAllowedByToken || $guestAllowedByCode;
         if (($sessionUserId === '' || ($order['buyer_id'] !== $userId && $order['seller_id'] !== $userId)) && !$guestAllowed) {
             jsonResponse(['success' => false, 'message' => '无权查看'], 403);
@@ -220,8 +245,8 @@ switch ($action) {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             jsonResponse(['success' => false, 'message' => '请输入购买时填写的真实邮箱'], 400);
         }
-        if (!preg_match('/^[A-Z0-9]{8}$/', $code)) {
-            jsonResponse(['success' => false, 'message' => '请输入8位查询码'], 400);
+        if (!preg_match('/^[A-Z0-9]{8,12}$/', $code)) {
+            jsonResponse(['success' => false, 'message' => '请输入8-12位查询码'], 400);
         }
         $order = findGuestOrderByEmailCode($email, $code);
         if (!$order) {

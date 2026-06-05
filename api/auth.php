@@ -508,8 +508,8 @@ switch ($action) {
         if ($newPassword !== $confirmPassword) {
             jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
         }
-        if (strlen($newPassword) < 6 || !preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{6,}$/', $newPassword)) {
-            jsonResponse(['success' => false, 'message' => '密码至少6位，且需包含字母和数字'], 400);
+        if (strlen($newPassword) < 8 || !preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/', $newPassword)) {
+            jsonResponse(['success' => false, 'message' => '密码至少8位，且需包含字母和数字'], 400);
         }
         $userId = verifyPasswordResetEmailCode($email, $code, true);
         $user = $db->getUserById($userId);
@@ -546,11 +546,11 @@ switch ($action) {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             jsonResponse(['success' => false, 'message' => '请输入有效的邮箱地址'], 400);
         }
-        if (strlen($password) < 6) {
-            jsonResponse(['success' => false, 'message' => '密码至少6位'], 400);
+        if (strlen($password) < 8) {
+            jsonResponse(['success' => false, 'message' => '密码至少8位'], 400);
         }
-        if (!preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{6,}$/', $password)) {
-            jsonResponse(['success' => false, 'message' => '密码需包含字母和数字'], 400);
+        if (!preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/', $password)) {
+            jsonResponse(['success' => false, 'message' => '密码需包含字母和数字（至少8位）'], 400);
         }
         if ($password !== $passwordConfirm) {
             jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
@@ -1000,8 +1000,8 @@ switch ($action) {
         if ($newPassword !== $confirmPassword) {
             jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
         }
-        if (strlen($newPassword) < 6 || !preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{6,}$/', $newPassword)) {
-            jsonResponse(['success' => false, 'message' => '密码至少6位，且需包含字母和数字'], 400);
+        if (strlen($newPassword) < 8 || !preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/', $newPassword)) {
+            jsonResponse(['success' => false, 'message' => '密码至少8位，且需包含字母和数字'], 400);
         }
         verifyProfileEmailCode($user, $code, false);
         $ok = $db->updateUser($userId, ['password' => password_hash($newPassword, PASSWORD_DEFAULT)]);

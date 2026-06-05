@@ -49,8 +49,8 @@ function adminUserPayload() {
     ];
     $newPassword = trim((string)($_POST['new_password'] ?? ''));
     if ($newPassword !== '') {
-        if (strlen($newPassword) < 6 || strlen($newPassword) > 72) {
-            adminJsonResponse(['success' => false, 'message' => '新密码长度需为 6-72 位'], 400);
+        if (strlen($newPassword) < 8 || strlen($newPassword) > 72) {
+            adminJsonResponse(['success' => false, 'message' => '新密码长度需为 8-72 位'], 400);
         }
         $payload['password'] = password_hash($newPassword, PASSWORD_DEFAULT);
     }
@@ -131,6 +131,7 @@ function adminUpdaterConfig() {
         'work_dir' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'update_repo' . DIRECTORY_SEPARATOR . 'Market',
         'site_dir' => dirname(__DIR__),
         'token_file' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'github-token.txt',
+        'github_token' => getenv('KEYNEST_GITHUB_TOKEN') ?: trim((string)@file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'github-token.txt')),
         'version_file' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'update_version.json',
         'git_bin' => adminFindGitBinary(),
     ];
@@ -216,7 +217,7 @@ function adminRunCommand($command, $cwd = null) {
 }
 
 function adminAppVersion() {
-    return 'V1.2.4';
+    return 'V1.2.5';
 }
 
 function adminUpdaterVersion($config) {
@@ -244,10 +245,7 @@ function adminSaveUpdaterVersion($config, $commit) {
 }
 
 function adminGitRemoteUrl($config) {
-    if (!is_file($config['token_file'])) {
-        return $config['repo_url'];
-    }
-    $token = trim(file_get_contents($config['token_file']));
+    $token = trim((string)($config['github_token'] ?? ''));
     if ($token === '') {
         return $config['repo_url'];
     }

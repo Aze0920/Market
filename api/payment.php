@@ -195,28 +195,35 @@ function buildPaymentUpdateFromPost($requireSecret = true) {
     return $update;
 }
 
-function releaseProductPurchaseLock($handle) {
-    if (is_resource($handle)) {
-        flock($handle, LOCK_UN);
-        fclose($handle);
+function releaseProductPurchaseLock($lockName) {
+    if (empty($lockName)) {
+        return;
+    }
+    try {
+        $db = Database::getInstance();
+        $pdo = $db->getPdo();
+        $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $stmt->execute([$lockName]);
+    } catch (Exception $e) {
+        // 释放锁失败不影响主流程
+        error_log('Release product lock failed: ' . $e->getMessage());
     }
 }
 
 function acquireProductPurchaseLock($productId) {
-    $lockDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'keynest_product_locks';
-    if (!is_dir($lockDir)) {
-        @mkdir($lockDir, 0777, true);
-    }
-    $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', (string)$productId);
-    $handle = fopen($lockDir . DIRECTORY_SEPARATOR . $safeId . '.lock', 'c');
-    if (!$handle) {
+    try {
+        $db = Database::getInstance();
+        $pdo = $db->getPdo();
+        $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', (string)$productId);
+        $lockName = 'keynest_product_' . $safeId;
+        $stmt = $pdo->prepare('SELECT GET_LOCK(?, 10)');
+        $stmt->execute([$lockName]);
+        $result = $stmt->fetchColumn();
+        return $result == 1 ? $lockName : null;
+    } catch (Exception $e) {
+        error_log('Acquire product lock failed: ' . $e->getMessage());
         return null;
     }
-    if (!flock($handle, LOCK_EX)) {
-        fclose($handle);
-        return null;
-    }
-    return $handle;
 }
 
 function deferredPublishFeeForDelivery(array $deliveryList) {
@@ -232,7 +239,7 @@ function deferredPublishFeeForDelivery(array $deliveryList) {
 function genGuestQueryCode() {
     $chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     $code = '';
-    for ($i = 0; $i < 8; $i++) {
+    for ($i = 0; $i < 12; $i++) {
         $code .= $chars[random_int(0, strlen($chars) - 1)];
     }
     return $code;
@@ -240,7 +247,7 @@ function genGuestQueryCode() {
 
 function sendGuestQueryCodeEmail($email, $code, $paymentOrder, $productOrder = null) {
     global $db;
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[A-Z0-9]{8}$/', $code)) {
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[A-Z0-9]{8,12}$/', $code)) {
         return ['success' => false, 'message' => '游客邮箱或查询码无效'];
     }
     $config = $db->getSystemConfig();

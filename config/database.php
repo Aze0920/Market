@@ -10,6 +10,6 @@ return [
     'port' => 3306,
     'database' => 'keynest',
     'username' => 'root',
-    'password' => '',
+    'password' => getenv('KEYNEST_DB_PASSWORD') ?: '',
     'charset' => 'utf8mb4',
 ];
