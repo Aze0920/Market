@@ -1206,9 +1206,21 @@ async function openProductStockModal(id) {
     instance.show();
     await loadProductStockIntoModal(id);
 }
-async function loadProductStockIntoModal(id) {
+function stockFilterButton(label, count, filter, activeFilter) {
+    const active = filter === activeFilter;
+    return `<button type="button" class="btn w-100 text-start border rounded-4 p-3 ${active ? 'btn-primary text-white' : 'btn-light'}" onclick="setProductStockFilter('${escapeHtml(filter)}')"><div class="small ${active ? 'text-white-50' : 'text-muted'}">${escapeHtml(label)}</div><strong>${count}</strong></button>`;
+}
+function setProductStockFilter(filter) {
+    const productId = document.getElementById('productStockModalBody')?.dataset.productId || '';
+    if (!productId) return;
+    loadProductStockIntoModal(productId, filter);
+}
+async function loadProductStockIntoModal(id, filter = null) {
     const body = document.getElementById('productStockModalBody');
     if (!body) return;
+    const currentFilter = filter || body.dataset.filter || 'all';
+    body.dataset.productId = id;
+    body.dataset.filter = currentFilter;
     const res = await request('admin.php?action=product_stock&id=' + encodeURIComponent(id));
     if (!res.success) {
         body.innerHTML = `<div class="alert alert-danger">${escapeHtml(res.message || '库存加载失败')}</div>`;
@@ -1217,13 +1229,14 @@ async function loadProductStockIntoModal(id) {
     const items = Array.isArray(res.items) ? res.items : [];
     const unsold = items.filter(item => !item.sold).length;
     const sold = items.filter(item => item.sold).length;
+    const visibleItems = currentFilter === 'sold' ? items.filter(item => item.sold) : (currentFilter === 'unsold' ? items.filter(item => !item.sold) : items);
     body.innerHTML = `
         <div class="row g-3 mb-3">
-            <div class="col-md-4"><div class="border rounded-4 p-3"><div class="text-muted small">当前可售库存</div><strong>${unsold}</strong></div></div>
-            <div class="col-md-4"><div class="border rounded-4 p-3"><div class="text-muted small">已售库存</div><strong>${sold}</strong></div></div>
-            <div class="col-md-4"><div class="border rounded-4 p-3"><div class="text-muted small">后台记录总数</div><strong>${items.length}</strong></div></div>
+            <div class="col-md-4">${stockFilterButton('当前可售库存', unsold, 'unsold', currentFilter)}</div>
+            <div class="col-md-4">${stockFilterButton('已售库存', sold, 'sold', currentFilter)}</div>
+            <div class="col-md-4">${stockFilterButton('后台记录总数', items.length, 'all', currentFilter)}</div>
         </div>
-        ${items.length ? `<div class="table-responsive"><table class="table"><thead><tr><th style="width:76px">序号</th><th>库存内容</th><th style="width:96px">状态</th><th style="width:110px" class="text-end">操作</th></tr></thead><tbody>${items.map(item => `
+        ${visibleItems.length ? `<div class="table-responsive"><table class="table"><thead><tr><th style="width:76px">序号</th><th>库存内容</th><th style="width:96px">状态</th><th style="width:110px" class="text-end">操作</th></tr></thead><tbody>${visibleItems.map(item => `
             <tr>
                 <td>#${Number(item.index) + 1}</td>
                 <td><pre class="mb-0 small" style="white-space:pre-wrap;word-break:break-word;max-width:720px;">${escapeHtml(stockDisplayText(item))}</pre></td>
@@ -1245,7 +1258,8 @@ async function deleteProductStockItem(id, index) {
     if (!res.success) return showToast(res.message || '删除库存失败', 'error');
     showToast(res.message || '库存已删除', 'success');
     await loadAdminData();
-    await loadProductStockIntoModal(id);
+    const currentFilter = document.getElementById('productStockModalBody')?.dataset.filter || 'all';
+    await loadProductStockIntoModal(id, currentFilter);
 }
 async function deleteProductAdmin(id) {
     const product = (Admin.cache.products || []).find(p => p.id === id);
@@ -1273,7 +1287,7 @@ function orderTypeLabel(type, payType) {
         membership_upgrade: '在线会员升级',
         membership_upgrade_balance: '余额会员升级',
         product_purchase: '余额购买商品',
-        product_online_purchase: '在线支付商品订单',
+        product_online_purchase: '在线支付商品',
         product_purchase_refund: '购买失败退款',
         product_sale_income: '商品销售收入',
         publish_fee: '发布扣费',
@@ -1520,8 +1534,36 @@ function complaintAdminTableRows(orders) {
             </tr>`;
     }).join('');
 }
+function complaintAdminReplies(complaint = {}) {
+    const replies = Array.isArray(complaint.admin_replies) ? complaint.admin_replies : [];
+    if (replies.length) return replies;
+    if (complaint.admin_reply) {
+        return [{ content: complaint.admin_reply, username: complaint.admin_replied_by || 'admin', created_at: complaint.admin_replied_at || complaint.updated_at || 0 }];
+    }
+    return [];
+}
+function openAdminComplaintReplies(orderId) {
+    const order = (Admin.cache.complaints || []).find(o => String(o.id || '') === String(orderId || ''));
+    if (!order || !order.complaint) return showToast('投诉不存在，请刷新后重试', 'error');
+    const replies = complaintAdminReplies(order.complaint);
+    adminModal({
+        title: '管理员回复',
+        size: 'lg',
+        body: replies.length ? `<div class="d-flex flex-column gap-2">${replies.map((reply, index) => `
+            <div class="border rounded-3 p-3 bg-light-subtle">
+                <div class="d-flex justify-content-between gap-2 mb-2 small text-muted">
+                    <strong>#${index + 1} ${escapeHtml(reply.username || reply.by || 'admin')}</strong>
+                    <span>${dateText(reply.created_at)}</span>
+                </div>
+                <div style="white-space:pre-wrap;word-break:break-word;">${escapeHtml(reply.content || reply.reply || '')}</div>
+            </div>
+        `).join('')}</div>` : '<div class="text-muted text-center py-4">暂无管理员回复</div>',
+        footer: '<button class="btn btn-primary" data-bs-dismiss="modal">关闭</button>'
+    });
+}
 function complaintAdminDetailHtml(order) {
     const complaint = order.complaint || {};
+    const adminReplies = complaintAdminReplies(complaint);
     return `
         <div class="complaint-detail-panel" onclick="event.stopPropagation()">
             <div class="complaint-grid-admin mb-3">
@@ -1532,10 +1574,16 @@ function complaintAdminDetailHtml(order) {
             <div class="mb-3"><div class="small text-muted mb-1">投诉原因</div><div class="complaint-reason-admin">${escapeHtml(complaint.reason || '-')}</div></div>
             <div class="row g-3 mb-3">
                 <div class="col-md-6"><div class="small text-muted mb-1">卖家回复</div><div class="complaint-reason-admin">${escapeHtml(complaint.seller_reply || '暂无')}</div></div>
-                <div class="col-md-6"><div class="small text-muted mb-1">管理员回复</div><textarea id="adminComplaintReply-${escapeHtml(order.id)}" class="form-control" rows="4" maxlength="800" placeholder="填写管理员处理意见">${escapeHtml(complaint.admin_reply || '')}</textarea></div>
+                <div class="col-md-6">
+                    <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+                        <div class="small text-muted">管理员回复</div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="openAdminComplaintReplies('${escapeHtml(order.id)}')">查看回复${adminReplies.length ? '（' + adminReplies.length + '）' : ''}</button>
+                    </div>
+                    <textarea id="adminComplaintReply-${escapeHtml(order.id)}" class="form-control" rows="4" maxlength="800" placeholder="填写新的管理员回复，每次提交都会追加记录"></textarea>
+                </div>
             </div>
             <div class="d-flex flex-wrap gap-2 justify-content-end">
-                <button class="btn btn-sm btn-outline-primary" onclick="saveAdminComplaintReply('${escapeHtml(order.id)}')">保存回复</button>
+                <button class="btn btn-sm btn-outline-primary" onclick="saveAdminComplaintReply('${escapeHtml(order.id)}')">提交回复</button>
                 ${['open','processing','resolved','rejected'].map(s => `<button class="btn btn-sm ${complaint.status === s ? 'btn-primary' : 'btn-outline-secondary'}" onclick="updateAdminComplaintStatus('${escapeHtml(order.id)}','${s}')">${complaintStatusText(s)}</button>`).join('')}
             </div>
         </div>`;
@@ -1691,7 +1739,7 @@ function renderOrders() {
                                 <td>${money(o.actual_amount)}</td>
                                 <td>${orderStatusDisplay(o)}</td>
                                 <td>${dateText(o.created_at)}</td>
-                                <td class="text-end"><div class="d-flex justify-content-end gap-1 flex-wrap">${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success" onclick="openPaymentOrderDataModal('${escapeHtml(o.id)}')">查看数据</button>` : ''}<button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></div></td>
+                                <td class="text-end"><div class="d-inline-flex justify-content-end align-items-center gap-1 flex-nowrap">${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success text-nowrap" onclick="openPaymentOrderDataModal('${escapeHtml(o.id)}')">查看数据</button>` : ''}<button class="btn btn-sm btn-outline-danger text-nowrap" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></div></td>
                             </tr>
                             <tr id="orderStatusEditor-${escapeHtml(o.id)}" class="order-status-editor-row hidden">
                                 <td colspan="10">${orderStatusEditor(o)}</td>

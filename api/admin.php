@@ -217,7 +217,7 @@ function adminRunCommand($command, $cwd = null) {
 }
 
 function adminAppVersion() {
-    return 'V1.2.5';
+    return 'V1.2.6';
 }
 
 function adminUpdaterVersion($config) {
@@ -1169,9 +1169,28 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => '请填写回复内容，最多800字'], 400);
         }
         $adminUser = $db->getUserById($_SESSION['user_id'] ?? '');
-        $order['complaint']['admin_reply'] = htmlspecialchars($reply, ENT_QUOTES, 'UTF-8');
+        $safeReply = htmlspecialchars($reply, ENT_QUOTES, 'UTF-8');
+        $replyItem = [
+            'id' => bin2hex(random_bytes(8)),
+            'content' => $safeReply,
+            'username' => $adminUser['username'] ?? 'admin',
+            'created_at' => time(),
+        ];
+        if (!isset($order['complaint']['admin_replies']) || !is_array($order['complaint']['admin_replies'])) {
+            $order['complaint']['admin_replies'] = [];
+            if (!empty($order['complaint']['admin_reply'])) {
+                $order['complaint']['admin_replies'][] = [
+                    'id' => bin2hex(random_bytes(8)),
+                    'content' => (string)$order['complaint']['admin_reply'],
+                    'username' => $order['complaint']['admin_replied_by'] ?? 'admin',
+                    'created_at' => intval($order['complaint']['admin_replied_at'] ?? $order['complaint']['updated_at'] ?? time()),
+                ];
+            }
+        }
+        $order['complaint']['admin_replies'][] = $replyItem;
+        $order['complaint']['admin_reply'] = $safeReply;
         $order['complaint']['admin_replied_by'] = $adminUser['username'] ?? 'admin';
-        $order['complaint']['admin_replied_at'] = time();
+        $order['complaint']['admin_replied_at'] = $replyItem['created_at'];
         $order['complaint']['updated_at'] = time();
         $db->updateOrder($order);
         adminJsonResponse(['success' => true, 'message' => '管理员回复已保存']);
