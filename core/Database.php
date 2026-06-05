@@ -9,6 +9,7 @@ class Database {
     private $pdo;
     private $store;
     private $data = [];
+    private $loadedTables = [];
     private $tables = [
         'users',
         'products',
@@ -36,9 +37,10 @@ class Database {
 
     private function ensureTableLoaded($name) {
         $name = $this->normalizeTableName($name);
-        if (isset($this->data[$name]) && is_array($this->data[$name])) {
+        if (!empty($this->loadedTables[$name])) {
             return;
         }
+        $this->loadedTables[$name] = true;
         if ($name === 'system_config') {
             $this->data['system_config'] = $this->loadSystemConfig();
             if (empty($this->data['system_config'])) {
