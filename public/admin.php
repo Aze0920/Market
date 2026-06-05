@@ -632,8 +632,38 @@ function adminModal({ title = '详情', body = '', footer = '', size = 'lg' } = 
 }
 function userBalanceDetailOrders(userId) {
     const uid = String(userId || '');
-    return (Admin.cache.payOrders || []).filter(o => String(o.user_id || '') === uid && (o.status || '') === 'paid' && Math.abs(Number(o.amount || 0)) > 0)
-        .sort((a, b) => Number(b.paid_at || b.created_at || 0) - Number(a.paid_at || a.created_at || 0));
+    const balanceTypes = new Set([
+        'recharge',
+        'card_recharge',
+        'membership_upgrade_balance',
+        'product_purchase',
+        'product_purchase_refund',
+        'product_sale_income',
+        'publish_fee',
+        'publish_fee_refund',
+        'admin_balance_adjust'
+    ]);
+    const allOrders = (Admin.cache.payOrders || []).filter(o => String(o.user_id || '') === uid);
+    const orders = allOrders.filter(o => (o.status || '') === 'paid' && Math.abs(Number(o.amount || 0)) > 0 && (balanceTypes.has(String(o.type || '')) || String(o.pay_type || '').includes('balance')));
+    allOrders.forEach(o => {
+        const refundAmount = Number(o.refunded_amount || 0);
+        if (!o.refund_applied || refundAmount <= 0) return;
+        const hasRefundRecord = orders.some(item => String(item.type || '') === 'product_purchase_refund' && String(item.related_id || '') === String(o.id || ''));
+        if (hasRefundRecord) return;
+        orders.push({
+            ...o,
+            id: `${o.id || o.trade_no || 'refund'}-refund`,
+            trade_no: o.trade_no ? `${o.trade_no}-退款` : `退款-${o.id || '-'}`,
+            amount: refundAmount,
+            actual_amount: refundAmount,
+            status: 'paid',
+            type: 'product_purchase_refund',
+            title: '购买失败退款',
+            description: o.delivery_error || o.description || o.title || '订单退款到余额',
+            paid_at: o.refunded_at || o.paid_at || o.created_at || 0
+        });
+    });
+    return orders.sort((a, b) => Number(b.paid_at || b.created_at || 0) - Number(a.paid_at || a.created_at || 0));
 }
 function adminPaymentOrderTitle(order = {}) {
     const type = String(order.type || '').trim();
@@ -665,9 +695,10 @@ function openUserBalanceDetails(userId) {
         size: 'xl',
         body: `
             <div class="row g-3 mb-3">
-                <div class="col-md-4"><div class="stat-card"><div class="stat-value">${money(user.balance)}</div><div class="stat-label">当前余额</div></div></div>
-                <div class="col-md-4"><div class="stat-card"><div class="stat-value text-success">+${money(income)}</div><div class="stat-label">累计入账</div></div></div>
-                <div class="col-md-4"><div class="stat-card"><div class="stat-value text-danger">-${money(expense)}</div><div class="stat-label">累计支出</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-value">${money(user.balance)}</div><div class="stat-label">当前余额</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-value text-warning">${money(user.frozen_balance)}</div><div class="stat-label">冻结余额</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-value text-success">+${money(income)}</div><div class="stat-label">累计入账</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-value text-danger">-${money(expense)}</div><div class="stat-label">累计支出</div></div></div>
             </div>
             ${orders.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>交易号</th><th>类型</th><th>金额</th><th>说明</th><th>时间</th></tr></thead><tbody>${orders.map(o => {
                 const amount = Number(o.amount || 0);
@@ -686,7 +717,7 @@ function openUserBalanceDetails(userId) {
 function userTable(users, withActions = false) {
     if (!users.length) return '<div class="text-muted py-4 text-center">暂无用户</div>';
     const actionHead = withActions ? '<th>操作</th>' : '';
-    const actionCol = u => withActions ? `<td><button class="btn btn-sm btn-outline-info me-1" onclick="openUserBalanceDetails('${escapeHtml(u.id)}')">明细</button><button class="btn btn-sm btn-outline-primary me-1" onclick="openUserEditor('${escapeHtml(u.id)}')">编辑</button><button class="btn btn-sm btn-outline-danger" onclick="deleteUserAdmin('${escapeHtml(u.id)}')" ${u.username === 'admin' ? 'disabled title="admin 禁止删除"' : ''}>删除</button></td>` : '';
+    const actionCol = u => withActions ? `<td><button class="btn btn-sm btn-outline-primary me-1" onclick="openUserEditor('${escapeHtml(u.id)}')">编辑</button><button class="btn btn-sm btn-outline-danger" onclick="deleteUserAdmin('${escapeHtml(u.id)}')" ${u.username === 'admin' ? 'disabled title="admin 禁止删除"' : ''}>删除</button></td>` : '';
     return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td><button type="button" class="balance-detail-btn" onclick="openUserBalanceDetails('${escapeHtml(u.id)}')" title="查看余额明细"><span>${money(u.balance)}</span><small>明细</small></button></td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
 }
 function membershipOptionsForUser(selected) {
