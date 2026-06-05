@@ -64,6 +64,11 @@ keynest_require_installed(false);
         .balance-detail-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #bfdbfe; border-radius: 999px; padding: 5px 10px; background: #eff6ff; color: #1d4ed8; font-weight: 800; line-height: 1; transition: .16s ease; }
         .balance-detail-btn small { font-size: .72rem; font-weight: 800; color: #2563eb; }
         .balance-detail-btn:hover { border-color: #60a5fa; background: #dbeafe; color: #1e40af; box-shadow: 0 8px 18px rgba(37,99,235,.14); transform: translateY(-1px); }
+        .modal-balance-details { width: min(1560px, calc(100vw - 48px)); max-width: none; }
+        .balance-ledger-table { min-width: 1180px; table-layout: auto; }
+        .balance-ledger-table th, .balance-ledger-table td { white-space: nowrap; }
+        .balance-ledger-table .ledger-desc { min-width: 360px; max-width: 620px; white-space: normal; word-break: break-word; line-height: 1.55; }
+        .balance-ledger-table .ledger-code { max-width: 210px; display: inline-block; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
         .badge-soft { border-radius: 999px; padding: 6px 10px; font-weight: 700; font-size: .76rem; }
         .badge-soft.success { background: #dcfce7; color: #166534; }
         .badge-soft.warning { background: #fef3c7; color: #92400e; }
@@ -765,7 +770,7 @@ async function openUserBalanceDetails(userId) {
     };
     adminModal({
         title: `${escapeHtml(user.username || '-')} 的余额明细`,
-        size: 'xl',
+        size: 'balance-details',
         body: `
             <div class="row g-3 mb-3">
                 <div class="col-md-3"><div class="stat-card"><div class="stat-value">${money(user.balance)}</div><div class="stat-label">当前余额</div></div></div>
@@ -773,12 +778,12 @@ async function openUserBalanceDetails(userId) {
                 <div class="col-md-3"><div class="stat-card"><div class="stat-value text-success">+${money(income)}</div><div class="stat-label">累计入账</div></div></div>
                 <div class="col-md-3"><div class="stat-card"><div class="stat-value text-danger">-${money(expense)}</div><div class="stat-label">累计支出</div></div></div>
             </div>
-            ${entries.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>交易号/订单号</th><th>类型</th><th>余额变动</th><th>冻结变动</th><th>说明</th><th>时间</th></tr></thead><tbody>${entries.map(entry => `<tr>
-                <td><code class="small">${escapeHtml(entry.trade_no || '-')}</code></td>
+            ${entries.length ? `<div class="table-responsive"><table class="table balance-ledger-table"><thead><tr><th>交易号/订单号</th><th>类型</th><th>余额变动</th><th>冻结变动</th><th>说明</th><th>时间</th></tr></thead><tbody>${entries.map(entry => `<tr>
+                <td><code class="small ledger-code" title="${escapeHtml(entry.trade_no || '-')}">${escapeHtml(entry.trade_no || '-')}</code></td>
                 <td>${escapeHtml(entry.type_label || '余额明细')}</td>
                 <td>${deltaText(entry.balance_delta)}</td>
                 <td>${deltaText(entry.frozen_delta)}</td>
-                <td class="small text-muted">${escapeHtml(entry.description || '-')}</td>
+                <td class="small text-muted ledger-desc">${escapeHtml(entry.description || '-')}</td>
                 <td class="small text-muted">${dateText(entry.time)}</td>
             </tr>`).join('')}</tbody></table></div>` : '<div class="empty-state"><i class="bi bi-wallet2"></i><h5>暂无余额明细</h5><p>该用户还没有产生余额或冻结流水记录</p></div>'}
         `,
