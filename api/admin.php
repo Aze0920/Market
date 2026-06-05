@@ -216,7 +216,7 @@ function adminRunCommand($command, $cwd = null) {
 }
 
 function adminAppVersion() {
-    return 'V1.2.2';
+    return 'V1.2.3';
 }
 
 function adminUpdaterVersion($config) {
@@ -592,6 +592,26 @@ function adminComplaintOrders() {
         }
     }
     usort($items, fn($a, $b) => (($b['complaint']['updated_at'] ?? $b['complaint']['created_at'] ?? 0) - ($a['complaint']['updated_at'] ?? $a['complaint']['created_at'] ?? 0)));
+    return array_values($items);
+}
+
+function adminCommentItems() {
+    global $db;
+    $items = [];
+    foreach ($db->getComments() as $comment) {
+        if (!is_array($comment)) continue;
+        $product = $db->getProductById($comment['product_id'] ?? '');
+        $order = $db->getOrderById($comment['order_id'] ?? '');
+        $comment = adminAttachUserEmails($comment);
+        $comment['product_title'] = $product['title'] ?? '';
+        $comment['seller_id'] = $product['seller_id'] ?? ($order['seller_id'] ?? '');
+        $comment['seller_name'] = $product['seller_name'] ?? ($order['seller_name'] ?? '');
+        $comment['seller_id_email'] = adminEmailForUserId($comment['seller_id'] ?? '');
+        $comment['order_price'] = $order['price'] ?? 0;
+        $comment['order_quantity'] = $order['quantity'] ?? 1;
+        $items[] = $comment;
+    }
+    usort($items, fn($a, $b) => intval($b['created_at'] ?? 0) - intval($a['created_at'] ?? 0));
     return array_values($items);
 }
 
@@ -1105,6 +1125,29 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => $missing > 0 ? '所选商品不存在或已被删除' : '删除失败'], 400);
         }
         adminJsonResponse(['success' => true, 'message' => '已删除 ' . $deleted . ' 个商品', 'deleted' => $deleted, 'missing' => $missing]);
+
+    case 'comments':
+        adminJsonResponse(['success' => true, 'comments' => adminCommentItems()]);
+
+    case 'delete_comment':
+        $id = trim($_POST['id'] ?? '');
+        if ($id === '') {
+            adminJsonResponse(['success' => false, 'message' => '缺少评价ID'], 400);
+        }
+        $exists = false;
+        foreach ($db->getComments() as $comment) {
+            if (($comment['id'] ?? '') === $id) {
+                $exists = true;
+                break;
+            }
+        }
+        if (!$exists) {
+            adminJsonResponse(['success' => false, 'message' => '评价不存在或已被删除'], 404);
+        }
+        if (!$db->deleteComment($id)) {
+            adminJsonResponse(['success' => false, 'message' => '删除评价失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => '评价已删除']);
 
     case 'complaints':
         adminJsonResponse(['success' => true, 'complaints' => adminComplaintOrders()]);

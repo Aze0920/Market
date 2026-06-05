@@ -1112,6 +1112,18 @@ class Database {
         return false;
     }
 
+    public function deleteComment($id) {
+        $exists = false;
+        $this->data['comments'] = array_values(array_filter($this->data['comments'], function($comment) use ($id, &$exists) {
+            if (($comment['id'] ?? '') === $id) {
+                $exists = true;
+                return false;
+            }
+            return true;
+        }));
+        return $exists ? $this->deleteRecord('comments', $id) : false;
+    }
+
     public function getMessages($user1, $user2 = null) {
         $msgs = $this->data['messages'];
         if ($user2) {

@@ -273,6 +273,7 @@ keynest_require_installed(false);
         <button class="side-link active" data-page="overview" onclick="switchAdminPage('overview')"><i class="bi bi-grid-1x2-fill"></i>总览</button>
         <button class="side-link" data-page="users" onclick="switchAdminPage('users')"><i class="bi bi-people-fill"></i>用户管理</button>
         <button class="side-link" data-page="products" onclick="switchAdminPage('products')"><i class="bi bi-box-seam-fill"></i>商品管理</button>
+        <button class="side-link" data-page="comments" onclick="switchAdminPage('comments')"><i class="bi bi-chat-square-text-fill"></i>评价管理</button>
         <button class="side-link" data-page="orders" onclick="switchAdminPage('orders')"><i class="bi bi-receipt-cutoff"></i>订单记录</button>
         <button class="side-link" data-page="complaints" onclick="switchAdminPage('complaints')"><i class="bi bi-exclamation-octagon-fill"></i>投诉管理</button>
         <button class="side-link" data-page="finance" onclick="switchAdminPage('finance')"><i class="bi bi-wallet2"></i>充值提现</button>
@@ -306,7 +307,7 @@ keynest_require_installed(false);
 </section>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, listState: { comments: { page: 1, pageSize: 10 } } };
 const apiBase = '/api/';
 
 function escapeHtml(value) {
@@ -521,7 +522,7 @@ document.addEventListener('click', e => {
     if (wrap && !wrap.contains(e.target)) closeAdminProfileDropdown();
 });
 async function loadAdminData() {
-    const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints] = await Promise.all([
+    const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, comments] = await Promise.all([
         request('admin.php?action=users'),
         request('product.php?action=list&stock_min=0'),
         request('payment.php?action=get_orders'),
@@ -529,7 +530,8 @@ async function loadAdminData() {
         request('card.php?action=list'),
         request('payment.php?action=get_configs'),
         request('finance.php?action=get_system_config'),
-        request('admin.php?action=complaints')
+        request('admin.php?action=complaints'),
+        request('admin.php?action=comments')
     ]);
     Admin.cache = {
         users: users.users || [],
@@ -539,6 +541,7 @@ async function loadAdminData() {
         cards: cards.cards || [],
         payConfigs: payConfigs.configs || [],
         complaints: complaints.complaints || [],
+        comments: comments.comments || [],
         membershipLevels: {},
         sysConfig: sysConfig.config || {}
     };
@@ -553,7 +556,7 @@ function switchAdminPage(page, settingsTab = null) {
 }
 function setTitle(title) { document.getElementById('pageTitle').textContent = title; }
 function renderPage() {
-    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, merchant_review: renderMerchantReview, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
+    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, comments: renderComments, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, merchant_review: renderMerchantReview, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
     updateAdminNavActive(Admin.page === 'settings' && Admin.settingsTab === 'payment' ? 'payment' : null);
     (renderers[Admin.page] || renderOverview)();
 }
@@ -938,6 +941,101 @@ function renderProducts() {
             </div>
         </div>`;
     updateProductBatchToolbar();
+}
+function renderComments() {
+    setTitle('评价管理');
+    const keyword = (document.getElementById('commentSearchInput')?.value || '').trim().toLowerCase();
+    const comments = Admin.cache.comments || [];
+    const filtered = keyword ? comments.filter(c =>
+        String(c.username || '').toLowerCase().includes(keyword) ||
+        String(c.user_id_email || '').toLowerCase().includes(keyword) ||
+        String(c.product_title || '').toLowerCase().includes(keyword) ||
+        String(c.content || '').toLowerCase().includes(keyword) ||
+        String(c.order_id || '').toLowerCase().includes(keyword)
+    ) : comments;
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <div>
+                    <h5>全部评价</h5>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filtered.length + ' / ' + comments.length + ' 条评价' : '共 ' + comments.length + ' 条评价'}，支持查看详情和删除指定评价。</div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-md-7 col-lg-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input id="commentSearchInput" class="form-control" placeholder="搜索用户、商品、订单号或评价内容" value="${escapeHtml(keyword)}" oninput="renderComments()" autocomplete="off">
+                    </div>
+                </div>
+                <div class="col-md-auto"><button class="btn btn-outline-secondary" onclick="clearCommentSearch()" ${keyword ? '' : 'disabled'}>清空</button></div>
+            </div>
+            ${commentTable(filtered)}
+        </div>`;
+    if (keyword) {
+        const input = document.getElementById('commentSearchInput');
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+    }
+}
+function clearCommentSearch() {
+    const input = document.getElementById('commentSearchInput');
+    if (input) input.value = '';
+    renderComments();
+}
+function commentRatingBadge(rating) {
+    const value = Number(rating || 0);
+    const cls = value >= 4 ? 'success' : (value >= 3 ? 'warning' : 'danger');
+    return `<span class="badge-soft ${cls}">${value || '-'} 星</span>`;
+}
+function commentTable(list) {
+    if (!list.length) return '<div class="text-muted py-4 text-center">暂无评价</div>';
+    return `<div class="table-responsive"><table class="table"><thead><tr><th>评价用户</th><th>商品</th><th>评分</th><th>评价内容</th><th>时间</th><th class="text-end">操作</th></tr></thead><tbody>${list.map(c => `<tr>
+        <td><strong>${escapeHtml(c.username || '-')}</strong><div class="small text-muted">${escapeHtml(c.user_id_email || c.user_id || '-')}</div></td>
+        <td><strong>${escapeHtml(c.product_title || c.product_id || '-')}</strong><div class="small text-muted">订单：${escapeHtml(c.order_id || '-')}</div></td>
+        <td>${commentRatingBadge(c.rating)}</td>
+        <td class="small text-muted" style="max-width:420px;white-space:normal;word-break:break-word;">${escapeHtml(c.content || '未填写文字评价')}</td>
+        <td class="small text-muted">${dateText(c.created_at)}</td>
+        <td class="text-end"><button class="btn btn-sm btn-outline-primary me-1" onclick="openCommentDetail('${escapeHtml(c.id)}')">查看</button><button class="btn btn-sm btn-outline-danger" onclick="deleteCommentAdmin('${escapeHtml(c.id)}')">删除</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+function openCommentDetail(id) {
+    const c = (Admin.cache.comments || []).find(item => String(item.id || '') === String(id || ''));
+    if (!c) return showToast('评价不存在，请刷新后重试', 'error');
+    adminModal({
+        title: '评价详情',
+        size: 'lg',
+        body: `
+            <div class="row g-3 small mb-3">
+                <div class="col-md-6"><div class="text-muted">评价用户</div><strong>${escapeHtml(c.username || '-')}</strong><div class="text-muted">${escapeHtml(c.user_id_email || c.user_id || '-')}</div></div>
+                <div class="col-md-6"><div class="text-muted">评分</div>${commentRatingBadge(c.rating)}</div>
+                <div class="col-md-6"><div class="text-muted">商品</div><strong>${escapeHtml(c.product_title || '-')}</strong><div class="text-muted">${escapeHtml(c.product_id || '-')}</div></div>
+                <div class="col-md-6"><div class="text-muted">卖家</div><strong>${escapeHtml(c.seller_name || '-')}</strong><div class="text-muted">${escapeHtml(c.seller_id_email || c.seller_id || '-')}</div></div>
+                <div class="col-md-6"><div class="text-muted">订单号</div><code>${escapeHtml(c.order_id || '-')}</code></div>
+                <div class="col-md-6"><div class="text-muted">评价时间</div><strong>${dateText(c.created_at)}</strong></div>
+            </div>
+            <div class="border rounded-4 p-3 bg-light-subtle"><div class="text-muted small mb-2">评价内容</div><div style="white-space:pre-wrap;word-break:break-word;line-height:1.7;">${escapeHtml(c.content || '未填写文字评价')}</div></div>
+        `,
+        footer: `<button class="btn btn-outline-danger me-auto" onclick="deleteCommentAdmin('${escapeHtml(c.id)}')">删除评价</button><button class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>`
+    });
+}
+async function deleteCommentAdmin(id) {
+    const c = (Admin.cache.comments || []).find(item => String(item.id || '') === String(id || ''));
+    const ok = await adminConfirm({
+        title: '删除这条评价？',
+        message: '确认删除“' + (c?.product_title || c?.content || id || '-') + '”这条评价吗？删除后不可恢复。',
+        confirmText: '确认删除',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!ok) return;
+    const res = await request('admin.php?action=delete_comment', 'POST', { id });
+    if (!res.success) return showToast(res.message || '删除评价失败', 'error');
+    showToast(res.message || '评价已删除', 'success');
+    document.getElementById('adminDynamicModal') && bootstrap.Modal.getInstance(document.getElementById('adminDynamicModal'))?.hide();
+    await loadAdminData();
+    renderComments();
 }
 function selectedProductIds() {
     return Array.from(document.querySelectorAll('.product-select:checked')).map(input => input.value).filter(Boolean);
