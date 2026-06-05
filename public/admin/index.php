@@ -61,6 +61,9 @@ keynest_require_installed(false);
         .panel-title h5 { margin: 0; font-weight: 800; }
         .table { vertical-align: middle; }
         .table thead th { color: #64748b; font-size: .82rem; border-bottom: 1px solid var(--border); }
+        .balance-detail-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #bfdbfe; border-radius: 999px; padding: 5px 10px; background: #eff6ff; color: #1d4ed8; font-weight: 800; line-height: 1; transition: .16s ease; }
+        .balance-detail-btn small { font-size: .72rem; font-weight: 800; color: #2563eb; }
+        .balance-detail-btn:hover { border-color: #60a5fa; background: #dbeafe; color: #1e40af; box-shadow: 0 8px 18px rgba(37,99,235,.14); transform: translateY(-1px); }
         .badge-soft { border-radius: 999px; padding: 6px 10px; font-weight: 700; font-size: .76rem; }
         .badge-soft.success { background: #dcfce7; color: #166534; }
         .badge-soft.warning { background: #fef3c7; color: #92400e; }
@@ -672,13 +675,85 @@ function clearUserSearch() {
     Admin.listState.users.page = 1;
     renderUsers();
 }
+function adminModal({ title = '详情', body = '', footer = '', size = 'lg' } = {}) {
+    const modalId = 'adminDynamicModal';
+    document.getElementById(modalId)?.remove();
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = modalId;
+    const sizeClass = size ? ` modal-${size}` : '';
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered${sizeClass}">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header"><h5 class="modal-title">${title}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">${body}</div>
+                ${footer ? `<div class="modal-footer">${footer}</div>` : ''}
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('hidden.bs.modal', () => modal.remove(), { once: true });
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+function userBalanceDetailOrders(userId) {
+    const uid = String(userId || '');
+    return (Admin.cache.payOrders || []).filter(o => String(o.user_id || '') === uid && (o.status || '') === 'paid' && Math.abs(Number(o.amount || 0)) > 0)
+        .sort((a, b) => Number(b.paid_at || b.created_at || 0) - Number(a.paid_at || a.created_at || 0));
+}
+function adminPaymentOrderTitle(order = {}) {
+    const type = String(order.type || '').trim();
+    const amount = Number(order.amount || 0);
+    const titleMap = {
+        recharge: '在线充值',
+        card_recharge: '卡密充值',
+        membership_card: '会员卡密兑换',
+        membership_upgrade: '会员开通',
+        membership_upgrade_balance: '余额升级会员',
+        product_purchase: '余额购买商品',
+        product_online_purchase: '在线购买商品',
+        product_purchase_refund: '购买失败退款',
+        product_sale_income: '商品销售收入',
+        publish_fee: '发布商品扣费',
+        publish_fee_refund: '删除库存退费',
+        admin_balance_adjust: amount >= 0 ? '后台加款' : '后台扣款'
+    };
+    return titleMap[type] || (amount >= 0 ? '余额收入' : '余额支出');
+}
+function openUserBalanceDetails(userId) {
+    const user = (Admin.cache.users || []).find(u => String(u.id || '') === String(userId || ''));
+    if (!user) return showToast('用户不存在', 'error');
+    const orders = userBalanceDetailOrders(userId);
+    const income = orders.reduce((sum, o) => sum + Math.max(0, Number(o.amount || 0)), 0);
+    const expense = orders.reduce((sum, o) => sum + Math.abs(Math.min(0, Number(o.amount || 0))), 0);
+    adminModal({
+        title: `${escapeHtml(user.username || '-')} 的余额明细`,
+        size: 'xl',
+        body: `
+            <div class="row g-3 mb-3">
+                <div class="col-md-4"><div class="stat-card"><div class="stat-value">${money(user.balance)}</div><div class="stat-label">当前余额</div></div></div>
+                <div class="col-md-4"><div class="stat-card"><div class="stat-value text-success">+${money(income)}</div><div class="stat-label">累计入账</div></div></div>
+                <div class="col-md-4"><div class="stat-card"><div class="stat-value text-danger">-${money(expense)}</div><div class="stat-label">累计支出</div></div></div>
+            </div>
+            ${orders.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>交易号</th><th>类型</th><th>金额</th><th>说明</th><th>时间</th></tr></thead><tbody>${orders.map(o => {
+                const amount = Number(o.amount || 0);
+                return `<tr>
+                    <td><code class="small">${escapeHtml(o.trade_no || o.id || '-')}</code></td>
+                    <td>${escapeHtml(adminPaymentOrderTitle(o))}</td>
+                    <td class="fw-semibold ${amount >= 0 ? 'text-success' : 'text-danger'}">${amount >= 0 ? '+' : '-'}${money(Math.abs(amount))}</td>
+                    <td class="small text-muted">${escapeHtml(o.description || o.title || '-')}</td>
+                    <td class="small text-muted">${dateText(o.paid_at || o.created_at)}</td>
+                </tr>`;
+            }).join('')}</tbody></table></div>` : '<div class="empty-state"><i class="bi bi-wallet2"></i><h5>暂无余额明细</h5><p>该用户还没有产生余额流水记录</p></div>'}
+        `,
+        footer: '<button class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>'
+    });
+}
 function userTable(users, withActions = false, selectable = false) {
     if (!users.length) return '<div class="text-muted py-4 text-center">暂无用户</div>';
     const selectHead = selectable ? '<th style="width:44px"><input class="form-check-input" type="checkbox" id="userSelectAll" onchange="toggleAllUserSelection(this.checked)"></th>' : '';
     const selectCol = u => selectable ? `<td><input class="form-check-input user-select" type="checkbox" value="${escapeHtml(u.id)}" onchange="updateUserBatchToolbar()" ${u.username === 'admin' || u.role === 'admin' ? 'disabled title="管理员禁止删除"' : ''}></td>` : '';
     const actionHead = withActions ? '<th>操作</th>' : '';
-    const actionCol = u => withActions ? `<td><button class="btn btn-sm btn-outline-primary me-1" onclick="openUserEditor('${escapeHtml(u.id)}')">编辑</button><button class="btn btn-sm btn-outline-danger" onclick="deleteUserAdmin('${escapeHtml(u.id)}')" ${u.username === 'admin' ? 'disabled title="admin 禁止删除"' : ''}>删除</button></td>` : '';
-    return `<div class="table-responsive"><table class="table"><thead><tr>${selectHead}<th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr>${selectCol(u)}<td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td>${money(u.balance)}</td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
+    const actionCol = u => withActions ? `<td><button class="btn btn-sm btn-outline-info me-1" onclick="openUserBalanceDetails('${escapeHtml(u.id)}')">明细</button><button class="btn btn-sm btn-outline-primary me-1" onclick="openUserEditor('${escapeHtml(u.id)}')">编辑</button><button class="btn btn-sm btn-outline-danger" onclick="deleteUserAdmin('${escapeHtml(u.id)}')" ${u.username === 'admin' ? 'disabled title="admin 禁止删除"' : ''}>删除</button></td>` : '';
+    return `<div class="table-responsive"><table class="table"><thead><tr>${selectHead}<th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr>${selectCol(u)}<td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td><button type="button" class="balance-detail-btn" onclick="openUserBalanceDetails('${escapeHtml(u.id)}')" title="查看余额明细"><span>${money(u.balance)}</span><small>明细</small></button></td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
 }
 function selectedUserIds() {
     return Array.from(document.querySelectorAll('.user-select:checked')).map(input => input.value).filter(Boolean);
