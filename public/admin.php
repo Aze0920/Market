@@ -61,6 +61,9 @@ keynest_require_installed(false);
         .panel-title h5 { margin: 0; font-weight: 800; }
         .table { vertical-align: middle; }
         .table thead th { color: #64748b; font-size: .82rem; border-bottom: 1px solid var(--border); }
+        .balance-detail-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #bfdbfe; border-radius: 999px; padding: 5px 10px; background: #eff6ff; color: #1d4ed8; font-weight: 800; line-height: 1; transition: .16s ease; }
+        .balance-detail-btn small { font-size: .72rem; font-weight: 800; color: #2563eb; }
+        .balance-detail-btn:hover { border-color: #60a5fa; background: #dbeafe; color: #1e40af; box-shadow: 0 8px 18px rgba(37,99,235,.14); transform: translateY(-1px); }
         .badge-soft { border-radius: 999px; padding: 6px 10px; font-weight: 700; font-size: .76rem; }
         .badge-soft.success { background: #dcfce7; color: #166534; }
         .badge-soft.warning { background: #fef3c7; color: #92400e; }
@@ -684,7 +687,7 @@ function userTable(users, withActions = false) {
     if (!users.length) return '<div class="text-muted py-4 text-center">暂无用户</div>';
     const actionHead = withActions ? '<th>操作</th>' : '';
     const actionCol = u => withActions ? `<td><button class="btn btn-sm btn-outline-primary me-1" onclick="openUserEditor('${escapeHtml(u.id)}')">编辑</button><button class="btn btn-sm btn-outline-danger" onclick="deleteUserAdmin('${escapeHtml(u.id)}')" ${u.username === 'admin' ? 'disabled title="admin 禁止删除"' : ''}>删除</button></td>` : '';
-    return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td><button type="button" class="btn btn-link btn-sm p-0 fw-semibold text-decoration-none" onclick="openUserBalanceDetails('${escapeHtml(u.id)}')" title="查看余额明细">${money(u.balance)}</button></td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-responsive"><table class="table"><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>会员</th><th>余额</th><th>注册时间</th>${actionHead}</tr></thead><tbody>${users.map(u => `<tr><td><strong>${escapeHtml(u.username)}</strong></td><td>${escapeHtml(u.email || '-')}</td><td>${u.role === 'admin' ? '<span class="badge-soft info">管理员</span>' : '<span class="badge-soft success">用户</span>'}</td><td>${escapeHtml(u.membership_level || 'Free')}</td><td><button type="button" class="balance-detail-btn" onclick="openUserBalanceDetails('${escapeHtml(u.id)}')" title="查看余额明细"><span>${money(u.balance)}</span><small>明细</small></button></td><td>${dateText(u.created_at)}</td>${actionCol(u)}</tr>`).join('')}</tbody></table></div>`;
 }
 function membershipOptionsForUser(selected) {
     const levels = Object.values(Admin.cache.membershipLevels || {});
