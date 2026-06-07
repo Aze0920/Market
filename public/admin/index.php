@@ -290,6 +290,7 @@ if (isset($_SESSION['user_id'])) {
     </div>
 </section>
 
+<?php if ($adminGateUser): ?>
 <section id="adminView" class="admin-shell hidden">
     <aside class="sidebar">
         <div class="brand">
@@ -332,6 +333,7 @@ if (isset($_SESSION['user_id'])) {
         <div id="adminContent"></div>
     </main>
 </section>
+<?php endif; ?>
 
 <script>
 const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
@@ -414,18 +416,25 @@ function handleAdminAuthFailure(message = '需要管理员权限，请重新登�
     Admin.user = null;
     Admin.cache = {};
     Admin.csrfToken = null;
-    document.getElementById('adminContent').innerHTML = '';
+    const content = document.getElementById('adminContent');
+    if (content) content.innerHTML = '';
     showLogin(message);
 }
 function showLogin(message = '') {
-    document.getElementById('adminView').classList.add('hidden');
-    document.getElementById('loginView').classList.remove('hidden');
+    document.getElementById('adminView')?.classList.add('hidden');
+    document.getElementById('loginView')?.classList.remove('hidden');
     const box = document.getElementById('adminLoginError');
+    if (!box) return;
     if (message) { box.textContent = message; box.classList.remove('hidden'); } else { box.classList.add('hidden'); }
 }
 function showAdmin() {
-    document.getElementById('loginView').classList.add('hidden');
-    document.getElementById('adminView').classList.remove('hidden');
+    document.getElementById('loginView')?.classList.add('hidden');
+    const adminView = document.getElementById('adminView');
+    if (!adminView) {
+        location.reload();
+        return;
+    }
+    adminView.classList.remove('hidden');
     refreshAdminProfileUI();
 }
 function refreshAdminProfileUI() {
@@ -471,7 +480,7 @@ async function adminLogin() {
     const btn = document.getElementById('adminLoginBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>登录中...';
-    const result = await request('auth.php?action=login', 'POST', { username, password });
+    const result = await request('auth.php?action=admin_login', 'POST', { username, password });
     btn.disabled = false;
     btn.textContent = '登录后台';
     if (!result.success) {
@@ -481,7 +490,6 @@ async function adminLogin() {
         return;
     }
     if (!result.user || result.user.role !== 'admin') {
-        await request('auth.php?action=logout', 'POST');
         errorBox.textContent = '该账号不是管理员，无法进入后台。';
         errorBox.classList.remove('hidden');
         showToast('该账号不是管理员', 'error');
@@ -489,6 +497,10 @@ async function adminLogin() {
     }
     Admin.user = result.user;
     showToast('登录成功', 'success');
+    if (!document.getElementById('adminView')) {
+        location.reload();
+        return;
+    }
     showAdmin();
     await loadAdminData();
 }

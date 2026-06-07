@@ -163,6 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sessionToken = $_SESSION['csrf_token'] ?? '';
     $csrfExemptActions = [
         'login',
+        'admin_login',
         'register',
         'send_email_code',
         'captcha_debug',

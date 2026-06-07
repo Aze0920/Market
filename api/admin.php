@@ -43,8 +43,9 @@ function adminSafeProduct($product) {
     if (!is_array($product)) {
         return null;
     }
-    unset($product['stock']);
-    $product['stock'] = count(array_filter($product['stock_items'] ?? [], fn($item) => empty($item['sold'])));
+    $accounts = is_array($product['account_list'] ?? null) ? $product['account_list'] : [];
+    unset($product['account_list'], $product['pickup_password']);
+    $product['stock'] = count(array_filter($accounts, fn($item) => is_array($item) && empty($item['sold'])));
     return $product;
 }
 

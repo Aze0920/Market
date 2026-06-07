@@ -427,6 +427,15 @@ function requireAuth() {
     return $_SESSION['user_id'];
 }
 
+function clearAuthSession() {
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+    }
+    session_destroy();
+}
+
 function jsonResponse($data, $code = 200) {
     http_response_code($code);
     // 在响应中包含CSRF token
@@ -438,6 +447,52 @@ function jsonResponse($data, $code = 200) {
 }
 
 switch ($action) {
+    case 'admin_login':
+        $account = safeTrimString($_POST['username'] ?? '', 190);
+        $password = $_POST['password'] ?? '';
+
+        if ($account === '' || empty($password)) {
+            jsonResponse(['success' => false, 'message' => '请填写用户名或邮箱和密码'], 400);
+        }
+
+        $captchaConfig = captchaClientConfig();
+        if (!empty($captchaConfig['login_enabled'])) {
+            requireCaptcha('login');
+        }
+
+        if (!checkLoginRateLimit($account)) {
+            jsonResponse(['success' => false, 'message' => '登录尝试过于频繁，请稍后再试'], 429);
+        }
+
+        $user = $db->getUserByUsername(sanitizeUsername($account));
+        if (!$user && filter_var($account, FILTER_VALIDATE_EMAIL)) {
+            $user = $db->getUserByEmail($account);
+        }
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '账号不存在，请检查用户名或邮箱是否正确'], 401);
+        }
+        if (!password_verify($password, $user['password'])) {
+            jsonResponse(['success' => false, 'message' => '密码错误，请重新输入'], 401);
+        }
+        if (($user['role'] ?? '') !== 'admin') {
+            clearAuthSession();
+            jsonResponse(['success' => false, 'message' => '该账号不是管理员，无法进入后台。'], 403);
+        }
+
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $key = 'login_attempts_' . md5($account . '|' . $ip);
+        unset($_SESSION[$key]);
+
+        session_regenerate_id(true);
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['user_role'] = $user['role'] ?? 'user';
+        $_SESSION['login_time'] = time();
+        $_SESSION['ip'] = $_SERVER['REMOTE_ADDR'] ?? '';
+
+        jsonResponse(['success' => true, 'message' => '登录成功', 'user' => safeUser($user)]);
+
     case 'login':
         $account = safeTrimString($_POST['username'] ?? '', 190);
         $password = $_POST['password'] ?? '';
@@ -596,7 +651,7 @@ switch ($action) {
 
     case 'logout':
         $userId = $_SESSION['user_id'] ?? null;
-        session_destroy();
+        clearAuthSession();
         if ($userId) {
             // 更新用户最后登录时间
             $user = $db->getUserById($userId);
@@ -629,13 +684,13 @@ switch ($action) {
         
         $user = $db->getUserById($_SESSION['user_id']);
         if (!$user) {
-            session_destroy();
+            clearAuthSession();
             jsonResponse(['success' => false, 'logged_in' => false]);
         }
         
         // 检查会话是否过期（24小时）
         if (isset($_SESSION['login_time']) && (time() - $_SESSION['login_time']) > 86400) {
-            session_destroy();
+            clearAuthSession();
             jsonResponse(['success' => false, 'logged_in' => false, 'message' => '会话已过期，请重新登录']);
         }
         
