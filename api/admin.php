@@ -34,6 +34,45 @@ function adminSafeUser($user) {
     return $user;
 }
 
+function adminBaseUrl() {
+    $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+    return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+}
+
+function adminSafeProduct($product) {
+    if (!is_array($product)) {
+        return null;
+    }
+    unset($product['stock']);
+    $product['stock'] = count(array_filter($product['stock_items'] ?? [], fn($item) => empty($item['sold'])));
+    return $product;
+}
+
+function adminFinanceRequests() {
+    global $db;
+    $requests = array_merge($db->getDepositRequests(), $db->getWithdrawRequests());
+    usort($requests, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+    foreach ($requests as &$request) {
+        $user = $db->getUserById($request['user_id'] ?? '');
+        $request['user_email'] = $user['email'] ?? '';
+    }
+    unset($request);
+    return array_values($requests);
+}
+
+function adminCardItems() {
+    global $db;
+    $cards = $db->getCardCodes(false);
+    foreach ($cards as &$card) {
+        $usedUserId = $card['used_by'] ?? '';
+        $usedUser = $usedUserId ? $db->getUserById($usedUserId) : null;
+        $card['used_user_id'] = $usedUserId ?: '';
+        $card['used_user_email'] = $usedUser['email'] ?? '';
+    }
+    unset($card);
+    return array_values($cards);
+}
+
 function adminUserPayload() {
     $id = trim($_POST['id'] ?? '');
     if ($id === '') {
@@ -928,6 +967,28 @@ switch ($action) {
         $users = array_map('adminSafeUser', $db->getTable('users'));
         usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         adminJsonResponse(['success' => true, 'users' => array_values($users)]);
+
+    case 'products':
+        $products = array_filter(array_map('adminSafeProduct', $db->getTable('products')));
+        usort($products, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        adminJsonResponse(['success' => true, 'products' => array_values($products)]);
+
+    case 'finance_requests':
+        adminJsonResponse(['success' => true, 'requests' => adminFinanceRequests()]);
+
+    case 'cards':
+        adminJsonResponse(['success' => true, 'cards' => adminCardItems()]);
+
+    case 'payment_configs':
+        adminJsonResponse([
+            'success' => true,
+            'configs' => array_values($db->getPaymentConfigs()),
+            'notify_url' => adminBaseUrl() . '/api/payment.php?action=notify',
+            'return_url' => adminBaseUrl() . '/',
+        ]);
+
+    case 'system_config':
+        adminJsonResponse(['success' => true, 'config' => $db->getSystemConfig()]);
 
     case 'user_balance_details':
         $id = trim($_GET['id'] ?? $_POST['id'] ?? '');

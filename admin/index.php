@@ -1,10 +1,33 @@
 <?php
-$installPath = dirname(__DIR__) . '/config/install.php';
-if (!is_file($installPath)) {
-    $installPath = dirname(__DIR__, 2) . '/config/install.php';
+$rootPath = dirname(__DIR__);
+if (!is_file($rootPath . '/config/install.php')) {
+    $rootPath = dirname(__DIR__, 2);
 }
+$installPath = $rootPath . '/config/install.php';
 require_once $installPath;
 keynest_require_installed(false);
+require_once $rootPath . '/core/Database.php';
+if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.cookie_secure', isset($_SERVER['HTTPS']));
+    ini_set('session.use_strict_mode', 1);
+    session_start();
+}
+$adminGateUser = null;
+$adminGateMessage = '';
+if (isset($_SESSION['user_id'])) {
+    $adminGateUser = Database::getInstance()->getUserById($_SESSION['user_id']);
+    if (!$adminGateUser || ($adminGateUser['role'] ?? '') !== 'admin') {
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+        }
+        session_destroy();
+        $adminGateUser = null;
+        $adminGateMessage = '当前账号不是管理员，请使用管理员账号登录。';
+    }
+}
 ?>
 <!doctype html>
 <html lang="zh-CN">
@@ -245,7 +268,7 @@ keynest_require_installed(false);
 <body>
 <div id="toastBox" class="toast-box"></div>
 
-<section id="loginView" class="login-wrap hidden">
+<section id="loginView" class="login-wrap <?php echo $adminGateUser ? 'hidden' : ''; ?>">
     <div class="login-card">
         <div class="login-logo"><i class="bi bi-shield-lock-fill"></i></div>
         <h2 class="fw-bold mb-1">管理员登录</h2>
@@ -311,7 +334,7 @@ keynest_require_installed(false);
 </section>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
 const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
 const apiBase = '/api/';
 
@@ -368,7 +391,9 @@ async function request(endpoint, method = 'GET', data = null) {
         if (json.csrf_token) Admin.csrfToken = json.csrf_token;
         if (!res.ok) {
             const detail = json.output ? '\n' + json.output : '';
-            return { success: false, message: (json.message || ('请求失败：' + res.status)) + detail, status: res.status, ...json };
+            const error = { success: false, message: (json.message || ('请求失败：' + res.status)) + detail, status: res.status, ...json };
+            if (res.status === 401 || res.status === 403) handleAdminAuthFailure(error.message);
+            return error;
         }
         return json;
     } catch (e) {
@@ -376,13 +401,21 @@ async function request(endpoint, method = 'GET', data = null) {
     }
 }
 async function bootstrapAdmin() {
+    if (Admin.serverGateMessage) return showLogin(Admin.serverGateMessage);
     const result = await request('auth.php?action=get_current_user');
     if (!result.success || !result.logged_in) return showLogin(result.message || '请先登录管理员账号');
-    if (!result.user || result.user.role !== 'admin') return showLogin('当前账号不是管理员，请使用管理员账号登录。');
+    if (!result.user || result.user.role !== 'admin') return handleAdminAuthFailure('当前账号不是管理员，请使用管理员账号登录。');
     Admin.user = result.user;
     restoreAdminState();
     showAdmin();
     await loadAdminData();
+}
+function handleAdminAuthFailure(message = '需要管理员权限，请重新登录。') {
+    Admin.user = null;
+    Admin.cache = {};
+    Admin.csrfToken = null;
+    document.getElementById('adminContent').innerHTML = '';
+    showLogin(message);
 }
 function showLogin(message = '') {
     document.getElementById('adminView').classList.add('hidden');
@@ -544,16 +577,23 @@ document.addEventListener('click', e => {
 async function loadAdminData() {
     const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, membershipLevels, comments] = await Promise.all([
         request('admin.php?action=users'),
-        request('product.php?action=list&stock_min=0'),
+        request('admin.php?action=products'),
         request('payment.php?action=get_orders'),
-        request('finance.php?action=all_requests'),
-        request('card.php?action=list'),
-        request('payment.php?action=get_configs'),
-        request('finance.php?action=get_system_config'),
+        request('admin.php?action=finance_requests'),
+        request('admin.php?action=cards'),
+        request('admin.php?action=payment_configs'),
+        request('admin.php?action=system_config'),
         request('admin.php?action=complaints'),
         request('admin.php?action=membership_levels'),
         request('admin.php?action=comments')
     ]);
+    const responses = [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, membershipLevels, comments];
+    const failed = responses.find(item => !item || item.success === false);
+    if (failed) {
+        if (failed.status === 401 || failed.status === 403) return;
+        showToast(failed.message || '后台数据加载失败', 'error');
+        return;
+    }
     Admin.cache = {
         users: users.users || [],
         products: products.products || [],
