@@ -15,6 +15,19 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 $adminGateUser = null;
 $adminGateMessage = '';
+$scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+if ($scriptDir === '' || $scriptDir === '.') {
+    $scriptDir = '';
+}
+if (substr($scriptDir, -6) === '/admin') {
+    $apiBasePath = substr($scriptDir, 0, -6) . '/api/';
+} else {
+    $apiBasePath = $scriptDir . '/api/';
+}
+$apiBasePath = preg_replace('#/+#', '/', $apiBasePath);
+if ($apiBasePath === '') {
+    $apiBasePath = '/api/';
+}
 if (isset($_SESSION['user_id'])) {
     $adminGateUser = Database::getInstance()->getUserById($_SESSION['user_id']);
     if (!$adminGateUser || ($adminGateUser['role'] ?? '') !== 'admin') {
@@ -338,7 +351,7 @@ if (isset($_SESSION['user_id'])) {
 <script>
 const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
 const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
-const apiBase = '/api/';
+const apiBase = <?php echo json_encode($apiBasePath, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 
 function escapeHtml(value) {
     const div = document.createElement('div');
@@ -387,7 +400,8 @@ async function request(endpoint, method = 'GET', data = null) {
         try {
             json = text ? JSON.parse(text) : {};
         } catch (e) {
-            const preview = text ? text.slice(0, 1000) : '空响应';
+            const looksHtml = /^\s*</.test(text || '');
+            const preview = looksHtml ? '接口地址不存在或被服务器返回了 HTML 页面，请检查 API 路径：' + apiBase + endpoint : (text ? text.slice(0, 1000) : '空响应');
             return { success: false, message: `服务器返回异常内容（HTTP ${res.status}）：${preview}` };
         }
         if (json.csrf_token) Admin.csrfToken = json.csrf_token;
