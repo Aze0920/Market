@@ -15,6 +15,46 @@ class SubdomainHelper {
         return trim($value, '.');
     }
 
+    public static function parseBaseDomainsInput($input) {
+        $domains = [];
+        foreach (preg_split('/[\r\n,;]+/', (string)$input) as $part) {
+            $normalized = self::normalizeBaseDomain($part);
+            if ($normalized !== '' && !in_array($normalized, $domains, true)) {
+                $domains[] = $normalized;
+            }
+        }
+        return $domains;
+    }
+
+    public static function getBaseDomains(array $config) {
+        $domains = [];
+        if (!empty($config['subdomain_base_domains']) && is_array($config['subdomain_base_domains'])) {
+            foreach ($config['subdomain_base_domains'] as $domain) {
+                $normalized = self::normalizeBaseDomain($domain);
+                if ($normalized !== '' && !in_array($normalized, $domains, true)) {
+                    $domains[] = $normalized;
+                }
+            }
+        }
+        $legacy = self::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
+        if ($legacy !== '' && !in_array($legacy, $domains, true)) {
+            array_unshift($domains, $legacy);
+        }
+        return array_values($domains);
+    }
+
+    public static function resolveBaseDomainChoice(array $config, $requested = '') {
+        $domains = self::getBaseDomains($config);
+        if (empty($domains)) {
+            return '';
+        }
+        $requested = self::normalizeBaseDomain($requested);
+        if ($requested !== '' && in_array($requested, $domains, true)) {
+            return $requested;
+        }
+        return $domains[0];
+    }
+
     public static function validatePrefix($prefix) {
         $prefix = strtolower(trim((string)$prefix));
         if ($prefix === '') {
@@ -61,7 +101,26 @@ class SubdomainHelper {
         return strtolower(trim((string)$prefix)) . '.' . $baseDomain;
     }
 
-    public static function extractPrefixFromHost($host, $baseDomain) {
+    public static function extractPrefixFromHost($host, $baseDomains) {
+        if (is_string($baseDomains)) {
+            $baseDomains = self::getBaseDomains(['subdomain_base_domain' => $baseDomains]);
+        }
+        if (!is_array($baseDomains)) {
+            return null;
+        }
+        foreach ($baseDomains as $baseDomain) {
+            $prefix = self::extractPrefixFromHostForDomain($host, $baseDomain);
+            if ($prefix !== null) {
+                return [
+                    'prefix' => $prefix,
+                    'base_domain' => self::normalizeBaseDomain($baseDomain),
+                ];
+            }
+        }
+        return null;
+    }
+
+    private static function extractPrefixFromHostForDomain($host, $baseDomain) {
         $host = strtolower(trim((string)$host));
         $host = preg_replace('/:\d+$/', '', $host);
         $baseDomain = self::normalizeBaseDomain($baseDomain);
@@ -83,19 +142,87 @@ class SubdomainHelper {
     }
 
     public static function subdomainPublicConfig(array $config) {
-        $baseDomain = self::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
+        $domains = self::getBaseDomains($config);
+        $primary = $domains[0] ?? '';
         return [
             'enabled' => self::configEnabled($config),
-            'base_domain' => $baseDomain,
-            'wildcard_domain' => $baseDomain !== '' ? '*.' . $baseDomain : '',
+            'base_domains' => $domains,
+            'base_domain' => $primary,
+            'wildcard_domain' => $primary !== '' ? '*.' . $primary : '',
             'monthly_price' => max(0.01, floatval($config['subdomain_monthly_price'] ?? 10)),
         ];
     }
 
-    public static function decorateSubdomainRecord(array $subdomain, $baseDomain) {
+    public static function decorateSubdomainRecord(array $subdomain, $baseDomain = '') {
+        $baseDomain = self::normalizeBaseDomain($baseDomain !== '' ? $baseDomain : ($subdomain['base_domain'] ?? ''));
+        $subdomain['base_domain'] = $baseDomain;
         $subdomain['full_domain'] = $baseDomain !== '' ? self::fullHost($subdomain['prefix'] ?? '', $baseDomain) : '';
         $subdomain['is_expired'] = self::isExpired($subdomain);
         $subdomain['is_active'] = self::isActive($subdomain);
         return $subdomain;
+    }
+
+    public static function submitApplication($db, $userId, $prefix, $months, array $options = []) {
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            return ['success' => false, 'message' => '用户不存在'];
+        }
+        $config = $db->getSystemConfig();
+        if (!self::configEnabled($config)) {
+            return ['success' => false, 'message' => '二级域名功能未开启'];
+        }
+        if (($user['merchant_status'] ?? 'none') !== 'approved') {
+            return ['success' => false, 'message' => '请先完成商家认证后再申请二级域名'];
+        }
+
+        $prefix = strtolower(trim((string)$prefix));
+        $months = max(1, min(36, intval($months)));
+        $error = self::validatePrefix($prefix);
+        if ($error) {
+            return ['success' => false, 'message' => $error];
+        }
+
+        $baseDomain = self::resolveBaseDomainChoice($config, $options['base_domain'] ?? '');
+        if ($baseDomain === '') {
+            return ['success' => false, 'message' => '后台尚未配置二级域名主域名'];
+        }
+
+        $existing = $db->getSellerSubdomainByUserId($userId);
+        if ($existing && !in_array($existing['status'] ?? '', ['rejected'], true)) {
+            return ['success' => false, 'message' => '您已有二级域名记录，无法重复申请'];
+        }
+
+        $occupied = $db->getSellerSubdomainByPrefix($prefix);
+        if ($occupied && ($occupied['user_id'] ?? '') !== $userId) {
+            return ['success' => false, 'message' => '该前缀已被占用'];
+        }
+
+        $now = time();
+        $subdomain = [
+            'user_id' => $userId,
+            'prefix' => $prefix,
+            'base_domain' => $baseDomain,
+            'status' => 'pending',
+            'pending_months' => $months,
+            'expires_at' => 0,
+            'last_price_paid' => max(0, floatval($options['price_paid'] ?? 0)),
+            'disabled' => false,
+            'created_at' => $now,
+        ];
+        if ($existing && ($existing['status'] ?? '') === 'rejected') {
+            $subdomain['id'] = $existing['id'];
+        } elseif ($occupied && ($occupied['user_id'] ?? '') === $userId) {
+            $subdomain['id'] = $occupied['id'];
+        }
+
+        if (!$db->saveSellerSubdomain($subdomain)) {
+            return ['success' => false, 'message' => '提交失败，请稍后重试'];
+        }
+
+        return [
+            'success' => true,
+            'message' => '已提交二级域名申请，请等待管理员审核通过后生效',
+            'subdomain' => $subdomain,
+        ];
     }
 }

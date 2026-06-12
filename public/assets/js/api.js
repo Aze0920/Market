@@ -401,8 +401,8 @@ const API = {
         return this.request('subdomain.php?action=check_prefix&prefix=' + encodeURIComponent(prefix));
     },
 
-    purchaseSubdomain(prefix, months = 1) {
-        return this.request('subdomain.php?action=purchase', 'POST', { prefix, months });
+    purchaseSubdomain(prefix, months = 1, baseDomain = '') {
+        return this.request('subdomain.php?action=purchase', 'POST', { prefix, months, base_domain: baseDomain });
     },
 
     getCards(onlyUnused = false) {

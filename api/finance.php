@@ -423,7 +423,8 @@ switch ($action) {
             'captcha_login_enabled',
             'captcha_register_enabled',
             'announcement_enabled',
-            'announcement_popup_enabled'
+            'announcement_popup_enabled',
+            'subdomain_enabled'
         ];
         foreach ($booleanFields as $field) {
             if (isset($_POST[$field])) {
@@ -528,6 +529,20 @@ switch ($action) {
         }
         if (isset($_POST['email_code_ttl'])) {
             $config['email_code_ttl'] = max(1, min(60, intval($_POST['email_code_ttl'])));
+        }
+        if (isset($_POST['subdomain_monthly_price'])) {
+            $config['subdomain_monthly_price'] = max(0.01, floatval($_POST['subdomain_monthly_price']));
+        }
+        if (isset($_POST['subdomain_base_domains'])) {
+            require_once __DIR__ . '/../core/SubdomainHelper.php';
+            $domains = SubdomainHelper::parseBaseDomainsInput($_POST['subdomain_base_domains']);
+            $config['subdomain_base_domains'] = $domains;
+            $config['subdomain_base_domain'] = $domains[0] ?? '';
+        } elseif (isset($_POST['subdomain_base_domain'])) {
+            require_once __DIR__ . '/../core/SubdomainHelper.php';
+            $domain = SubdomainHelper::normalizeBaseDomain($_POST['subdomain_base_domain']);
+            $config['subdomain_base_domain'] = $domain;
+            $config['subdomain_base_domains'] = $domain !== '' ? [$domain] : [];
         }
         
         $db->updateSystemConfig($config);

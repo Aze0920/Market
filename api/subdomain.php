@@ -48,8 +48,8 @@ switch ($action) {
             ]);
         }
 
-        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
-        if ($baseDomain === '') {
+        $baseDomains = SubdomainHelper::getBaseDomains($config);
+        if (empty($baseDomains)) {
             jsonResponse([
                 'success' => true,
                 'active' => false,
@@ -60,8 +60,8 @@ switch ($action) {
             ]);
         }
 
-        $prefix = SubdomainHelper::extractPrefixFromHost($host, $baseDomain);
-        if ($prefix === null) {
+        $match = SubdomainHelper::extractPrefixFromHost($host, $baseDomains);
+        if ($match === null) {
             jsonResponse([
                 'success' => true,
                 'active' => false,
@@ -70,8 +70,10 @@ switch ($action) {
             ]);
         }
 
+        $prefix = $match['prefix'];
+        $baseDomain = $match['base_domain'];
         $subdomain = $db->getSellerSubdomainByPrefix($prefix);
-        $fullDomain = SubdomainHelper::fullHost($prefix, $baseDomain);
+        $fullDomain = SubdomainHelper::fullHost($prefix, $subdomain['base_domain'] ?? $baseDomain);
         if (!$subdomain) {
             jsonResponse([
                 'success' => true,
@@ -128,9 +130,9 @@ switch ($action) {
         $userId = requireAuth();
         $user = getCurrentUser();
         $config = $db->getSystemConfig();
-        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
         $subdomain = $db->getSellerSubdomainByUserId($userId);
         if ($subdomain) {
+            $baseDomain = SubdomainHelper::resolveBaseDomainChoice($config, $subdomain['base_domain'] ?? '');
             $subdomain = SubdomainHelper::decorateSubdomainRecord($subdomain, $baseDomain);
         }
         jsonResponse([
@@ -159,27 +161,9 @@ switch ($action) {
         }
 
         $config = $db->getSystemConfig();
-        if (!SubdomainHelper::configEnabled($config)) {
-            jsonResponse(['success' => false, 'message' => '二级域名功能未开启'], 400);
-        }
-        if (($user['merchant_status'] ?? 'none') !== 'approved') {
-            jsonResponse(['success' => false, 'message' => '请先完成商家认证后再申请二级域名'], 403);
-        }
-
         $prefix = strtolower(trim((string)($_POST['prefix'] ?? '')));
         $months = max(1, min(36, intval($_POST['months'] ?? 1)));
-        $error = SubdomainHelper::validatePrefix($prefix);
-        if ($error) {
-            jsonResponse(['success' => false, 'message' => $error], 400);
-        }
-
-        $existing = $db->getSellerSubdomainByUserId($userId);
-        if ($existing && !in_array($existing['status'] ?? '', ['rejected'], true)) {
-            jsonResponse(['success' => false, 'message' => '您已有二级域名记录，无法重复购买'], 400);
-        }
-        if ($db->getSellerSubdomainByPrefix($prefix)) {
-            jsonResponse(['success' => false, 'message' => '该前缀已被占用'], 400);
-        }
+        $baseDomain = trim((string)($_POST['base_domain'] ?? ''));
 
         $monthlyPrice = max(0.01, floatval($config['subdomain_monthly_price'] ?? 10));
         $totalPrice = round($monthlyPrice * $months, 2);
@@ -187,26 +171,15 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '余额不足'], 400);
         }
 
-        $db->updateUser($userId, ['balance' => floatval($user['balance']) - $totalPrice]);
-        $now = time();
-        $subdomain = [
-            'user_id' => $userId,
-            'prefix' => $prefix,
-            'status' => 'pending',
-            'pending_months' => $months,
-            'expires_at' => 0,
-            'last_price_paid' => $totalPrice,
-            'disabled' => false,
-            'created_at' => $now,
-        ];
-        if ($existing && ($existing['status'] ?? '') === 'rejected') {
-            $subdomain['id'] = $existing['id'];
-        }
-        if (!$db->saveSellerSubdomain($subdomain)) {
-            $db->updateUser($userId, ['balance' => floatval($user['balance'])]);
-            jsonResponse(['success' => false, 'message' => '购买失败，请稍后重试'], 500);
+        $result = SubdomainHelper::submitApplication($db, $userId, $prefix, $months, [
+            'base_domain' => $baseDomain,
+            'price_paid' => $totalPrice,
+        ]);
+        if (empty($result['success'])) {
+            jsonResponse(['success' => false, 'message' => $result['message'] ?? '购买失败'], 400);
         }
 
+        $db->updateUser($userId, ['balance' => floatval($user['balance']) - $totalPrice]);
         $db->createPaymentOrder([
             'trade_no' => 'SUB' . date('YmdHis') . rand(1000, 9999),
             'user_id' => $userId,
@@ -219,7 +192,7 @@ switch ($action) {
             'type' => 'subdomain_purchase',
             'title' => '二级域名购买',
             'description' => '购买二级域名 ' . $prefix . ' × ' . $months . ' 个月（待审核）',
-            'paid_at' => $now,
+            'paid_at' => time(),
         ]);
 
         jsonResponse([

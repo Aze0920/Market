@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/SubdomainHelper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -20,7 +21,7 @@ function genCardCode() {
 
 function jsonResponse($data, $code = 200) {
     http_response_code($code);
-    echo json_encode($data);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -49,6 +50,11 @@ function requireAdmin() {
 
 function validateId($id) {
     return preg_match('/^[a-zA-Z0-9_]+$/', $id);
+}
+
+function normalizeCardType($type) {
+    $type = strtolower(trim((string)$type));
+    return in_array($type, ['membership', 'subdomain'], true) ? $type : 'balance';
 }
 
 function checkCardUseRateLimit() {
@@ -88,7 +94,46 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '该卡密已被使用'], 400);
         }
 
-        $cardType = ($card['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
+        $cardType = normalizeCardType($card['card_type'] ?? 'balance');
+
+        if ($cardType === 'subdomain') {
+            if (!SubdomainHelper::configEnabled($db->getSystemConfig())) {
+                jsonResponse(['success' => false, 'message' => '二级域名功能未开启'], 400);
+            }
+            $prefix = strtolower(trim((string)($_POST['subdomain_prefix'] ?? '')));
+            $months = max(1, min(36, intval($card['target_level'] ?? 1)));
+            $baseDomain = trim((string)($_POST['subdomain_base_domain'] ?? ''));
+            $result = SubdomainHelper::submitApplication($db, $userId, $prefix, $months, [
+                'base_domain' => $baseDomain,
+                'price_paid' => 0,
+            ]);
+            if (empty($result['success'])) {
+                jsonResponse(['success' => false, 'message' => $result['message'] ?? '兑换失败'], 400);
+            }
+            $db->useCardCode($code, $userId);
+            $db->createPaymentOrder([
+                'trade_no' => 'CARD' . date('YmdHis') . rand(1000, 9999),
+                'user_id' => $userId,
+                'payment_config_id' => 'card',
+                'pay_type' => 'card_code',
+                'amount' => 0,
+                'actual_amount' => 0,
+                'fee' => 0,
+                'status' => 'paid',
+                'type' => 'subdomain_card',
+                'title' => '二级域名卡密兑换',
+                'description' => '使用卡密申请二级域名 ' . $prefix . ' × ' . $months . ' 个月（待审核）',
+                'related_id' => $card['id'] ?? '',
+                'paid_at' => time()
+            ]);
+            jsonResponse([
+                'success' => true,
+                'message' => '二级域名卡密兑换成功，请等待管理员审核通过后生效',
+                'card_type' => 'subdomain',
+                'months' => $months,
+            ]);
+        }
+
         if ($cardType === 'membership') {
             $levels = $db->getMembershipLevels();
             $targetLevel = trim((string)($card['target_level'] ?? ''));
@@ -162,7 +207,7 @@ switch ($action) {
 
     case 'create':
         requireAdmin();
-        $cardType = ($_POST['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
+        $cardType = normalizeCardType($_POST['card_type'] ?? 'balance');
         $amount = floatval($_POST['amount'] ?? 0);
         $targetLevel = trim((string)($_POST['target_level'] ?? ''));
         $count = intval($_POST['count'] ?? 1);
@@ -177,6 +222,14 @@ switch ($action) {
             }
             $amount = 0;
         }
+        if ($cardType === 'subdomain') {
+            if (!SubdomainHelper::configEnabled($db->getSystemConfig())) {
+                jsonResponse(['success' => false, 'message' => '二级域名功能未开启，请先在系统设置中开启'], 400);
+            }
+            $months = max(1, min(36, intval($targetLevel !== '' ? $targetLevel : ($_POST['target_level'] ?? 1))));
+            $targetLevel = (string)$months;
+            $amount = 0;
+        }
         if ($count < 1 || $count > 100) {
             jsonResponse(['success' => false, 'message' => '单次最多生成100张卡密'], 400);
         }
@@ -188,7 +241,7 @@ switch ($action) {
                 'code' => genCardCode(),
                 'amount' => $amount,
                 'card_type' => $cardType,
-                'target_level' => $cardType === 'membership' ? $targetLevel : '',
+                'target_level' => in_array($cardType, ['membership', 'subdomain'], true) ? $targetLevel : '',
                 'used' => false,
                 'used_by' => null,
                 'used_at' => null,

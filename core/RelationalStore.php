@@ -278,6 +278,7 @@ class RelationalStore {
         $this->ensureColumn('kn_payment_orders', 'refunded_at', "int unsigned DEFAULT NULL");
         $this->ensureColumn('kn_card_codes', 'card_type', "varchar(20) NOT NULL DEFAULT 'balance'");
         $this->ensureColumn('kn_card_codes', 'target_level', "varchar(50) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_seller_subdomains', 'base_domain', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureSignedDecimalColumn('kn_users', 'balance', 'decimal(14,2)', '0.00');
         $this->ensureSignedDecimalColumn('kn_users', 'frozen_balance', 'decimal(14,2)', '0.00');
     }
@@ -1077,6 +1078,7 @@ class RelationalStore {
             'id' => $row['id'],
             'user_id' => $row['user_id'] ?? '',
             'prefix' => strtolower($row['prefix'] ?? ''),
+            'base_domain' => strtolower($row['base_domain'] ?? ''),
             'status' => $row['status'] ?? 'pending',
             'expires_at' => intval($row['expires_at'] ?? 0),
             'pending_months' => intval($row['pending_months'] ?? 0),
@@ -1164,14 +1166,15 @@ class RelationalStore {
         $subdomain['updated_at'] = $now;
         $subdomain['prefix'] = strtolower(trim((string)($subdomain['prefix'] ?? '')));
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_seller_subdomains (id, user_id, prefix, status, expires_at, pending_months, last_price_paid, disabled, created_at, approved_at, reviewed_at, reviewed_by, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), prefix = VALUES(prefix), status = VALUES(status), expires_at = VALUES(expires_at), pending_months = VALUES(pending_months), last_price_paid = VALUES(last_price_paid), disabled = VALUES(disabled), approved_at = VALUES(approved_at), reviewed_at = VALUES(reviewed_at), reviewed_by = VALUES(reviewed_by), updated_at = VALUES(updated_at)'
+            'INSERT INTO kn_seller_subdomains (id, user_id, prefix, base_domain, status, expires_at, pending_months, last_price_paid, disabled, created_at, approved_at, reviewed_at, reviewed_by, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), prefix = VALUES(prefix), base_domain = VALUES(base_domain), status = VALUES(status), expires_at = VALUES(expires_at), pending_months = VALUES(pending_months), last_price_paid = VALUES(last_price_paid), disabled = VALUES(disabled), approved_at = VALUES(approved_at), reviewed_at = VALUES(reviewed_at), reviewed_by = VALUES(reviewed_by), updated_at = VALUES(updated_at)'
         );
         return $stmt->execute([
             $subdomain['id'],
             $subdomain['user_id'] ?? '',
             $subdomain['prefix'],
+            strtolower(trim((string)($subdomain['base_domain'] ?? ''))),
             $subdomain['status'] ?? 'pending',
             intval($subdomain['expires_at'] ?? 0),
             intval($subdomain['pending_months'] ?? 0),

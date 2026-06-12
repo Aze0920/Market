@@ -1097,8 +1097,8 @@ switch ($action) {
         }
         $result = $db->listSellerSubdomains($page, $pageSize, $keyword, $status);
         $config = $db->getSystemConfig();
-        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
-        $items = array_map(function($item) use ($baseDomain) {
+        $items = array_map(function($item) use ($config) {
+            $baseDomain = SubdomainHelper::resolveBaseDomainChoice($config, $item['base_domain'] ?? '');
             $item['full_domain'] = $baseDomain !== '' ? SubdomainHelper::fullHost($item['prefix'] ?? '', $baseDomain) : '';
             $item['is_expired'] = SubdomainHelper::isExpired($item);
             $item['is_active'] = SubdomainHelper::isActive($item);
@@ -1133,9 +1133,12 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => '该用户已有二级域名记录'], 400);
         }
         $now = time();
+        $config = $db->getSystemConfig();
+        $baseDomain = SubdomainHelper::resolveBaseDomainChoice($config, $_POST['base_domain'] ?? '');
         $subdomain = [
             'user_id' => $userId,
             'prefix' => $prefix,
+            'base_domain' => $baseDomain,
             'status' => $autoApprove ? 'approved' : 'pending',
             'pending_months' => $autoApprove ? 0 : $months,
             'expires_at' => $autoApprove ? ($now + SubdomainHelper::monthSeconds($months)) : 0,

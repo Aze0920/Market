@@ -99,16 +99,42 @@ function oauthProviderKey($provider) {
     return in_array($provider, $allowed, true) ? $provider : 'qq';
 }
 
+function oauthNormalizeMode($mode) {
+    return strtolower(trim((string)$mode)) === 'bind' ? 'bind' : 'login';
+}
+
+function oauthModeInputInvalid($value) {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return false;
+    }
+    return !in_array(strtolower($value), ['bind', 'login'], true);
+}
+
+function oauthRejectInvalidModeInput() {
+    $sources = [
+        $_GET['mode'] ?? null,
+        $_POST['mode'] ?? null,
+        $_COOKIE['mode'] ?? null,
+    ];
+    foreach ($sources as $value) {
+        if (oauthModeInputInvalid($value)) {
+            oauthRedirect('非法请求，请重试');
+        }
+    }
+}
+
 $provider = oauthProviderKey($provider);
 oauthRequireEnabled($config);
-$mode = $_GET['mode'] ?? $_POST['mode'] ?? '';
+oauthRejectInvalidModeInput();
+$mode = oauthNormalizeMode($_GET['mode'] ?? $_POST['mode'] ?? 'login');
 $callbackUri = oauthCallbackUri($config);
 $apiBase = oauthApiBase($config);
 
 if (empty($_GET['code'])) {
     $state = bin2hex(random_bytes(16));
     $_SESSION['oauth_qq_state'] = $state;
-    $_SESSION['oauth_qq_mode'] = $mode === 'bind' ? 'bind' : 'login';
+    $_SESSION['oauth_qq_mode'] = $mode;
     $_SESSION['oauth_qq_return'] = strpos($_SERVER['HTTP_REFERER'] ?? '', '/admin') !== false ? 'admin' : 'front';
     $_SESSION['oauth_qq_provider'] = $provider;
 
@@ -137,7 +163,7 @@ $state = $_GET['state'] ?? '';
 if ($state && !empty($_SESSION['oauth_qq_state']) && !hash_equals($_SESSION['oauth_qq_state'], $state)) {
     oauthRedirect('登录状态校验失败，请重试');
 }
-$mode = $_SESSION['oauth_qq_mode'] ?? 'login';
+$mode = oauthNormalizeMode($_SESSION['oauth_qq_mode'] ?? 'login');
 $provider = oauthProviderKey($_GET['type'] ?? $_SESSION['oauth_qq_provider'] ?? $provider);
 unset($_SESSION['oauth_qq_state'], $_SESSION['oauth_qq_mode'], $_SESSION['oauth_qq_provider']);
 

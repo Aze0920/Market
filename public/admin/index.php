@@ -1239,7 +1239,8 @@ function renderSubdomainReview() {
 function subdomainReviewRow(item) {
     const expiresValue = item.expires_at ? new Date(item.expires_at * 1000).toISOString().slice(0, 16) : '';
     const pendingMonths = Number(item.pending_months || 0);
-    const baseDomain = ((Admin.cache.sysConfig || {}).subdomain_base_domain || 'az0.cn').replace(/^\*\./, '');
+    const cfg = Admin.cache.sysConfig || {};
+    const baseDomain = (item.base_domain || (Array.isArray(cfg.subdomain_base_domains) ? cfg.subdomain_base_domains[0] : '') || cfg.subdomain_base_domain || 'az0.cn').replace(/^\*\./, '');
     const actions = [];
     if ((item.status || '') === 'pending') {
         actions.push(`<button class="btn btn-sm btn-success me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','approve')">通过</button>`);
@@ -2471,10 +2472,16 @@ function toggleAdminCardCreateType() {
     document.getElementById('cardMembershipWrap')?.classList.toggle('d-none', type !== 'membership');
     document.getElementById('cardSubdomainWrap')?.classList.toggle('d-none', type !== 'subdomain');
 }
+function isSubdomainFeatureEnabledAdmin() {
+    const c = Admin.cache.sysConfig || {};
+    const v = c.subdomain_enabled;
+    return v === true || v === '1' || v === 1;
+}
 function renderCards() {
     setTitle('卡密管理');
     const cards = Admin.cache.cards || [];
     const hasMembershipLevels = cardMembershipLevelsAdmin().length > 0;
+    const subdomainEnabled = isSubdomainFeatureEnabledAdmin();
     document.getElementById('adminContent').innerHTML = `
         <div class="panel mb-4">
             <div class="panel-title">
@@ -2489,7 +2496,7 @@ function renderCards() {
                     <select id="cardType" class="form-select" onchange="toggleAdminCardCreateType()">
                         <option value="balance">余额卡</option>
                         <option value="membership">会员卡</option>
-                        <option value="subdomain">二级域名卡</option>
+                        ${subdomainEnabled ? '<option value="subdomain">二级域名卡</option>' : ''}
                     </select>
                 </div>
                 <div class="col-md-6 col-lg-3" id="cardAmountWrap">
@@ -3153,12 +3160,15 @@ function renderBasicSettings(targetId = 'settingsContent') {
 function renderSubdomainSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     const enabled = c.subdomain_enabled === true || c.subdomain_enabled === '1' || c.subdomain_enabled === 1;
+    const domainLines = Array.isArray(c.subdomain_base_domains) && c.subdomain_base_domains.length
+        ? c.subdomain_base_domains.join('\n')
+        : (c.subdomain_base_domain || '');
     document.getElementById(targetId).innerHTML = `
         <div class="panel settings-basic-panel">
             <div class="panel-title">
                 <div>
                     <h5 class="mb-1">二级域名</h5>
-                    <div class="text-muted small">配置卖家独立店铺域名。DNS 需已配置泛解析，例如填写 <code>*.az0.cn</code> 或 <code>az0.cn</code>。</div>
+                    <div class="text-muted small">配置卖家独立店铺域名。DNS 需已配置泛解析，可填写多个主域名，每行一个，例如 <code>*.az0.cn</code>。</div>
                 </div>
             </div>
             <div class="row g-3">
@@ -3176,9 +3186,9 @@ function renderSubdomainSettings(targetId = 'settingsContent') {
                     </label>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">主域名</label>
-                    <input id="setSubdomainBaseDomain" class="form-control" placeholder="例如：*.az0.cn 或 az0.cn" value="${escapeHtml(c.subdomain_base_domain || '')}">
-                    <div class="form-text">卖家填写前缀后访问形如 <code>前缀.az0.cn</code></div>
+                    <label class="form-label">主域名（每行一个）</label>
+                    <textarea id="setSubdomainBaseDomains" class="form-control" rows="4" placeholder="例如：&#10;*.az0.cn&#10;*.example.com">${escapeHtml(domainLines)}</textarea>
+                    <div class="form-text">卖家填写前缀后访问形如 <code>前缀.az0.cn</code>，支持配置多个主域名。</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">每月价格（元）</label>
@@ -3193,7 +3203,7 @@ function renderSubdomainSettings(targetId = 'settingsContent') {
 async function saveSubdomainSettings() {
     await saveSystemConfigFields({
         subdomain_enabled: document.getElementById('setSubdomainEnabled')?.checked ? '1' : '0',
-        subdomain_base_domain: document.getElementById('setSubdomainBaseDomain')?.value || '',
+        subdomain_base_domains: document.getElementById('setSubdomainBaseDomains')?.value || '',
         subdomain_monthly_price: document.getElementById('setSubdomainMonthlyPrice')?.value || '10'
     }, '二级域名设置已保存');
 }

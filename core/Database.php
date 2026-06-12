@@ -1320,15 +1320,16 @@ class Database {
         if (!SubdomainHelper::configEnabled($config)) {
             return null;
         }
-        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
-        if ($baseDomain === '') {
+        $baseDomains = SubdomainHelper::getBaseDomains($config);
+        if (empty($baseDomains)) {
             return null;
         }
         $host = strtolower(trim((string)($host ?? ($_SERVER['HTTP_HOST'] ?? ''))));
-        $prefix = SubdomainHelper::extractPrefixFromHost($host, $baseDomain);
-        if ($prefix === null) {
+        $match = SubdomainHelper::extractPrefixFromHost($host, $baseDomains);
+        if ($match === null) {
             return null;
         }
+        $prefix = $match['prefix'];
         $subdomain = $this->getSellerSubdomainByPrefix($prefix);
         if (!$subdomain || !SubdomainHelper::isActive($subdomain)) {
             return ['mode' => 'blocked', 'prefix' => $prefix];
@@ -1337,6 +1338,7 @@ class Database {
             'mode' => 'seller',
             'seller_id' => (string)($subdomain['user_id'] ?? ''),
             'prefix' => $prefix,
+            'base_domain' => $match['base_domain'] ?? '',
         ];
     }
 }

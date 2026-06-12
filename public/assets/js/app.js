@@ -278,6 +278,12 @@ function normalizeFrontendHash() {
 
 const FRONT_DASHBOARD_TABS = ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'subdomain', 'cardmanage', 'paymentmanage', 'profile', 'customlabel', 'messages', 'reviews', 'complaints'];
 
+function isSubdomainFeatureEnabled() {
+    const c = window.KeyNestSystemConfig || {};
+    const v = c.subdomain_enabled;
+    return v === true || v === '1' || v === 1;
+}
+
 window.SellerStore = {
     active: false,
     sellerId: null,
@@ -440,6 +446,10 @@ function renderDashboardTab(tabName) {
             loadMembershipTab(contentArea);
             break;
         case 'subdomain':
+            if (!isSubdomainFeatureEnabled()) {
+                loadOverviewTab(contentArea);
+                break;
+            }
             loadSubdomainTab(contentArea);
             break;
         case 'cardmanage':
@@ -499,9 +509,10 @@ function renderDashboard(tabName = null) {
         <div class="sidebar-nav-item" data-tab="membership">
             <i class="bi bi-gem"></i><span>会员中心</span>
         </div>
+        ${isSubdomainFeatureEnabled() ? `
         <div class="sidebar-nav-item" data-tab="subdomain">
             <i class="bi bi-globe2"></i><span>二级域名</span>
-        </div>
+        </div>` : ''}
     `;
     if (App.currentUser.role === 'admin') {
         sidebarHtml += `
@@ -538,7 +549,11 @@ function renderDashboard(tabName = null) {
         };
     });
 
-    const activeTab = tabName || App.currentTab || 'overview';
+    let activeTab = tabName || App.currentTab || 'overview';
+    if (activeTab === 'subdomain' && !isSubdomainFeatureEnabled()) {
+        activeTab = 'overview';
+        App.currentTab = 'overview';
+    }
     const hasActiveTab = !!document.querySelector(`#dashSidebar .sidebar-nav-item[data-tab="${activeTab}"]`);
     renderDashboardTab(hasActiveTab ? activeTab : 'overview');
 }
@@ -2175,6 +2190,30 @@ function handlePaymentQrImageError(img, label = '收款码') {
     `;
 }
 
+function getSubdomainBaseDomains(config = {}) {
+    const domains = Array.isArray(config.base_domains) ? config.base_domains.filter(Boolean) : [];
+    if (domains.length) return domains;
+    return config.base_domain ? [config.base_domain] : [];
+}
+
+function renderSubdomainBaseDomainField(config, selected = '', inputId = 'subdomainBaseDomainInput', suffixClass = 'subdomain-base-suffix') {
+    const domains = getSubdomainBaseDomains(config);
+    if (domains.length <= 1) {
+        const domain = domains[0] || 'yourdomain.com';
+        return `<input type="hidden" id="${Security.escapeAttr(inputId)}" value="${Security.escapeAttr(selected || domain)}"><span class="input-group-text ${Security.escapeAttr(suffixClass)}">.${Security.escapeHtml(domain)}</span>`;
+    }
+    const options = domains.map(domain => `<option value="${Security.escapeAttr(domain)}" ${domain === selected ? 'selected' : ''}>*.${Security.escapeHtml(domain)}</option>`).join('');
+    return `<select id="${Security.escapeAttr(inputId)}" class="form-select subdomain-base-select" data-suffix-class="${Security.escapeAttr(suffixClass)}" style="max-width:180px" onchange="updateSubdomainBaseSuffix(this)">${options}</select>`;
+}
+
+function updateSubdomainBaseSuffix(selectEl) {
+    const baseDomain = selectEl?.value || document.getElementById('subdomainBaseDomainInput')?.value || '';
+    const suffixClass = selectEl?.dataset?.suffixClass || 'subdomain-base-suffix';
+    document.querySelectorAll('.' + suffixClass).forEach(el => {
+        el.textContent = baseDomain ? '.' + baseDomain : '';
+    });
+}
+
 async function loadSubdomainTab(area) {
     const result = await API.getMySubdomain();
     if (!result.success) {
@@ -2185,7 +2224,11 @@ async function loadSubdomainTab(area) {
     const subdomain = result.subdomain;
     const merchantApproved = (result.merchant_status || 'none') === 'approved';
     const monthlyPrice = Number(config.monthly_price || 10).toFixed(2);
-    const wildcard = Security.escapeHtml(config.wildcard_domain || config.base_domain || '未配置');
+    const baseDomains = getSubdomainBaseDomains(config);
+    const selectedBaseDomain = subdomain?.base_domain || baseDomains[0] || '';
+    const wildcard = Security.escapeHtml(baseDomains.length ? baseDomains.map(d => '*.' + d).join(' / ') : (config.wildcard_domain || config.base_domain || '未配置'));
+    const baseDomainField = renderSubdomainBaseDomainField(config, selectedBaseDomain);
+    const baseDomainSuffix = baseDomains.length <= 1 ? '' : `<span class="input-group-text subdomain-base-suffix">.${Security.escapeHtml(selectedBaseDomain)}</span>`;
     let statusHtml = '<span class="badge bg-secondary">未开通</span>';
     if (subdomain) {
         if (subdomain.status === 'pending') statusHtml = '<span class="badge bg-warning text-dark">待审核</span>';
@@ -2222,7 +2265,7 @@ async function loadSubdomainTab(area) {
                             <label class="form-label">域名前缀</label>
                             <div class="input-group">
                                 <input id="subdomainPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}" ${subdomain?.status === 'pending' ? 'readonly' : ''}>
-                                <span class="input-group-text">.${Security.escapeHtml(config.base_domain || 'yourdomain.com')}</span>
+                                ${baseDomains.length > 1 ? baseDomainField + baseDomainSuffix : baseDomainField}
                             </div>
                             <div id="subdomainPrefixHint" class="form-text"></div>
                         </div>
@@ -2241,7 +2284,10 @@ async function loadSubdomainTab(area) {
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">域名前缀</label>
-                            <input id="subdomainCardPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}">
+                            <div class="input-group">
+                                <input id="subdomainCardPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}">
+                                ${renderSubdomainBaseDomainField(config, selectedBaseDomain, 'subdomainCardBaseDomainInput', 'subdomain-card-base-suffix')}
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">二级域名卡密</label>
@@ -2273,8 +2319,9 @@ async function loadSubdomainTab(area) {
 async function purchaseSellerSubdomain() {
     const prefix = document.getElementById('subdomainPrefixInput')?.value?.trim() || '';
     const months = document.getElementById('subdomainMonthsInput')?.value || '1';
+    const baseDomain = document.getElementById('subdomainBaseDomainInput')?.value || '';
     if (!prefix) return Toast.warning('请输入域名前缀');
-    const result = await API.purchaseSubdomain(prefix, months);
+    const result = await API.purchaseSubdomain(prefix, months, baseDomain);
     if (!result.success) return Toast.error(result.message || '购买失败');
     Toast.success(result.message || '购买成功');
     await refreshUserData();
@@ -2286,7 +2333,8 @@ async function redeemSubdomainCard() {
     const code = document.getElementById('subdomainCardCodeInput')?.value?.trim() || '';
     if (!prefix) return Toast.warning('请输入域名前缀');
     if (!code) return Toast.warning('请输入卡密');
-    const result = await API.useCard(code, { subdomain_prefix: prefix });
+    const baseDomain = document.getElementById('subdomainCardBaseDomainInput')?.value || document.getElementById('subdomainBaseDomainInput')?.value || '';
+    const result = await API.useCard(code, { subdomain_prefix: prefix, subdomain_base_domain: baseDomain });
     if (!result.success) return Toast.error(result.message || '兑换失败');
     Toast.success(result.message || '兑换成功');
     renderDashboardTab('subdomain');
