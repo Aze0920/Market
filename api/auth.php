@@ -245,7 +245,7 @@ function sendRegisterEmailCode($email) {
         'footer' => '验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请忽略本邮件。',
         'time' => date('Y-m-d H:i:s')
     ]);
-    $result = KeyNestMailer::send($email, $subject, $html, $config);
+    $result = KeyNestMailer::sendAndLog($email, $subject, $html, $config);
     if (empty($result['success'])) {
         unset($_SESSION['register_email_code'][$email]);
         jsonResponse(['success' => false, 'message' => $result['message'] ?? '邮件发送失败'], 500);
@@ -280,7 +280,7 @@ function sendProfileEmailCode($user) {
         'footer' => '验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请立即检查账号安全。',
         'time' => date('Y-m-d H:i:s')
     ]);
-    $result = KeyNestMailer::send($email, $subject, $html, $config);
+    $result = KeyNestMailer::sendAndLog($email, $subject, $html, $config);
     if (empty($result['success'])) {
         unset($_SESSION['profile_email_code'][$user['id']]);
         jsonResponse(['success' => false, 'message' => $result['message'] ?? '邮件发送失败'], 500);
@@ -345,7 +345,7 @@ function sendPasswordResetEmailCode($email) {
         'footer' => '验证码 ' . $ttl . ' 分钟内有效。如果不是你本人操作，请立即检查账号安全。',
         'time' => date('Y-m-d H:i:s')
     ]);
-    $result = KeyNestMailer::send($email, $subject, $html, $config);
+    $result = KeyNestMailer::sendAndLog($email, $subject, $html, $config);
     if (empty($result['success'])) {
         unset($_SESSION['password_reset_email_code'][$email]);
         jsonResponse(['success' => false, 'message' => $result['message'] ?? '邮件发送失败'], 500);

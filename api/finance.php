@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/NotifyMail.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -185,6 +186,17 @@ function syncLegacyEmailConfigFromProfiles(array $profiles) {
     ];
 }
 
+function appendMailNotifyHint($message, array $mailResult) {
+    if (!empty($mailResult['success'])) {
+        return $message;
+    }
+    $hint = trim((string)($mailResult['message'] ?? '邮件通知发送失败'));
+    if ($hint === '') {
+        return $message;
+    }
+    return $message . '（邮件通知发送失败：' . $hint . '）';
+}
+
 switch ($action) {
     case 'balance':
         $user = getCurrentUser();
@@ -358,14 +370,25 @@ switch ($action) {
             }
             
             $admin = getCurrentUser();
+            $processedAt = time();
             $db->updateWithdrawRequest($requestId, [
                 'status' => 'paid',
                 'admin_note' => $adminNote,
                 'processed_by' => sanitizeString($admin['username']),
-                'processed_at' => time()
+                'processed_at' => $processedAt
             ]);
-            
-            jsonResponse(['success' => true, 'message' => '已标记为已支付']);
+
+            $user = $db->getUserById($withdrawRequest['user_id'] ?? '');
+            $updatedRequest = $db->getWithdrawRequest($requestId) ?: array_merge($withdrawRequest, [
+                'status' => 'paid',
+                'admin_note' => $adminNote,
+                'processed_by' => sanitizeString($admin['username']),
+                'processed_at' => $processedAt,
+            ]);
+            $config = $db->getSystemConfig();
+            $mailResult = $user ? NotifyMail::withdrawApproved($user, $updatedRequest, $config) : ['success' => false, 'message' => '用户不存在'];
+
+            jsonResponse(['success' => true, 'message' => appendMailNotifyHint('已标记为已支付', $mailResult)]);
         }
 
         $requests = $db->getDepositRequests();
@@ -389,7 +412,12 @@ switch ($action) {
         $target['status'] = 'approved';
         $db->updateDepositRequest($target);
 
-        jsonResponse(['success' => true, 'message' => '已批准']);
+        $config = $db->getSystemConfig();
+        $mailResult = ($targetUser && ($target['type'] ?? '') === 'deposit')
+            ? NotifyMail::depositApproved($targetUser, $target, $config)
+            : ['success' => false, 'message' => '无需发送邮件'];
+
+        jsonResponse(['success' => true, 'message' => appendMailNotifyHint('已批准', $mailResult)]);
 
     case 'reject':
         requireAdmin();
@@ -409,6 +437,7 @@ switch ($action) {
             
             $admin = getCurrentUser();
             $user = $db->getUserById($withdrawRequest['user_id']);
+            $processedAt = time();
             
             if ($user) {
                 $db->updateUser($user['id'], [
@@ -420,10 +449,19 @@ switch ($action) {
                 'status' => 'rejected',
                 'admin_note' => $adminNote,
                 'processed_by' => sanitizeString($admin['username']),
-                'processed_at' => time()
+                'processed_at' => $processedAt
             ]);
+
+            $updatedRequest = $db->getWithdrawRequest($requestId) ?: array_merge($withdrawRequest, [
+                'status' => 'rejected',
+                'admin_note' => $adminNote,
+                'processed_by' => sanitizeString($admin['username']),
+                'processed_at' => $processedAt,
+            ]);
+            $config = $db->getSystemConfig();
+            $mailResult = $user ? NotifyMail::withdrawRejected($user, $updatedRequest, $config) : ['success' => false, 'message' => '用户不存在'];
             
-            jsonResponse(['success' => true, 'message' => '已拒绝，余额已退还']);
+            jsonResponse(['success' => true, 'message' => appendMailNotifyHint('已拒绝，余额已退还', $mailResult)]);
         }
 
         $requests = $db->getDepositRequests();

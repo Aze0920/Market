@@ -1752,21 +1752,12 @@ switch ($action) {
             'footer' => '这是一封后台测试邮件，不会用于真实注册验证。',
             'time' => date('Y-m-d H:i:s')
         ]);
-        $result = KeyNestMailer::send($to, $subject, $html, $config, [
+        $result = KeyNestMailer::sendAndLog($to, $subject, $html, $config, [
             'profile_id' => trim((string)($_POST['profile_id'] ?? '')),
         ]);
         if (!empty($result['success'])) {
-            $db->updateSystemConfig([
-                'email_last_error' => '',
-                'email_last_error_at' => 0,
-            ]);
             $result['message'] = ($result['message'] ?? '测试邮件已发送') . '；测试验证码：' . $code;
             $result['test_code'] = $code;
-        } else {
-            $db->updateSystemConfig([
-                'email_last_error' => (string)($result['message'] ?? '测试发送失败'),
-                'email_last_error_at' => time(),
-            ]);
         }
         adminJsonResponse($result);
 

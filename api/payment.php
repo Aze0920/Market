@@ -386,7 +386,7 @@ function sendGuestQueryCodeEmail($email, $code, $paymentOrder, $productOrder = n
         'footer' => '请勿把查询码发送给他人，泄露后可能导致卡密被他人查看。',
         'time' => date('Y-m-d H:i:s')
     ]);
-    return KeyNestMailer::send($email, $siteName . ' 游客订单查询码', $html, $config);
+    return KeyNestMailer::sendAndLog($email, $siteName . ' 游客订单查询码', $html, $config);
 }
 
 function refundFailedProductPaymentOrder($order, $reason = '库存不足，购买失败，款项已退回余额') {

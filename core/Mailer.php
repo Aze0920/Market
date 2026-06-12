@@ -36,6 +36,28 @@ class KeyNestMailer {
         return ['success' => false, 'message' => $errors ? implode('；', $errors) : '没有可用的发信配置'];
     }
 
+    public static function sendAndLog($to, $subject, $html, $config, $options = []) {
+        $result = self::send($to, $subject, $html, $config, $options);
+        self::recordSendStatus($result);
+        return $result;
+    }
+
+    private static function recordSendStatus(array $result) {
+        require_once __DIR__ . '/Database.php';
+        $db = Database::getInstance();
+        if (!empty($result['success'])) {
+            $db->updateSystemConfig([
+                'email_last_error' => '',
+                'email_last_error_at' => 0,
+            ]);
+            return;
+        }
+        $db->updateSystemConfig([
+            'email_last_error' => (string)($result['message'] ?? '邮件发送失败'),
+            'email_last_error_at' => time(),
+        ]);
+    }
+
     private static function orderProfilesForLoadBalance(array $profiles) {
         $enabled = [];
         foreach ($profiles as $index => $profile) {
