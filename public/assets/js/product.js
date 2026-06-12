@@ -140,20 +140,28 @@ function getSubdomainUnavailableState(result) {
     return null;
 }
 
+function getSubdomainDisplayMessage(state) {
+    const reason = state?.reason || 'not_found';
+    const messages = {
+        not_found: '当前域名未分配，请联系管理员开通后再访问。',
+        pending: '该店铺域名正在审核中，请稍后再访问。',
+        expired: '该店铺域名已过期，请联系卖家或管理员续费。',
+        disabled: '该店铺域名已被禁用，暂时无法访问。',
+        rejected: '该店铺域名申请未通过，请联系管理员处理。',
+        inactive: '当前域名暂不可用，请联系管理员。'
+    };
+    return messages[reason] || messages.inactive;
+}
+
+function setSubdomainUnavailablePageMode(enabled) {
+    document.body.classList.toggle('subdomain-unavailable-page', !!enabled);
+}
+
 function renderSubdomainUnavailableState(state) {
     const reason = state?.reason || 'not_found';
     const meta = SUBDOMAIN_UNAVAILABLE_META[reason] || SUBDOMAIN_UNAVAILABLE_META.inactive;
     const domain = state?.full_domain || window.location.hostname;
-    const message = state?.message || '当前域名未分配，请联系管理员开通后再访问。';
-    const hintMap = {
-        not_found: '该访问地址尚未绑定任何店铺，请联系平台管理员分配域名。',
-        pending: '域名开通申请正在处理中，审核通过后将自动展示对应店铺商品。',
-        expired: '店铺域名服务已到期，续费审核通过后将恢复正常访问。',
-        disabled: '该域名已被管理员停用，如需恢复请联系平台客服。',
-        rejected: '域名申请未通过审核，请联系管理员了解详情。',
-        inactive: '当前域名暂时无法提供服务，请稍后再试或联系管理员。'
-    };
-    const hint = hintMap[reason] || hintMap.inactive;
+    const message = getSubdomainDisplayMessage(state);
     return `
         <div class="subdomain-unavailable-wrap">
             <div class="subdomain-unavailable-card tone-${Security.escapeHtml(meta.tone)}">
@@ -163,7 +171,6 @@ function renderSubdomainUnavailableState(state) {
                 <div class="subdomain-unavailable-badge">${Security.escapeHtml(meta.title)}</div>
                 <div class="subdomain-unavailable-domain">${Security.escapeHtml(domain)}</div>
                 <p class="subdomain-unavailable-message">${Security.escapeHtml(message)}</p>
-                <p class="subdomain-unavailable-hint">${Security.escapeHtml(hint)}</p>
             </div>
         </div>
     `;
@@ -176,6 +183,7 @@ function showSubdomainUnavailableState(state) {
     grid.innerHTML = '';
     emptyState.classList.remove('hidden');
     emptyState.innerHTML = renderSubdomainUnavailableState(state);
+    setSubdomainUnavailablePageMode(true);
     return true;
 }
 
@@ -202,6 +210,7 @@ async function loadProducts(options = {}) {
     if (unavailableState && showSubdomainUnavailableState(unavailableState)) {
         return;
     }
+    setSubdomainUnavailablePageMode(false);
 
     if (!result.success || result.products.length === 0) {
         grid.innerHTML = '';

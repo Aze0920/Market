@@ -268,9 +268,6 @@ class SubdomainHelper {
             'inactive' => '当前域名暂不可用，请联系管理员。',
         ];
         $message = $map[$reason] ?? $map['inactive'];
-        if ($reason === 'not_found' && $fullDomain !== '') {
-            return $fullDomain . ' 尚未开通。' . $message;
-        }
         return $message;
     }
 

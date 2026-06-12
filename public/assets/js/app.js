@@ -324,7 +324,12 @@ function updateSellerStoreBanner() {
     if (!banner) return;
     const store = window.SellerStore || {};
     const isUnavailableSubdomain = !!store.prefix && !store.active;
-    if (!store.sellerId && !isUnavailableSubdomain) {
+    if (isUnavailableSubdomain || document.body.classList.contains('subdomain-unavailable-page')) {
+        banner.classList.add('hidden');
+        banner.innerHTML = '';
+        return;
+    }
+    if (!store.sellerId) {
         banner.classList.add('hidden');
         banner.innerHTML = '';
         return;
@@ -393,18 +398,14 @@ function showHome(options = {}) {
     if (marketLink) marketLink.classList.add('active');
 
     const store = window.SellerStore || {};
+    const isUnavailableSubdomain = !!store.prefix && !store.active;
     const marketTitle = document.getElementById('marketTitle');
     const marketDescription = document.getElementById('marketDescription');
-    const isUnavailableSubdomain = !!store.prefix && !store.active;
-    if (store.sellerId && marketTitle) {
+    if (!isUnavailableSubdomain && store.sellerId && marketTitle) {
         marketTitle.textContent = (store.sellerName || store.prefix || '卖家') + ' 的店铺';
-    } else if (isUnavailableSubdomain && marketTitle) {
-        marketTitle.textContent = '域名未开通';
     }
-    if (store.sellerId && marketDescription) {
+    if (!isUnavailableSubdomain && store.sellerId && marketDescription) {
         marketDescription.textContent = store.active ? '仅展示该卖家的全部商品' : (store.message || '店铺暂不可用');
-    } else if (isUnavailableSubdomain && marketDescription) {
-        marketDescription.textContent = store.message || '当前域名未分配，请联系管理员';
     }
 
     if (opts.resetFilters !== false) resetMarketFilters();
@@ -413,6 +414,7 @@ function showHome(options = {}) {
 }
 
 function showDashboard(tabName = null) {
+    setSubdomainUnavailablePageMode(false);
     if (!App.currentUser) {
         Toast.warning('请先登录');
         openLoginModal();
@@ -2290,7 +2292,6 @@ async function loadSubdomainTab(area) {
     const renewalPending = !!subdomain?.renewal_pending;
     const wildcard = Security.escapeHtml(baseDomains.length ? baseDomains.map(d => '*.' + d).join(' / ') : (config.wildcard_domain || config.base_domain || '未配置'));
     const baseDomainField = renderSubdomainBaseDomainField(config, selectedBaseDomain);
-    const baseDomainSuffix = baseDomains.length <= 1 ? '' : `<span class="input-group-text subdomain-base-suffix">.${Security.escapeHtml(selectedBaseDomain)}</span>`;
     let statusHtml = '<span class="badge bg-secondary">未开通</span>';
     if (subdomain) {
         if (renewalPending) statusHtml = '<span class="badge bg-warning text-dark">续费待审核</span>';
@@ -2341,7 +2342,7 @@ async function loadSubdomainTab(area) {
                             <label class="form-label">域名前缀</label>
                             <div class="input-group">
                                 <input id="subdomainPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}">
-                                ${baseDomains.length > 1 ? baseDomainField + baseDomainSuffix : baseDomainField}
+                                ${baseDomainField}
                             </div>
                             <div id="subdomainPrefixHint" class="form-text"></div>
                         </div>
