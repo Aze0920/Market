@@ -2898,6 +2898,153 @@ async function saveLoginSettings() {
     if (fieldValue('oauthCaihongKey')) data.oauth_caihong_key = fieldValue('oauthCaihongKey');
     await saveSystemConfigFields(data, '登录设置已保存');
 }
+function normalizeAdminEmailProfiles(config = {}) {
+    let profiles = config.email_profiles;
+    if (typeof profiles === 'string') {
+        try { profiles = JSON.parse(profiles); } catch (e) { profiles = []; }
+    }
+    if (!Array.isArray(profiles) || !profiles.length) {
+        const fromEmail = config.resend_from_email || config.smtp_username || '';
+        const hasLegacy = fromEmail || config.resend_api_key || config.smtp_host;
+        if (hasLegacy) {
+            profiles = [{
+                id: 'legacy',
+                name: '默认发信',
+                enabled: true,
+                provider: config.email_provider || 'smtp',
+                resend_from_email: config.resend_from_email || '',
+                resend_from_name: config.resend_from_name || 'KeyNest',
+                resend_api_key: '',
+                smtp_host: config.smtp_host || '',
+                smtp_port: config.smtp_port || 465,
+                smtp_username: config.smtp_username || '',
+                smtp_password: '',
+                smtp_secure: config.smtp_secure || 'ssl'
+            }];
+        } else {
+            profiles = [{
+                id: 'email_' + Date.now(),
+                name: '发信方式 1',
+                enabled: true,
+                provider: 'smtp',
+                resend_from_email: '',
+                resend_from_name: config.resend_from_name || 'KeyNest',
+                resend_api_key: '',
+                smtp_host: 'smtp.qq.com',
+                smtp_port: 465,
+                smtp_username: '',
+                smtp_password: '',
+                smtp_secure: 'ssl'
+            }];
+        }
+    }
+    return profiles;
+}
+function emailProfileSummary(profile = {}) {
+    const name = profile.name || profile.resend_from_email || profile.smtp_username || '未命名发信';
+    const provider = profile.provider === 'resend' ? 'Resend' : 'SMTP';
+    return `${name} · ${provider}`;
+}
+function emailProfileCardHtml(profile, index, collapsed = true) {
+    const id = escapeHtml(profile.id || ('email_' + index));
+    const provider = profile.provider || 'smtp';
+    return `
+        <div class="email-profile-card border rounded-3 mb-3" data-profile-id="${id}">
+            <div class="email-profile-head d-flex justify-content-between align-items-center gap-2 p-3" onclick="toggleEmailProfileCard('${id}')" style="cursor:pointer">
+                <div class="min-width-0">
+                    <div class="fw-semibold">发信方式 ${index + 1}</div>
+                    <div class="small text-muted text-truncate">${escapeHtml(emailProfileSummary(profile))}</div>
+                </div>
+                <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation()">
+                    <div class="form-check form-switch m-0">
+                        <input class="form-check-input email-profile-enabled" type="checkbox" data-profile-id="${id}" ${profile.enabled !== false ? 'checked' : ''}>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeEmailProfile('${id}')">删除</button>
+                    <i class="bi bi-chevron-${collapsed ? 'down' : 'up'} text-muted"></i>
+                </div>
+            </div>
+            <div id="emailProfileBody-${id}" class="email-profile-body border-top p-3 ${collapsed ? 'hidden' : ''}">
+                <div class="row g-3">
+                    <div class="col-md-4"><label class="form-label">配置名称</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="name" value="${escapeHtml(profile.name || '')}" placeholder="例如：QQ邮箱1"></div>
+                    <div class="col-md-4"><label class="form-label">发信方式</label><select class="form-select email-profile-field email-profile-provider" data-profile-id="${id}" data-field="provider" onchange="toggleEmailProfileProvider('${id}')"><option value="smtp" ${provider === 'smtp' ? 'selected' : ''}>SMTP</option><option value="resend" ${provider === 'resend' ? 'selected' : ''}>Resend</option></select></div>
+                    <div class="col-md-4"><label class="form-label">发件人邮箱 From</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="resend_from_email" value="${escapeHtml(profile.resend_from_email || '')}" placeholder="noreply@example.com"></div>
+                    <div class="col-md-4"><label class="form-label">发件人名称</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="resend_from_name" value="${escapeHtml(profile.resend_from_name || 'KeyNest')}"></div>
+                    <div class="col-md-8 email-profile-resend-${id} ${provider === 'resend' ? '' : 'hidden'}"><label class="form-label">Resend API Key</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="resend_api_key" type="password" placeholder="re_xxxx；留空表示不修改"></div>
+                    <div class="col-md-4 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 主机</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_host" value="${escapeHtml(profile.smtp_host || '')}" placeholder="smtp.qq.com"></div>
+                    <div class="col-md-2 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">端口</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_port" type="number" value="${escapeHtml(profile.smtp_port || 465)}"></div>
+                    <div class="col-md-2 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">加密</label><select class="form-select email-profile-field" data-profile-id="${id}" data-field="smtp_secure"><option value="ssl" ${profile.smtp_secure === 'ssl' ? 'selected' : ''}>SSL</option><option value="tls" ${profile.smtp_secure === 'tls' ? 'selected' : ''}>TLS</option><option value="none" ${profile.smtp_secure === 'none' ? 'selected' : ''}>无</option></select></div>
+                    <div class="col-md-4 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 账号</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_username" value="${escapeHtml(profile.smtp_username || '')}"></div>
+                    <div class="col-md-6 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 密码 / 授权码</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_password" type="password" placeholder="留空表示不修改"></div>
+                </div>
+            </div>
+        </div>`;
+}
+function toggleEmailProfileCard(id) {
+    const body = document.getElementById('emailProfileBody-' + id);
+    const card = document.querySelector(`.email-profile-card[data-profile-id="${id}"]`);
+    if (!body || !card) return;
+    body.classList.toggle('hidden');
+    const icon = card.querySelector('.bi-chevron-down, .bi-chevron-up');
+    if (icon) {
+        icon.classList.toggle('bi-chevron-down', body.classList.contains('hidden'));
+        icon.classList.toggle('bi-chevron-up', !body.classList.contains('hidden'));
+    }
+}
+function toggleEmailProfileProvider(id) {
+    const provider = document.querySelector(`.email-profile-provider[data-profile-id="${id}"]`)?.value || 'smtp';
+    document.querySelectorAll(`.email-profile-smtp-${id}`).forEach(el => el.classList.toggle('hidden', provider !== 'smtp'));
+    document.querySelectorAll(`.email-profile-resend-${id}`).forEach(el => el.classList.toggle('hidden', provider !== 'resend'));
+}
+function addEmailProfileRow() {
+    const list = document.getElementById('emailProfilesList');
+    if (!list) return;
+    const count = list.querySelectorAll('.email-profile-card').length + 1;
+    const profile = {
+        id: 'email_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        name: '发信方式 ' + count,
+        enabled: true,
+        provider: 'smtp',
+        resend_from_email: '',
+        resend_from_name: fieldValue('resendFromNameGlobal') || 'KeyNest',
+        resend_api_key: '',
+        smtp_host: 'smtp.qq.com',
+        smtp_port: 465,
+        smtp_username: '',
+        smtp_password: '',
+        smtp_secure: 'ssl'
+    };
+    list.insertAdjacentHTML('beforeend', emailProfileCardHtml(profile, count - 1, false));
+}
+function removeEmailProfile(id) {
+    const card = document.querySelector(`.email-profile-card[data-profile-id="${id}"]`);
+    if (!card) return;
+    const list = document.getElementById('emailProfilesList');
+    if (list && list.querySelectorAll('.email-profile-card').length <= 1) {
+        return showToast('至少保留一个发信配置', 'warning');
+    }
+    card.remove();
+}
+function collectEmailProfilesFromForm() {
+    const cards = Array.from(document.querySelectorAll('.email-profile-card'));
+    return cards.map(card => {
+        const id = card.dataset.profileId || '';
+        const read = field => card.querySelector(`.email-profile-field[data-profile-id="${id}"][data-field="${field}"]`)?.value ?? '';
+        return {
+            id,
+            name: read('name').trim(),
+            enabled: card.querySelector(`.email-profile-enabled[data-profile-id="${id}"]`)?.checked !== false,
+            provider: read('provider') || 'smtp',
+            resend_from_email: read('resend_from_email').trim(),
+            resend_from_name: read('resend_from_name').trim() || 'KeyNest',
+            resend_api_key: read('resend_api_key').trim(),
+            smtp_host: read('smtp_host').trim(),
+            smtp_port: Number(read('smtp_port') || 465),
+            smtp_username: read('smtp_username').trim(),
+            smtp_password: read('smtp_password'),
+            smtp_secure: read('smtp_secure') || 'ssl'
+        };
+    });
+}
 function defaultEmailTemplateHtml() {
     return `<div style="margin:0;padding:28px;background:#f3f6fb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1f2937"><div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.12);border:1px solid #e5e7eb"><div style="padding:26px 30px;background:linear-gradient(135deg,#6d5dfc,#8b5cf6);color:#fff"><div style="font-size:14px;opacity:.9">{{site_name}}</div><div style="font-size:24px;font-weight:800;margin-top:6px">{{title}}</div></div><div style="padding:30px"><p style="margin:0 0 14px;font-size:15px;line-height:1.8;color:#4b5563">{{message}}</p><div style="margin:22px 0;padding:20px;border-radius:18px;background:#f8fafc;border:1px dashed #c7d2fe;text-align:center"><div style="font-size:13px;color:#64748b;margin-bottom:8px">验证码</div><div style="font-size:34px;letter-spacing:8px;font-weight:900;color:#4f46e5">{{code}}</div></div><p style="margin:0;font-size:13px;line-height:1.8;color:#94a3b8">{{footer}}</p></div></div></div>`;
 }
@@ -2916,15 +3063,66 @@ function resetEmailTemplateHtml() {
 }
 function renderReservedEmailSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    const provider = c.email_provider || 'smtp';
+    const profiles = normalizeAdminEmailProfiles(c);
     const template = c.email_template_html || defaultEmailTemplateHtml();
-    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>邮箱验证</h5><button class="btn btn-sm btn-primary" onclick="saveEmailSettings()">保存邮箱设置</button></div><div class="config-help mb-3">支持 Resend 和通用 SMTP。Resend API 模式只需要 API Key 和已验证发件域名，不需要填写用户名；如果使用 QQ/163/Gmail 等 SMTP，请使用邮箱账号和授权码。下面可以直接修改验证码邮件卡片 HTML，并实时预览效果。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="emailVerifyEnabled" ${c.register_email_verify_enabled ? 'checked' : ''}><label class="form-check-label" for="emailVerifyEnabled">注册时启用邮箱验证码</label></div></div><div class="col-md-4"><label class="form-label">发信方式</label><select id="emailProvider" class="form-select" onchange="toggleEmailProviderFields()"><option value="smtp" ${provider === 'smtp' ? 'selected' : ''}>SMTP（QQ/163/Gmail/企业邮箱）</option><option value="resend" ${provider === 'resend' ? 'selected' : ''}>Resend</option></select></div><div class="col-md-4"><label class="form-label">发件人邮箱 From</label><input id="resendFromEmail" class="form-control" value="${escapeHtml(c.resend_from_email || '')}" placeholder="noreply@example.com"></div><div class="col-md-4"><label class="form-label">发件人名称</label><input id="resendFromName" class="form-control" value="${escapeHtml(c.resend_from_name || 'KeyNest')}" placeholder="KeyNest"></div><div class="col-md-4"><label class="form-label">验证码有效期（分钟）</label><input id="emailCodeTtl" class="form-control" type="number" min="1" max="60" value="${escapeHtml(c.email_code_ttl || 10)}"></div><div class="col-md-8 resend-email-field"><label class="form-label">Resend API Key</label><input id="resendApiKey" class="form-control" type="password" placeholder="re_xxxxxxxxx；留空表示不修改"></div><div class="col-md-4 smtp-email-field"><label class="form-label">SMTP 主机</label><input id="smtpHost" class="form-control" value="${escapeHtml(c.smtp_host || '')}" placeholder="smtp.qq.com"></div><div class="col-md-2 smtp-email-field"><label class="form-label">端口</label><input id="smtpPort" class="form-control" type="number" value="${escapeHtml(c.smtp_port || 465)}" placeholder="465"></div><div class="col-md-2 smtp-email-field"><label class="form-label">加密</label><select id="smtpSecure" class="form-select"><option value="ssl" ${c.smtp_secure === 'ssl' ? 'selected' : ''}>SSL</option><option value="tls" ${c.smtp_secure === 'tls' ? 'selected' : ''}>TLS</option><option value="none" ${c.smtp_secure === 'none' ? 'selected' : ''}>无</option></select></div><div class="col-md-4 smtp-email-field"><label class="form-label">SMTP 账号</label><input id="smtpUsername" class="form-control" value="${escapeHtml(c.smtp_username || '')}" placeholder="你的邮箱地址"></div><div class="col-md-6 smtp-email-field"><label class="form-label">SMTP 密码 / 授权码</label><input id="smtpPassword" class="form-control" type="password" placeholder="留空表示不修改；QQ 邮箱填授权码"></div><div class="col-md-6"><label class="form-label">测试收件邮箱</label><div class="input-group"><input id="testEmailTo" class="form-control" placeholder="输入你的邮箱测试发送"><button class="btn btn-outline-primary" type="button" onclick="testEmailSettings()">测试发送</button></div></div><div class="col-12"><div class="row g-3 align-items-stretch"><div class="col-lg-6"><div class="d-flex justify-content-end align-items-center mb-2"><button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetEmailTemplateHtml()">恢复默认卡片</button></div><textarea id="emailTemplateHtml" class="form-control" rows="16" oninput="updateEmailTemplatePreview()">${escapeHtml(template)}</textarea><div class="config-help mt-2">可用变量：<code>{{site_name}}</code> <code>{{title}}</code> <code>{{message}}</code> <code>{{code}}</code> <code>{{ttl}}</code> <code>{{footer}}</code> <code>{{time}}</code></div></div><div class="col-lg-6"><div id="emailTemplatePreview" style="background:#eef2f7;border:1px solid #e5e7eb;border-radius:18px;padding:18px;min-height:430px;max-height:520px;overflow:auto"></div></div></div></div></div></div>`;
-    toggleEmailProviderFields();
+    const lastError = c.email_last_error || '';
+    const lastErrorAt = c.email_last_error_at ? dateText(c.email_last_error_at) : '';
+    document.getElementById(targetId).innerHTML = `
+        <div class="panel">
+            <div class="panel-title"><h5>邮箱验证</h5><button class="btn btn-sm btn-primary" onclick="saveEmailSettings()">保存邮箱设置</button></div>
+            <div class="config-help mb-3">可配置多个发信邮箱，系统会按顺序轮番发送；某个邮箱失败会自动切换下一个，并在下方显示报错提示。每个配置可折叠管理。</div>
+            ${lastError ? `<div class="alert alert-danger py-2 small mb-3"><strong>最近发信异常：</strong>${escapeHtml(lastError)}${lastErrorAt ? `<div class="mt-1 text-muted">时间：${escapeHtml(lastErrorAt)}</div>` : ''}</div>` : ''}
+            <div class="row g-3 mb-3">
+                <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="emailVerifyEnabled" ${c.register_email_verify_enabled ? 'checked' : ''}><label class="form-check-label" for="emailVerifyEnabled">注册时启用邮箱验证码</label></div></div>
+                <div class="col-md-4"><label class="form-label">验证码有效期（分钟）</label><input id="emailCodeTtl" class="form-control" type="number" min="1" max="60" value="${escapeHtml(c.email_code_ttl || 10)}"></div>
+                <div class="col-md-4"><label class="form-label">默认发件人名称</label><input id="resendFromNameGlobal" class="form-control" value="${escapeHtml(c.resend_from_name || 'KeyNest')}"></div>
+                <div class="col-md-4"><label class="form-label">测试收件邮箱</label><div class="input-group"><input id="testEmailTo" class="form-control" placeholder="输入你的邮箱测试发送"><button class="btn btn-outline-primary" type="button" onclick="testEmailSettings()">测试发送</button></div></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0">发信方式列表</h6>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addEmailProfileRow()"><i class="bi bi-plus-circle me-1"></i>新增发信方式</button>
+            </div>
+            <div id="emailProfilesList">${profiles.map((p, i) => emailProfileCardHtml(p, i, i > 0)).join('')}</div>
+            <div class="row g-3 align-items-stretch mt-3">
+                <div class="col-lg-6">
+                    <div class="d-flex justify-content-between align-items-center mb-2"><label class="form-label mb-0">验证码邮件卡片 HTML</label><button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetEmailTemplateHtml()">恢复默认卡片</button></div>
+                    <textarea id="emailTemplateHtml" class="form-control" rows="16" oninput="updateEmailTemplatePreview()">${escapeHtml(template)}</textarea>
+                    <div class="config-help mt-2">可用变量：<code>{{site_name}}</code> <code>{{title}}</code> <code>{{message}}</code> <code>{{code}}</code> <code>{{ttl}}</code> <code>{{footer}}</code> <code>{{time}}</code></div>
+                </div>
+                <div class="col-lg-6"><label class="form-label">实时预览</label><div id="emailTemplatePreview" style="background:#eef2f7;border:1px solid #e5e7eb;border-radius:18px;padding:18px;min-height:430px;max-height:520px;overflow:auto"></div></div>
+            </div>
+        </div>`;
     updateEmailTemplatePreview();
 }
-function toggleEmailProviderFields() { const provider = fieldValue('emailProvider') || 'smtp'; document.querySelectorAll('.resend-email-field').forEach(el => el.style.display = provider === 'resend' ? '' : 'none'); document.querySelectorAll('.smtp-email-field').forEach(el => el.style.display = provider === 'smtp' ? '' : 'none'); }
-async function saveEmailSettings() { await saveSystemConfigFields({ register_email_verify_enabled: checkedValue('emailVerifyEnabled'), email_provider: fieldValue('emailProvider'), resend_api_key: fieldValue('resendApiKey'), resend_from_email: fieldValue('resendFromEmail'), resend_from_name: fieldValue('resendFromName'), email_code_ttl: fieldValue('emailCodeTtl'), email_template_html: fieldValue('emailTemplateHtml'), smtp_host: fieldValue('smtpHost'), smtp_port: fieldValue('smtpPort'), smtp_username: fieldValue('smtpUsername'), smtp_password: fieldValue('smtpPassword'), smtp_secure: fieldValue('smtpSecure') }, '邮箱设置已保存'); await loadAdminData(); }
-async function testEmailSettings() { const email = fieldValue('testEmailTo'); if (!email) return showToast('请输入测试收件邮箱', 'warning'); const saveRes = await request('finance.php?action=update_system_config', 'POST', { register_email_verify_enabled: checkedValue('emailVerifyEnabled'), email_provider: fieldValue('emailProvider'), resend_api_key: fieldValue('resendApiKey'), resend_from_email: fieldValue('resendFromEmail'), resend_from_name: fieldValue('resendFromName'), email_code_ttl: fieldValue('emailCodeTtl'), email_template_html: fieldValue('emailTemplateHtml'), smtp_host: fieldValue('smtpHost'), smtp_port: fieldValue('smtpPort'), smtp_username: fieldValue('smtpUsername'), smtp_password: fieldValue('smtpPassword'), smtp_secure: fieldValue('smtpSecure') }); if (!saveRes.success) return showToast(saveRes.message || '保存邮箱设置失败', 'error'); const res = await request('admin.php?action=test_email', 'POST', { email }); if (!res.success) return showToast(res.message || '测试发送失败', 'error'); showToast(res.message || '测试验证码邮件已发送', 'success'); }
+async function saveEmailSettings() {
+    await saveSystemConfigFields({
+        register_email_verify_enabled: checkedValue('emailVerifyEnabled'),
+        email_code_ttl: fieldValue('emailCodeTtl'),
+        resend_from_name: fieldValue('resendFromNameGlobal'),
+        email_template_html: fieldValue('emailTemplateHtml'),
+        email_profiles: JSON.stringify(collectEmailProfilesFromForm())
+    }, '邮箱设置已保存');
+    await loadAdminData();
+    renderReservedEmailSettings();
+}
+async function testEmailSettings() {
+    const email = fieldValue('testEmailTo');
+    if (!email) return showToast('请输入测试收件邮箱', 'warning');
+    const saveRes = await request('finance.php?action=update_system_config', 'POST', {
+        register_email_verify_enabled: checkedValue('emailVerifyEnabled'),
+        email_code_ttl: fieldValue('emailCodeTtl'),
+        resend_from_name: fieldValue('resendFromNameGlobal'),
+        email_template_html: fieldValue('emailTemplateHtml'),
+        email_profiles: JSON.stringify(collectEmailProfilesFromForm())
+    });
+    if (!saveRes.success) return showToast(saveRes.message || '保存邮箱设置失败', 'error');
+    const res = await request('admin.php?action=test_email', 'POST', { email });
+    if (!res.success) return showToast(res.message || '测试发送失败', 'error');
+    showToast((res.message || '测试验证码邮件已发送') + (res.used_profile ? `（使用：${res.used_profile}）` : ''), 'success');
+    await loadAdminData();
+    renderReservedEmailSettings();
+}
+function toggleEmailProviderFields() {}
 function renderReservedCaptchaSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">已接入 Cloudflare Turnstile 和极验行为验证 v3：发送邮箱验证码每次都会强制验证；登录/注册是否验证请到“登录注册”页签分别开启。极验请填写 Captcha ID 到 Site Key，Private Key 到 Secret Key；扩展配置可填 JSON，例如 {&quot;product&quot;:&quot;bind&quot;,&quot;lang&quot;:&quot;zh-cn&quot;}。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用全站人机验证能力</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select" onchange="updateCaptchaProviderLink()"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3（仅保存参数）</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码（仅保存参数）</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码（仅保存参数）</option></select></div><div class="col-md-8"><label class="form-label">服务商官网</label><div id="captchaProviderLink" class="config-help py-2"></div></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;

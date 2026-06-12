@@ -1374,6 +1374,9 @@ switch ($action) {
         $result = KeyNestMailer::send($to, $subject, $html, $config);
         if (!empty($result['success'])) {
             $result['message'] = ($result['message'] ?? '测试邮件已发送') . '；测试验证码：' . $code;
+            if (!empty($result['used_profile'])) {
+                $result['message'] .= '；使用发信：' . $result['used_profile'];
+            }
             $result['test_code'] = $code;
         }
         adminJsonResponse($result);

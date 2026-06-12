@@ -3884,6 +3884,9 @@ async function submitComment(productId, orderId) {
     return submitReviewDialog(productId, orderId);
 }
 
+function orderTradeNo(order) {
+    return order?.payment_trade_no || order?.id || '-';
+}
 async function loadComplaintsTab(area) {
     const [ordersResult, salesResult] = await Promise.all([API.getMyOrders(), API.getMySales()]);
     const buyerComplaints = ordersResult.success ? ordersResult.orders.filter(o => o.complaint) : [];
@@ -3946,7 +3949,7 @@ async function loadComplaintsTab(area) {
             <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
                 <div>
                     <div class="fw-bold">${Security.escapeHtml(order.product_title || '-')}</div>
-                    <div class="text-muted small">${role === 'buyer' ? '我是买家' : '我是卖家'} · 订单 ${Security.escapeHtml(order.id || '-')} · 冻结 ¥${Number(order.frozen_amount || 0).toFixed(2)} · ${Utils.formatDate(order.complaint?.created_at || order.purchase_date)}</div>
+                    <div class="text-muted small">${role === 'buyer' ? '我是买家' : '我是卖家'} · 交易号 ${Security.escapeHtml(orderTradeNo(order))} · 冻结 ¥${Number(order.frozen_amount || 0).toFixed(2)} · ${Utils.formatDate(order.complaint?.created_at || order.purchase_date)}</div>
                 </div>
                 ${renderStatus(order.complaint)}
             </div>

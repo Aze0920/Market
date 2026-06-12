@@ -150,6 +150,28 @@ function freezeSellerOrderBalance(&$order) {
     return true;
 }
 
+function attachPaymentTradeNoToOrder($order) {
+    $wrapped = [$order];
+    attachPaymentTradeNoToOrders($wrapped);
+    return $wrapped[0];
+}
+
+function attachPaymentTradeNoToOrders(array $orders) {
+    global $db;
+    $map = [];
+    foreach ($db->getPaymentOrders() as $paymentOrder) {
+        $relatedId = trim((string)($paymentOrder['related_id'] ?? ''));
+        if ($relatedId !== '' && empty($map[$relatedId])) {
+            $map[$relatedId] = (string)($paymentOrder['trade_no'] ?? '');
+        }
+    }
+    foreach ($orders as &$order) {
+        $order['payment_trade_no'] = $map[$order['id'] ?? ''] ?? '';
+    }
+    unset($order);
+    return $orders;
+}
+
 function releaseSellerOrderBalance(&$order) {
     global $db;
     if (empty($order['balance_frozen'])) return true;
@@ -232,15 +254,8 @@ switch ($action) {
     case 'my_orders':
         $userId = requireAuth();
         $orders = $db->getOrders($userId, 'buyer');
-        $paymentTradeNoByOrderId = [];
-        foreach ($db->getPaymentOrders($userId) as $paymentOrder) {
-            $relatedId = trim((string)($paymentOrder['related_id'] ?? ''));
-            if ($relatedId !== '' && empty($paymentTradeNoByOrderId[$relatedId])) {
-                $paymentTradeNoByOrderId[$relatedId] = $paymentOrder['trade_no'] ?? '';
-            }
-        }
+        attachPaymentTradeNoToOrders($orders);
         foreach ($orders as &$order) {
-            $order['payment_trade_no'] = $paymentTradeNoByOrderId[$order['id'] ?? ''] ?? '';
             $order['has_comment'] = $db->hasComment($userId, $order['product_id'] ?? '', $order['id'] ?? '');
             if (!empty($order['delivery_info']['pickup_password_enabled'])) {
                 $order['delivery_info'] = maskDeliveryInfo($order['delivery_info']);
@@ -254,6 +269,7 @@ switch ($action) {
     case 'my_sales':
         $userId = requireAuth();
         $orders = $db->getOrders($userId, 'seller');
+        attachPaymentTradeNoToOrders($orders);
         foreach ($orders as &$order) {
             $order = anonymizeGuestBuyerForSeller(safeOrderForResponse($order));
         }
@@ -298,6 +314,10 @@ switch ($action) {
         if (($order['seller_id'] ?? '') === $sessionUserId && !empty($order['guest_order'])) {
             $order = anonymizeGuestBuyerForSeller($order);
         }
+
+        $wrapped = [$order];
+        attachPaymentTradeNoToOrders($wrapped);
+        $order = $wrapped[0];
 
         jsonResponse(['success' => true, 'order' => $guestAllowed ? safeGuestOrderForResponse($order) : safeOrderForResponse($order)]);
 
@@ -381,6 +401,7 @@ switch ($action) {
             'updated_at' => time()
         ];
 
+        $order = attachPaymentTradeNoToOrder($order);
         $mailResult = NotifyMail::buyerComplaintEmail($order, $password, $config);
         if (empty($mailResult['success'])) {
             releaseSellerOrderBalance($order);
@@ -421,8 +442,9 @@ switch ($action) {
         $order['complaint_withdrawn_at'] = time();
         $config = $db->getSystemConfig();
         $db->updateOrder($order);
-        NotifyMail::sellerComplaintWithdrawn($order, $config);
-        NotifyMail::buyerComplaintWithdrawn($order, $config);
+        $notifyOrder = attachPaymentTradeNoToOrder($order);
+        NotifyMail::sellerComplaintWithdrawn($notifyOrder, $config);
+        NotifyMail::buyerComplaintWithdrawn($notifyOrder, $config);
         jsonResponse(['success' => true, 'message' => '已撤诉，冻结金额已解冻，投诉记录已保留']);
 
     case 'reply_complaint':
@@ -484,8 +506,11 @@ switch ($action) {
         $order['complaint']['updated_at'] = time();
         $config = $db->getSystemConfig();
         $db->updateOrder($order);
+        $notifyOrder = attachPaymentTradeNoToOrder($order);
         if ($isSeller) {
-            NotifyMail::buyerSellerReply($order, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
+            NotifyMail::buyerSellerReply($notifyOrder, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
+        } elseif ($isBuyer) {
+            NotifyMail::sellerBuyerReply($notifyOrder, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
         }
         jsonResponse(['success' => true, 'message' => '回复已提交']);
 
@@ -532,8 +557,9 @@ switch ($action) {
         $refundAmount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? 0));
         $config = $db->getSystemConfig();
         $db->updateOrder($order);
-        NotifyMail::buyerSellerRefund($order, $refundAmount, $refundNote, $config);
-        NotifyMail::sellerComplaintRefundDone($order, $refundAmount, $refundNote, $config);
+        $notifyOrder = attachPaymentTradeNoToOrder($order);
+        NotifyMail::buyerSellerRefund($notifyOrder, $refundAmount, $refundNote, $config);
+        NotifyMail::sellerComplaintRefundDone($notifyOrder, $refundAmount, $refundNote, $config);
         jsonResponse(['success' => true, 'message' => $message]);
 
     case 'overview':

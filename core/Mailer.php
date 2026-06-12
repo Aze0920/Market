@@ -1,11 +1,124 @@
 <?php
 class KeyNestMailer {
     public static function send($to, $subject, $html, $config) {
+        $profiles = self::getEnabledEmailProfiles($config);
+        if (empty($profiles)) {
+            return ['success' => false, 'message' => '未配置可用的发信邮箱，请先在后台添加并启用发信方式'];
+        }
+        $startIndex = intval($config['email_rotate_index'] ?? 0);
+        $count = count($profiles);
+        $errors = [];
+        for ($i = 0; $i < $count; $i++) {
+            $idx = ($startIndex + $i) % $count;
+            $profile = $profiles[$idx];
+            $label = self::profileLabel($profile);
+            $merged = self::mergeProfileIntoConfig($config, $profile);
+            $result = self::sendWithProvider($to, $subject, $html, $merged);
+            if (!empty($result['success'])) {
+                self::persistEmailState($idx + 1, '');
+                return array_merge($result, ['used_profile' => $label]);
+            }
+            $errors[] = $label . '：' . ($result['message'] ?? '发送失败');
+        }
+        $errorText = implode('；', $errors);
+        self::persistEmailState($startIndex, $errorText);
+        return ['success' => false, 'message' => '所有发信邮箱均失败：' . $errorText, 'errors' => $errors];
+    }
+
+    private static function sendWithProvider($to, $subject, $html, $config) {
         $provider = $config['email_provider'] ?? 'smtp';
         if ($provider === 'resend') {
             return self::sendResend($to, $subject, $html, $config);
         }
         return self::sendSmtp($to, $subject, $html, $config);
+    }
+
+    public static function getEmailProfiles($config, $enabledOnly = false) {
+        $profiles = $config['email_profiles'] ?? [];
+        if (is_string($profiles)) {
+            $decoded = json_decode($profiles, true);
+            $profiles = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($profiles) || count($profiles) === 0) {
+            $legacy = self::legacyProfileFromConfig($config);
+            $profiles = $legacy ? [$legacy] : [];
+        }
+        if ($enabledOnly) {
+            $profiles = array_values(array_filter($profiles, function($profile) {
+                return !array_key_exists('enabled', $profile) || !empty($profile['enabled']);
+            }));
+        }
+        return array_values($profiles);
+    }
+
+    private static function getEnabledEmailProfiles($config) {
+        return self::getEmailProfiles($config, true);
+    }
+
+    private static function legacyProfileFromConfig($config) {
+        $provider = (string)($config['email_provider'] ?? 'smtp');
+        $fromEmail = trim((string)($config['resend_from_email'] ?? ''));
+        $smtpUser = trim((string)($config['smtp_username'] ?? ''));
+        $apiKey = trim((string)($config['resend_api_key'] ?? ''));
+        if ($fromEmail === '' && $smtpUser === '' && $apiKey === '') {
+            return null;
+        }
+        return [
+            'id' => 'legacy',
+            'name' => '默认发信',
+            'enabled' => true,
+            'provider' => $provider === 'resend' ? 'resend' : 'smtp',
+            'resend_from_email' => $fromEmail,
+            'resend_from_name' => (string)($config['resend_from_name'] ?? 'KeyNest'),
+            'resend_api_key' => (string)($config['resend_api_key'] ?? ''),
+            'smtp_host' => (string)($config['smtp_host'] ?? ''),
+            'smtp_port' => intval($config['smtp_port'] ?? 465),
+            'smtp_username' => $smtpUser,
+            'smtp_password' => (string)($config['smtp_password'] ?? ''),
+            'smtp_secure' => (string)($config['smtp_secure'] ?? 'ssl'),
+        ];
+    }
+
+    private static function mergeProfileIntoConfig($config, $profile) {
+        $merged = $config;
+        $merged['email_provider'] = ($profile['provider'] ?? 'smtp') === 'resend' ? 'resend' : 'smtp';
+        $merged['resend_from_email'] = (string)($profile['resend_from_email'] ?? '');
+        $merged['resend_from_name'] = (string)($profile['resend_from_name'] ?? ($config['resend_from_name'] ?? 'KeyNest'));
+        $merged['resend_api_key'] = (string)($profile['resend_api_key'] ?? '');
+        $merged['smtp_host'] = (string)($profile['smtp_host'] ?? '');
+        $merged['smtp_port'] = intval($profile['smtp_port'] ?? 465);
+        $merged['smtp_username'] = (string)($profile['smtp_username'] ?? '');
+        $merged['smtp_password'] = (string)($profile['smtp_password'] ?? '');
+        $merged['smtp_secure'] = (string)($profile['smtp_secure'] ?? 'ssl');
+        return $merged;
+    }
+
+    public static function profileLabel($profile) {
+        $name = trim((string)($profile['name'] ?? ''));
+        if ($name !== '') return $name;
+        $from = trim((string)($profile['resend_from_email'] ?? $profile['smtp_username'] ?? ''));
+        if ($from !== '') return $from;
+        return (string)($profile['id'] ?? '未命名发信');
+    }
+
+    private static function persistEmailState($rotateIndex, $lastError) {
+        if (!class_exists('Database')) {
+            require_once __DIR__ . '/Database.php';
+        }
+        $db = Database::getInstance();
+        $updates = ['email_rotate_index' => max(0, intval($rotateIndex))];
+        $updates['email_last_error'] = (string)$lastError;
+        $updates['email_last_error_at'] = $lastError !== '' ? time() : 0;
+        $db->updateSystemConfig($updates);
+    }
+
+    public static function encryptSmtpPassword($plainPassword) {
+        $plainPassword = (string)$plainPassword;
+        if ($plainPassword === '') return '';
+        $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
+        $iv = openssl_random_pseudo_bytes(16);
+        $encrypted = openssl_encrypt($plainPassword, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+        return $encrypted !== false ? base64_encode($iv . $encrypted) : $plainPassword;
     }
 
     public static function defaultTemplate() {

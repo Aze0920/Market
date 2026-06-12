@@ -24,7 +24,7 @@ class NotifyMail {
     private static function orderDetails($order, $extra = []) {
         $rows = [
             ['label' => '商品', 'value' => (string)($order['product_title'] ?? '-')],
-            ['label' => '订单号', 'value' => (string)($order['id'] ?? '-')],
+            ['label' => '交易号', 'value' => (string)($order['payment_trade_no'] ?? $order['id'] ?? '-')],
         ];
         foreach ($extra as $row) {
             if (!is_array($row)) continue;
@@ -107,6 +107,32 @@ class NotifyMail {
                     ['label' => '回复内容', 'value' => (string)$reply],
                 ]),
                 'footer' => '如问题仍未解决，您可以继续回复或保留投诉等待平台处理。',
+            ]
+        );
+    }
+
+    public static function sellerBuyerReply($order, $reply, $config) {
+        global $db;
+        $seller = $db->getUserById($order['seller_id'] ?? '');
+        $email = self::userEmail($seller);
+        if ($email === '') {
+            return ['success' => false, 'message' => '卖家未绑定邮箱'];
+        }
+        $siteName = self::siteName($config);
+        return KeyNestMailer::sendNotification(
+            $email,
+            $siteName . ' 买家回复了投诉',
+            $config,
+            [
+                'title' => '买家已回复投诉',
+                'badge' => '投诉动态',
+                'accent' => 'warning',
+                'message' => '买家对投诉作出了新的回复，请登录查看详情并及时处理。',
+                'details' => self::orderDetails($order, [
+                    ['label' => '买家', 'value' => (string)($order['buyer_name'] ?? '买家')],
+                    ['label' => '回复内容', 'value' => (string)$reply],
+                ]),
+                'footer' => '您可以在「投诉管理」中继续沟通，或在无法发货时选择同意退款。',
             ]
         );
     }
