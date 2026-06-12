@@ -126,8 +126,9 @@ async function loadProducts(options = {}) {
     emptyState.classList.add('hidden');
 
     const filters = { search, category };
-    if (window.SellerStore?.active && window.SellerStore.sellerId) {
-        filters.seller_id = window.SellerStore.sellerId;
+    const store = window.SellerStore || {};
+    if (store.active && store.sellerId) {
+        filters.seller_id = store.sellerId;
     }
     const result = await API.getProducts(filters);
 

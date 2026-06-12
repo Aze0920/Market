@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/SubdomainHelper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -303,6 +304,31 @@ function validateId($id) {
     return preg_match('/^[a-zA-Z0-9_]+$/', $id);
 }
 
+function applySubdomainProductScope($db, array &$filters) {
+    $scope = $db->resolveSubdomainProductScope();
+    if ($scope === null) {
+        return true;
+    }
+    if (($scope['mode'] ?? '') === 'blocked') {
+        return false;
+    }
+    if (!empty($scope['seller_id'])) {
+        $filters['seller_id'] = $scope['seller_id'];
+    }
+    return true;
+}
+
+function productAllowedOnCurrentSubdomain($db, array $product) {
+    $scope = $db->resolveSubdomainProductScope();
+    if ($scope === null) {
+        return true;
+    }
+    if (($scope['mode'] ?? '') === 'blocked') {
+        return false;
+    }
+    return (string)($product['seller_id'] ?? '') === (string)($scope['seller_id'] ?? '');
+}
+
 function productRatingStats($comments) {
     $good = 0;
     $bad = 0;
@@ -517,8 +543,11 @@ switch ($action) {
             'category' => sanitizeString($_GET['category'] ?? 'all'),
             'search' => sanitizeString($_GET['search'] ?? '')
         ];
+        if (!applySubdomainProductScope($db, $filters)) {
+            jsonResponse(['success' => true, 'products' => []]);
+        }
         $sellerId = trim((string)($_GET['seller_id'] ?? ''));
-        if ($sellerId !== '' && validateId($sellerId)) {
+        if (empty($filters['seller_id']) && $sellerId !== '' && validateId($sellerId)) {
             $filters['seller_id'] = $sellerId;
         }
         $products = $db->getProducts($filters);
@@ -554,7 +583,7 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '无效的ID'], 400);
         }
         $product = $db->getProductById($id);
-        if (!$product) {
+        if (!$product || !productAllowedOnCurrentSubdomain($db, $product)) {
             jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
         }
         unset($product['account_list'], $product['pickup_password']);
@@ -566,7 +595,7 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '无效的ID'], 400);
         }
         $product = $db->getProductById($id);
-        if (!$product) {
+        if (!$product || !productAllowedOnCurrentSubdomain($db, $product)) {
             jsonResponse(['success' => false, 'message' => '商品不存在'], 404);
         }
         $safe = $product;

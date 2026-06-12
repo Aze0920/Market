@@ -1309,4 +1309,34 @@ class Database {
     public function deleteSellerSubdomain($id) {
         return $this->store->deleteSellerSubdomain($id);
     }
+
+    /**
+     * 根据访问域名判断商品展示范围。
+     * null = 主站；seller = 仅该卖家；blocked = 二级域名无效或未生效。
+     */
+    public function resolveSubdomainProductScope($host = null) {
+        require_once __DIR__ . '/SubdomainHelper.php';
+        $config = $this->getSystemConfig();
+        if (!SubdomainHelper::configEnabled($config)) {
+            return null;
+        }
+        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
+        if ($baseDomain === '') {
+            return null;
+        }
+        $host = strtolower(trim((string)($host ?? ($_SERVER['HTTP_HOST'] ?? ''))));
+        $prefix = SubdomainHelper::extractPrefixFromHost($host, $baseDomain);
+        if ($prefix === null) {
+            return null;
+        }
+        $subdomain = $this->getSellerSubdomainByPrefix($prefix);
+        if (!$subdomain || !SubdomainHelper::isActive($subdomain)) {
+            return ['mode' => 'blocked', 'prefix' => $prefix];
+        }
+        return [
+            'mode' => 'seller',
+            'seller_id' => (string)($subdomain['user_id'] ?? ''),
+            'prefix' => $prefix,
+        ];
+    }
 }
