@@ -2336,7 +2336,10 @@ async function redeemSubdomainCard() {
     const baseDomain = document.getElementById('subdomainCardBaseDomainInput')?.value || document.getElementById('subdomainBaseDomainInput')?.value || '';
     const result = await API.useCard(code, { subdomain_prefix: prefix, subdomain_base_domain: baseDomain });
     if (!result.success) return Toast.error(result.message || '兑换失败');
-    Toast.success(result.message || '兑换成功');
+    if ((result.card_type || '') !== 'subdomain') {
+        return Toast.error('该卡密不是二级域名卡，请到余额管理或会员中心使用对应卡密');
+    }
+    Toast.success(result.message || '兑换成功，请等待管理员审核');
     renderDashboardTab('subdomain');
 }
 

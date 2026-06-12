@@ -887,8 +887,16 @@ class RelationalStore {
         ];
     }
 
+    private function normalizeCardTypeValue($type) {
+        $type = strtolower(trim((string)$type));
+        return in_array($type, ['membership', 'subdomain'], true) ? $type : 'balance';
+    }
+
     private function upsertCardCode(array $card) {
-        $cardType = ($card['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
+        $cardType = $this->normalizeCardTypeValue($card['card_type'] ?? 'balance');
+        $targetLevel = in_array($cardType, ['membership', 'subdomain'], true)
+            ? trim((string)($card['target_level'] ?? ''))
+            : '';
         $stmt = $this->pdo->prepare(
             'INSERT INTO kn_card_codes (id, code, amount, card_type, target_level, is_used, used_by, used_at, created_by, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -899,7 +907,7 @@ class RelationalStore {
             $card['code'] ?? '',
             floatval($card['amount'] ?? 0),
             $cardType,
-            $cardType === 'membership' ? trim((string)($card['target_level'] ?? '')) : '',
+            $targetLevel,
             !empty($card['used']) ? 1 : 0,
             $card['used_by'] ?? null,
             isset($card['used_at']) ? intval($card['used_at']) : null,

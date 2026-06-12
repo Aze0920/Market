@@ -166,15 +166,19 @@ switch ($action) {
             ]);
         }
 
+        $rechargeAmount = floatval($card['amount'] ?? 0);
+        if ($rechargeAmount <= 0) {
+            jsonResponse(['success' => false, 'message' => '该卡密无效，请联系管理员重新生成'], 400);
+        }
         $db->useCardCode($code, $userId);
-        $db->updateUser($userId, ['balance' => $user['balance'] + $card['amount']]);
+        $db->updateUser($userId, ['balance' => floatval($user['balance'] ?? 0) + $rechargeAmount]);
         $db->createPaymentOrder([
             'trade_no' => 'CARD' . date('YmdHis') . rand(1000, 9999),
             'user_id' => $userId,
             'payment_config_id' => 'card',
             'pay_type' => 'card_code',
-            'amount' => $card['amount'],
-            'actual_amount' => $card['amount'],
+            'amount' => $rechargeAmount,
+            'actual_amount' => $rechargeAmount,
             'fee' => 0,
             'status' => 'paid',
             'type' => 'card_recharge',
@@ -213,7 +217,7 @@ switch ($action) {
         $count = intval($_POST['count'] ?? 1);
 
         if ($cardType === 'balance' && ($amount <= 0 || $amount > 1000000)) {
-            jsonResponse(['success' => false, 'message' => '无效的金额'], 400);
+            jsonResponse(['success' => false, 'message' => $amount <= 0 ? '无效的卡密类型或金额' : '无效的金额'], 400);
         }
         if ($cardType === 'membership') {
             $levels = $db->getMembershipLevels();
