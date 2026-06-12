@@ -60,4 +60,42 @@ class SubdomainHelper {
         $baseDomain = self::normalizeBaseDomain($baseDomain);
         return strtolower(trim((string)$prefix)) . '.' . $baseDomain;
     }
+
+    public static function extractPrefixFromHost($host, $baseDomain) {
+        $host = strtolower(trim((string)$host));
+        $host = preg_replace('/:\d+$/', '', $host);
+        $baseDomain = self::normalizeBaseDomain($baseDomain);
+        if ($baseDomain === '' || $host === '') {
+            return null;
+        }
+        if ($host === $baseDomain || $host === 'www.' . $baseDomain) {
+            return null;
+        }
+        $suffix = '.' . $baseDomain;
+        if (!str_ends_with($host, $suffix)) {
+            return null;
+        }
+        $prefix = substr($host, 0, -strlen($suffix));
+        if ($prefix === '' || strpos($prefix, '.') !== false) {
+            return null;
+        }
+        return $prefix;
+    }
+
+    public static function subdomainPublicConfig(array $config) {
+        $baseDomain = self::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
+        return [
+            'enabled' => self::configEnabled($config),
+            'base_domain' => $baseDomain,
+            'wildcard_domain' => $baseDomain !== '' ? '*.' . $baseDomain : '',
+            'monthly_price' => max(0.01, floatval($config['subdomain_monthly_price'] ?? 10)),
+        ];
+    }
+
+    public static function decorateSubdomainRecord(array $subdomain, $baseDomain) {
+        $subdomain['full_domain'] = $baseDomain !== '' ? self::fullHost($subdomain['prefix'] ?? '', $baseDomain) : '';
+        $subdomain['is_expired'] = self::isExpired($subdomain);
+        $subdomain['is_active'] = self::isActive($subdomain);
+        return $subdomain;
+    }
 }

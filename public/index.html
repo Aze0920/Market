@@ -83,6 +83,8 @@
                         </div>
                     </div>
 
+                    <div id="sellerStoreBanner" class="hidden"></div>
+
                     <div class="row g-3" id="productGrid">
                     </div>
 
@@ -959,6 +961,9 @@
 
         async function initApp() {
             await applySiteConfig();
+            if (typeof initSellerStoreContext === 'function') {
+                await initSellerStoreContext();
+            }
             const result = await API.getCurrentUser();
             if (result.success && result.logged_in) {
                 App.setUser(result.user);

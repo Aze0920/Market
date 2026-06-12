@@ -385,8 +385,24 @@ const API = {
     },
 
     // 卡密
-    useCard(code) {
-        return this.request('card.php?action=use', 'POST', { code });
+    useCard(code, extra = {}) {
+        return this.request('card.php?action=use', 'POST', { code, ...extra });
+    },
+
+    resolveSubdomain(host = window.location.hostname) {
+        return this.request('subdomain.php?action=resolve&host=' + encodeURIComponent(host));
+    },
+
+    getMySubdomain() {
+        return this.request('subdomain.php?action=my');
+    },
+
+    checkSubdomainPrefix(prefix) {
+        return this.request('subdomain.php?action=check_prefix&prefix=' + encodeURIComponent(prefix));
+    },
+
+    purchaseSubdomain(prefix, months = 1) {
+        return this.request('subdomain.php?action=purchase', 'POST', { prefix, months });
     },
 
     getCards(onlyUnused = false) {
