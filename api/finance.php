@@ -533,6 +533,10 @@ switch ($action) {
         if (isset($_POST['subdomain_monthly_price'])) {
             $config['subdomain_monthly_price'] = max(0.01, floatval($_POST['subdomain_monthly_price']));
         }
+        if (isset($_POST['subdomain_main_site_hosts'])) {
+            require_once __DIR__ . '/../core/SubdomainHelper.php';
+            $config['subdomain_main_site_hosts'] = SubdomainHelper::parseMainSiteHostsInput($_POST['subdomain_main_site_hosts']);
+        }
         if (isset($_POST['subdomain_domain_plans'])) {
             require_once __DIR__ . '/../core/SubdomainHelper.php';
             $plans = SubdomainHelper::parseDomainPlansInput($_POST['subdomain_domain_plans']);

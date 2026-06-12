@@ -26,6 +26,56 @@ class SubdomainHelper {
         return $domains;
     }
 
+    public static function normalizeHost($host) {
+        $host = strtolower(trim((string)$host));
+        $host = preg_replace('#^https?://#', '', $host);
+        $host = preg_replace('#/.*$#', '', $host);
+        return preg_replace('/:\d+$/', '', $host);
+    }
+
+    public static function parseMainSiteHostsInput($input) {
+        $hosts = [];
+        foreach (preg_split('/[\r\n,;]+/', (string)$input) as $part) {
+            $host = self::normalizeHost($part);
+            if ($host !== '' && !in_array($host, $hosts, true)) {
+                $hosts[] = $host;
+            }
+        }
+        return $hosts;
+    }
+
+    public static function getMainSiteHosts(array $config) {
+        $hosts = [];
+        if (!empty($config['subdomain_main_site_hosts']) && is_array($config['subdomain_main_site_hosts'])) {
+            foreach ($config['subdomain_main_site_hosts'] as $host) {
+                $normalized = self::normalizeHost($host);
+                if ($normalized !== '' && !in_array($normalized, $hosts, true)) {
+                    $hosts[] = $normalized;
+                }
+            }
+        }
+        $legacy = self::normalizeHost($config['site_main_domain'] ?? $config['subdomain_main_site_domain'] ?? '');
+        if ($legacy !== '' && !in_array($legacy, $hosts, true)) {
+            $hosts[] = $legacy;
+        }
+        foreach (self::getBaseDomains($config) as $baseDomain) {
+            foreach ([$baseDomain, 'www.' . $baseDomain] as $candidate) {
+                if ($candidate !== '' && !in_array($candidate, $hosts, true)) {
+                    $hosts[] = $candidate;
+                }
+            }
+        }
+        return $hosts;
+    }
+
+    public static function isMainSiteHost($host, array $config) {
+        $host = self::normalizeHost($host);
+        if ($host === '') {
+            return false;
+        }
+        return in_array($host, self::getMainSiteHosts($config), true);
+    }
+
     public static function getDomainPlans(array $config) {
         $plans = [];
         $seen = [];
@@ -241,6 +291,7 @@ class SubdomainHelper {
             'base_domain' => $primary,
             'wildcard_domain' => $primary !== '' ? '*.' . $primary : '',
             'monthly_price' => floatval($primaryPlan['monthly_price'] ?? ($config['subdomain_monthly_price'] ?? 10)),
+            'main_site_hosts' => self::getMainSiteHosts($config),
         ];
     }
 

@@ -1325,6 +1325,9 @@ class Database {
             return null;
         }
         $host = strtolower(trim((string)($host ?? ($_SERVER['HTTP_HOST'] ?? ''))));
+        if (SubdomainHelper::isMainSiteHost($host, $config)) {
+            return null;
+        }
         $match = SubdomainHelper::extractPrefixFromHost($host, $baseDomains);
         if ($match === null) {
             return null;

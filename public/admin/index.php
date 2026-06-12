@@ -3211,10 +3211,19 @@ function collectSubdomainPlansFromForm() {
         description: row.querySelector('.subdomain-plan-desc')?.value?.trim() || ''
     })).filter(plan => plan.domain !== '');
 }
+function getSubdomainMainSiteHostsAdmin() {
+    const c = Admin.cache.sysConfig || {};
+    if (Array.isArray(c.subdomain_main_site_hosts) && c.subdomain_main_site_hosts.length) {
+        return c.subdomain_main_site_hosts.join('\n');
+    }
+    const legacy = c.site_main_domain || c.subdomain_main_site_domain || '';
+    return legacy ? String(legacy) : '';
+}
 function renderSubdomainSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     const enabled = c.subdomain_enabled === true || c.subdomain_enabled === '1' || c.subdomain_enabled === 1;
     const plans = getSubdomainPlansAdmin();
+    const mainSiteHosts = getSubdomainMainSiteHostsAdmin();
     document.getElementById(targetId).innerHTML = `
         <div class="panel settings-basic-panel">
             <div class="panel-title">
@@ -3258,6 +3267,11 @@ function renderSubdomainSettings(targetId = 'settingsContent') {
                     <div class="form-text mt-2">卖家填写前缀后访问形如 <code>前缀.az0.cn</code>，不同主域名可设置不同价格与说明。</div>
                 </div>
                 <div class="col-12">
+                    <label class="form-label">主站访问域名（每行一个）</label>
+                    <textarea id="setSubdomainMainSiteHosts" class="form-control" rows="3" placeholder="例如：&#10;sp.az0.cn">${escapeHtml(mainSiteHosts)}</textarea>
+                    <div class="form-text">访问这些域名时展示<strong>全部商品</strong>（主站模式）。裸域名如 <code>az0.cn</code>、<code>www.az0.cn</code> 默认已是主站；若主站使用带前缀的域名（如 <code>sp.az0.cn</code>），请在此填写。</div>
+                </div>
+                <div class="col-12">
                     <button class="btn btn-primary" onclick="saveSubdomainSettings()"><i class="bi bi-check2-circle me-1"></i>保存二级域名设置</button>
                 </div>
             </div>
@@ -3268,7 +3282,8 @@ async function saveSubdomainSettings() {
     if (!plans.length) return showToast('请至少配置一个主域名', 'error');
     await saveSystemConfigFields({
         subdomain_enabled: document.getElementById('setSubdomainEnabled')?.checked ? '1' : '0',
-        subdomain_domain_plans: JSON.stringify(plans)
+        subdomain_domain_plans: JSON.stringify(plans),
+        subdomain_main_site_hosts: document.getElementById('setSubdomainMainSiteHosts')?.value || ''
     }, '二级域名设置已保存');
 }
 async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0', enable_membership_card_activation: document.getElementById('setEnableMembershipCardActivation')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }

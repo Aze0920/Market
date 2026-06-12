@@ -60,6 +60,16 @@ switch ($action) {
             ]);
         }
 
+        if (SubdomainHelper::isMainSiteHost($host, $config)) {
+            jsonResponse([
+                'success' => true,
+                'active' => false,
+                'seller_id' => null,
+                'prefix' => null,
+                'reason' => 'main_site',
+            ]);
+        }
+
         $match = SubdomainHelper::extractPrefixFromHost($host, $baseDomains);
         if ($match === null) {
             jsonResponse([
