@@ -349,7 +349,36 @@ if (isset($_SESSION['user_id'])) {
 <?php endif; ?>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, dataLoaded: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
+const ADMIN_DATA_LOADERS = {
+    dashboard: () => request('admin.php?action=dashboard'),
+    users: () => request('admin.php?action=users'),
+    products: () => request('admin.php?action=products'),
+    payOrders: () => request('payment.php?action=get_orders&lite=1'),
+    requests: () => request('admin.php?action=finance_requests'),
+    cards: () => request('admin.php?action=cards'),
+    payConfigs: () => request('admin.php?action=payment_configs'),
+    sysConfig: () => request('admin.php?action=system_config'),
+    complaints: () => request('admin.php?action=complaints'),
+    membershipLevels: () => request('admin.php?action=membership_levels'),
+    comments: () => request('admin.php?action=comments')
+};
+const ADMIN_PAGE_KEYS = {
+    overview: ['dashboard'],
+    users: ['users', 'membershipLevels'],
+    products: ['products'],
+    comments: ['comments'],
+    orders: ['payOrders'],
+    complaints: ['complaints'],
+    finance: ['requests'],
+    merchant_review: ['users'],
+    cards: ['cards', 'membershipLevels'],
+    payments: ['payConfigs'],
+    settings: ['sysConfig'],
+    membership: ['membershipLevels', 'sysConfig'],
+    updates: [],
+    logs: []
+};
 const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
 const apiBase = <?php echo json_encode($apiBasePath, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 
@@ -424,11 +453,13 @@ async function bootstrapAdmin() {
     Admin.user = result.user;
     restoreAdminState();
     showAdmin();
-    await loadAdminData();
+    renderPageLoading();
+    await loadAdminPageData(Admin.page);
 }
 function handleAdminAuthFailure(message = '需要管理员权限，请重新登录。') {
     Admin.user = null;
     Admin.cache = {};
+    Admin.dataLoaded = {};
     Admin.csrfToken = null;
     const content = document.getElementById('adminContent');
     if (content) content.innerHTML = '';
@@ -600,46 +631,92 @@ document.addEventListener('click', e => {
     const wrap = document.querySelector('.admin-profile-wrap');
     if (wrap && !wrap.contains(e.target)) closeAdminProfileDropdown();
 });
-async function loadAdminData() {
-    const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, membershipLevels, comments] = await Promise.all([
-        request('admin.php?action=users'),
-        request('admin.php?action=products'),
-        request('payment.php?action=get_orders'),
-        request('admin.php?action=finance_requests'),
-        request('admin.php?action=cards'),
-        request('admin.php?action=payment_configs'),
-        request('admin.php?action=system_config'),
-        request('admin.php?action=complaints'),
-        request('admin.php?action=membership_levels'),
-        request('admin.php?action=comments')
-    ]);
-    const responses = [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, membershipLevels, comments];
-    const failed = responses.find(item => !item || item.success === false);
-    if (failed) {
-        if (failed.status === 401 || failed.status === 403) return;
-        showToast(failed.message || '后台数据加载失败', 'error');
-        return;
+function applyAdminCacheKey(key, res) {
+    switch (key) {
+        case 'dashboard':
+            Admin.cache.dashboard = res.dashboard || {};
+            break;
+        case 'users':
+            Admin.cache.users = res.users || [];
+            break;
+        case 'products':
+            Admin.cache.products = res.products || [];
+            break;
+        case 'payOrders':
+            Admin.cache.payOrders = res.orders || [];
+            break;
+        case 'requests':
+            Admin.cache.requests = res.requests || [];
+            break;
+        case 'cards':
+            Admin.cache.cards = res.cards || [];
+            break;
+        case 'payConfigs':
+            Admin.cache.payConfigs = res.configs || [];
+            break;
+        case 'sysConfig':
+            Admin.cache.sysConfig = res.config || {};
+            break;
+        case 'complaints':
+            Admin.cache.complaints = res.complaints || [];
+            break;
+        case 'membershipLevels':
+            Admin.cache.membershipLevels = res.levels || {};
+            break;
+        case 'comments':
+            Admin.cache.comments = res.comments || [];
+            break;
     }
-    Admin.cache = {
-        users: users.users || [],
-        products: products.products || [],
-        payOrders: payOrders.orders || [],
-        requests: requests.requests || [],
-        cards: cards.cards || [],
-        payConfigs: payConfigs.configs || [],
-        complaints: complaints.complaints || [],
-        comments: comments.comments || [],
-        membershipLevels: membershipLevels.levels || {},
-        sysConfig: sysConfig.config || {}
-    };
-    renderPage();
+}
+function renderPageLoading() {
+    const area = document.getElementById('adminContent');
+    if (!area) return;
+    area.innerHTML = '<div class="text-center py-5 text-muted"><div class="spinner-border text-primary mb-3" role="status"></div><div>正在加载...</div></div>';
+}
+async function loadAdminKeys(keys, { force = false } = {}) {
+    const uniqueKeys = [...new Set((keys || []).filter(Boolean))];
+    const pendingKeys = uniqueKeys.filter(key => force || !Admin.dataLoaded[key]);
+    if (!pendingKeys.length) return true;
+    const results = await Promise.all(pendingKeys.map(async key => ({ key, res: await ADMIN_DATA_LOADERS[key]() })));
+    const failed = results.find(item => !item.res || item.res.success === false);
+    if (failed) {
+        if (failed.res?.status === 401 || failed.res?.status === 403) return false;
+        showToast(failed.res?.message || '后台数据加载失败', 'error');
+        return false;
+    }
+    results.forEach(({ key, res }) => {
+        applyAdminCacheKey(key, res);
+        Admin.dataLoaded[key] = true;
+    });
+    return true;
+}
+function adminPageDataKeys(page = Admin.page) {
+    const keys = [...(ADMIN_PAGE_KEYS[page] || ['dashboard'])];
+    if (page === 'settings' && Admin.settingsTab === 'payment' && !keys.includes('payConfigs')) {
+        keys.push('payConfigs');
+    }
+    return keys;
+}
+async function loadAdminPageData(page = Admin.page, { force = false } = {}) {
+    const ok = await loadAdminKeys(adminPageDataKeys(page), { force });
+    if (ok) renderPage();
+    return ok;
+}
+async function loadAdminData() {
+    return loadAdminPageData(Admin.page, { force: true });
 }
 function switchAdminPage(page, settingsTab = null) {
     Admin.page = page;
     if (settingsTab) Admin.settingsTab = settingsTab;
     saveAdminState();
     updateAdminNavActive(settingsTab);
-    renderPage();
+    const keys = adminPageDataKeys(page);
+    if (!keys.length || keys.every(key => Admin.dataLoaded[key])) {
+        renderPage();
+        return;
+    }
+    renderPageLoading();
+    loadAdminPageData(page);
 }
 function setTitle(title) { document.getElementById('pageTitle').textContent = title; }
 function renderPage() {
@@ -649,39 +726,23 @@ function renderPage() {
 }
 function renderOverview() {
     setTitle('后台总览');
-    const users = Admin.cache.users || [], products = Admin.cache.products || [], orders = Admin.cache.payOrders || [], requests = Admin.cache.requests || [], cards = Admin.cache.cards || [], complaints = Admin.cache.complaints || [];
-    const pending = requests.filter(r => r.status === 'pending').length;
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayStartTs = Math.floor(todayStart.getTime() / 1000);
-    const todayPaidOrders = orders.filter(o => (o.status || '') === 'paid' && Number(o.paid_at || o.created_at || 0) >= todayStartTs);
-    const todayReceipt = todayPaidOrders.reduce((sum, o) => {
-        const type = o.type || 'recharge';
-        if (['recharge', 'membership_upgrade', 'product_online_purchase'].includes(type)) {
-            return sum + Number(o.actual_amount ?? o.amount ?? 0);
-        }
-        return sum;
-    }, 0);
-    const todayProfit = todayPaidOrders.reduce((sum, o) => {
-        const type = o.type || 'recharge';
-        if (type === 'membership_upgrade') return sum + Number(o.amount || 0);
-        if (type === 'product_online_purchase' || type === 'recharge') return sum + Number(o.fee || 0);
-        if (type === 'publish_fee') return sum + Math.abs(Number(o.amount || 0));
-        return sum;
-    }, 0);
+    const dashboard = Admin.cache.dashboard || {};
+    const stats = dashboard.stats || {};
+    const users = dashboard.recent_users || Admin.cache.users || [];
+    const requests = dashboard.pending_requests || Admin.cache.requests || [];
     document.getElementById('adminContent').innerHTML = `
         <div class="row g-3 mb-4">
-            ${stat('bi-people-fill', '#dbeafe', '#1d4ed8', users.length, '用户总数')}
-            ${stat('bi-box-seam-fill', '#ede9fe', '#6d28d9', products.length, '商品总数')}
-            ${stat('bi-cash-stack', '#dcfce7', '#15803d', orders.length, '支付订单')}
-            ${stat('bi-exclamation-octagon-fill', '#fee2e2', '#b91c1c', complaints.filter(o => (o.complaint?.status || '') === 'open').length, '进行中投诉')}
-            ${stat('bi-hourglass-split', '#fef3c7', '#b45309', pending, '待处理申请')}
-            ${stat('bi-wallet2', '#e0f2fe', '#0369a1', money(todayReceipt), '今日收款')}
-            ${stat('bi-graph-up-arrow', '#f0fdf4', '#16a34a', money(todayProfit), '今日利润')}
+            ${stat('bi-people-fill', '#dbeafe', '#1d4ed8', stats.user_count ?? 0, '用户总数')}
+            ${stat('bi-box-seam-fill', '#ede9fe', '#6d28d9', stats.product_count ?? 0, '商品总数')}
+            ${stat('bi-cash-stack', '#dcfce7', '#15803d', stats.pay_order_count ?? 0, '支付订单')}
+            ${stat('bi-exclamation-octagon-fill', '#fee2e2', '#b91c1c', stats.open_complaints ?? 0, '进行中投诉')}
+            ${stat('bi-hourglass-split', '#fef3c7', '#b45309', stats.pending_requests ?? 0, '待处理申请')}
+            ${stat('bi-wallet2', '#e0f2fe', '#0369a1', money(stats.today_receipt ?? 0), '今日收款')}
+            ${stat('bi-graph-up-arrow', '#f0fdf4', '#16a34a', money(stats.today_profit ?? 0), '今日利润')}
         </div>
         <div class="row g-4">
-            <div class="col-lg-7"><div class="panel"><div class="panel-title"><h5>最新用户</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('users')">查看全部</button></div>${userTable(users.slice(-6).reverse())}</div></div>
-            <div class="col-lg-5"><div class="panel"><div class="panel-title"><h5>待处理申请</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('finance')">处理</button></div>${requestList(requests.filter(r => r.status === 'pending').slice(0, 6))}</div></div>
+            <div class="col-lg-7"><div class="panel"><div class="panel-title"><h5>最新用户</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('users')">查看全部</button></div>${userTable(users)}</div></div>
+            <div class="col-lg-5"><div class="panel"><div class="panel-title"><h5>待处理申请</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('finance')">处理</button></div>${requestList(requests)}</div></div>
         </div>`;
 }
 function stat(icon, bg, color, value, label) { return `<div class="col-md-6 col-xl-3"><div class="stat-card"><div class="stat-icon" style="background:${bg};color:${color}"><i class="bi ${icon}"></i></div><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div></div>`; }
@@ -1379,6 +1440,7 @@ function deliveryItemsForOrder(order) {
     return Array.isArray(deliveryInfo.items) ? deliveryInfo.items : [];
 }
 function hasPurchaseDeliveryData(order) {
+    if (order?.has_purchase_delivery) return true;
     return deliveryItemsForOrder(order).length > 0;
 }
 function deliveryItemDisplayText(item) {
@@ -1423,9 +1485,16 @@ function downloadTextFile(fileName, text) {
 function findPaymentOrderById(id) {
     return (Admin.cache.payOrders || []).find(o => String(o.id || '') === String(id || '')) || null;
 }
-function openPaymentOrderDataModal(id) {
-    const order = findPaymentOrderById(id);
+async function openPaymentOrderDataModal(id) {
+    let order = findPaymentOrderById(id);
     if (!order) return showToast('订单不存在，请刷新后重试', 'error');
+    if (!order.purchase_order && (order.related_id || order.has_purchase_delivery)) {
+        const res = await request(`payment.php?action=get_order_detail&id=${encodeURIComponent(id)}`);
+        if (!res.success) return showToast(res.message || '加载发货数据失败', 'error');
+        order = { ...order, ...(res.detail?.order || {}) };
+        const idx = (Admin.cache.payOrders || []).findIndex(o => String(o.id || '') === String(id || ''));
+        if (idx >= 0) Admin.cache.payOrders[idx] = { ...Admin.cache.payOrders[idx], ...order };
+    }
     const purchaseOrder = order.purchase_order || {};
     const items = deliveryItemsForOrder(order);
     const modalId = 'paymentOrderDataModal';
@@ -2747,7 +2816,14 @@ function renderSettings() {
     `;
     renderSettingsContent();
 }
-function switchSettingsTab(tab) { Admin.settingsTab = tab; saveAdminState(); renderSettings(); }
+async function switchSettingsTab(tab) {
+    Admin.settingsTab = tab;
+    saveAdminState();
+    if (tab === 'payment' && !Admin.dataLoaded.payConfigs) {
+        await loadAdminKeys(['payConfigs']);
+    }
+    renderSettings();
+}
 function renderSettingsContent() {
     const map = { basic: renderBasicSettings, payment: renderPaymentSettingsOnly, login: renderReservedLoginSettings, agreements: renderAgreementSettings, email: renderReservedEmailSettings, captcha: renderReservedCaptchaSettings, announcement: renderReservedAnnouncementSettings };
     (map[Admin.settingsTab] || renderBasicSettings)('settingsContent');

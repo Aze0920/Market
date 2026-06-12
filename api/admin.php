@@ -630,9 +630,59 @@ function adminComplaintOrders() {
             $items[] = adminSafeComplaintOrder($order);
         }
     }
-    OrderTradeNo::attachToOrders($items, $db);
+    OrderTradeNo::attachToOrders($items, $db, false);
     usort($items, fn($a, $b) => (($b['complaint']['updated_at'] ?? $b['complaint']['created_at'] ?? 0) - ($a['complaint']['updated_at'] ?? $a['complaint']['created_at'] ?? 0)));
     return array_values($items);
+}
+
+function adminDashboardPayload() {
+    global $db;
+    $users = array_map('adminSafeUser', $db->getTable('users'));
+    usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+    $requests = adminFinanceRequests();
+    $pendingRequests = array_values(array_filter($requests, fn($r) => ($r['status'] ?? '') === 'pending'));
+    $openComplaints = 0;
+    foreach ($db->getOrders() as $order) {
+        if (!empty($order['complaint']) && ($order['complaint']['status'] ?? 'open') === 'open') {
+            $openComplaints++;
+        }
+    }
+    $todayStart = strtotime('today');
+    $todayReceipt = 0.0;
+    $todayProfit = 0.0;
+    foreach ($db->getPaymentOrders() as $order) {
+        if (($order['status'] ?? '') !== 'paid') {
+            continue;
+        }
+        $paidAt = intval($order['paid_at'] ?? $order['created_at'] ?? 0);
+        if ($paidAt < $todayStart) {
+            continue;
+        }
+        $type = (string)($order['type'] ?? $order['order_type'] ?? 'recharge');
+        if (in_array($type, ['recharge', 'membership_upgrade', 'product_online_purchase'], true)) {
+            $todayReceipt += floatval($order['actual_amount'] ?? $order['amount'] ?? 0);
+        }
+        if ($type === 'membership_upgrade') {
+            $todayProfit += floatval($order['amount'] ?? 0);
+        } elseif (in_array($type, ['product_online_purchase', 'recharge'], true)) {
+            $todayProfit += floatval($order['fee'] ?? 0);
+        } elseif ($type === 'publish_fee') {
+            $todayProfit += abs(floatval($order['amount'] ?? 0));
+        }
+    }
+    return [
+        'stats' => [
+            'user_count' => count($users),
+            'product_count' => count($db->getTable('products')),
+            'pay_order_count' => count($db->getPaymentOrders()),
+            'open_complaints' => $openComplaints,
+            'pending_requests' => count($pendingRequests),
+            'today_receipt' => round($todayReceipt, 2),
+            'today_profit' => round($todayProfit, 2),
+        ],
+        'recent_users' => array_slice($users, 0, 6),
+        'pending_requests' => array_slice($pendingRequests, 0, 6),
+    ];
 }
 
 function adminCommentItems() {
@@ -966,6 +1016,9 @@ function adminTestEmailPayload() {
 adminRequireAdmin();
 
 switch ($action) {
+    case 'dashboard':
+        adminJsonResponse(['success' => true, 'dashboard' => adminDashboardPayload()]);
+
     case 'users':
         $users = array_map('adminSafeUser', $db->getTable('users'));
         usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));

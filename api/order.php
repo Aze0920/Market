@@ -153,7 +153,7 @@ function freezeSellerOrderBalance(&$order) {
 
 function attachPaymentTradeNoToOrder($order) {
     global $db;
-    return OrderTradeNo::attachToOrder($order, $db);
+    return OrderTradeNo::attachToOrder($order, $db, true);
 }
 
 function attachPaymentTradeNoToOrders(array $orders) {

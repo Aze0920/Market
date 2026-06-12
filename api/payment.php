@@ -68,7 +68,13 @@ function getPayMethodsFromRequest() {
 
 function attachPaymentOrderEmails($orders) {
     global $db;
-    return array_map(function($order) use ($db) {
+    $userMap = [];
+    foreach ($db->getTable('users') as $user) {
+        if (!empty($user['id'])) {
+            $userMap[$user['id']] = $user;
+        }
+    }
+    return array_map(function($order) use ($userMap) {
         $order['user_exists'] = false;
         $order['user_username'] = '';
         $order['user_id_email'] = '';
@@ -78,7 +84,7 @@ function attachPaymentOrderEmails($orders) {
             return $order;
         }
         if (!empty($order['user_id'])) {
-            $user = $db->getUserById($order['user_id']);
+            $user = $userMap[$order['user_id']] ?? null;
             if ($user) {
                 $order['user_exists'] = true;
                 $order['user_username'] = $user['username'] ?? '';
@@ -92,6 +98,37 @@ function attachPaymentOrderEmails($orders) {
         if (empty($order['user_id_email']) && !empty($order['guest_email'])) {
             $order['user_id_email'] = (string)$order['guest_email'];
         }
+        return $order;
+    }, $orders);
+}
+
+function attachPaymentOrderDeliveryFlags($orders) {
+    global $db;
+    $relatedIds = [];
+    foreach ($orders as $order) {
+        $relatedId = trim((string)($order['related_id'] ?? ''));
+        if ($relatedId !== '') {
+            $relatedIds[$relatedId] = true;
+        }
+    }
+    if (!$relatedIds) {
+        return array_map(function($order) {
+            $order['has_purchase_delivery'] = false;
+            return $order;
+        }, $orders);
+    }
+    $deliveryMap = [];
+    foreach ($db->getOrders() as $purchaseOrder) {
+        $id = (string)($purchaseOrder['id'] ?? '');
+        if ($id === '' || empty($relatedIds[$id])) {
+            continue;
+        }
+        $items = $purchaseOrder['delivery_info']['items'] ?? [];
+        $deliveryMap[$id] = is_array($items) && count($items) > 0;
+    }
+    return array_map(function($order) use ($deliveryMap) {
+        $relatedId = trim((string)($order['related_id'] ?? ''));
+        $order['has_purchase_delivery'] = !empty($deliveryMap[$relatedId]);
         return $order;
     }, $orders);
 }
@@ -1186,14 +1223,19 @@ switch ($action) {
 
     case 'get_orders':
         requireAdmin();
+        $lite = !isset($_GET['lite']) || (string)$_GET['lite'] !== '0';
         $orders = expirePendingPaymentOrders($db->getPaymentOrders());
         usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         $orders = attachPaymentOrderEmails($orders);
-        $orders = attachPaymentOrderPurchaseDetails($orders);
-        $orders = array_map(function($order) {
-            $order['credit'] = paymentOrderCreditStatus($order);
-            return $order;
-        }, $orders);
+        if ($lite) {
+            $orders = attachPaymentOrderDeliveryFlags($orders);
+        } else {
+            $orders = attachPaymentOrderPurchaseDetails($orders);
+            $orders = array_map(function($order) {
+                $order['credit'] = paymentOrderCreditStatus($order);
+                return $order;
+            }, $orders);
+        }
         jsonResponse(['success' => true, 'orders' => $orders]);
 
     case 'get_order_detail':

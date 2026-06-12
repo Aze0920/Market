@@ -81,13 +81,13 @@ class OrderTradeNo {
         return '';
     }
 
-    public static function attachToOrders(array &$orders, $db) {
+    public static function attachToOrders(array &$orders, $db, $persist = false) {
         $paymentOrders = $db->getPaymentOrders();
         foreach ($orders as &$order) {
             $hadStored = trim((string)($order['payment_trade_no'] ?? '')) !== '';
             $resolved = self::resolveForPurchaseOrder($order, $paymentOrders);
             $order['payment_trade_no'] = $resolved;
-            if ($resolved !== '' && !$hadStored) {
+            if ($persist && $resolved !== '' && !$hadStored) {
                 $db->updateOrder(['id' => $order['id'] ?? '', 'payment_trade_no' => $resolved]);
             }
         }
@@ -95,9 +95,9 @@ class OrderTradeNo {
         return $orders;
     }
 
-    public static function attachToOrder($order, $db) {
+    public static function attachToOrder($order, $db, $persist = false) {
         $wrapped = [$order];
-        self::attachToOrders($wrapped, $db);
+        self::attachToOrders($wrapped, $db, $persist);
         return $wrapped[0];
     }
 }
