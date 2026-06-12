@@ -466,7 +466,7 @@ const API = {
     },
 
     getPaymentOrders() {
-        return this.request('payment.php?action=get_orders');
+        return this.request('payment.php?action=get_orders&all=1');
     },
 
     getMyPaymentOrders() {

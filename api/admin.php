@@ -622,66 +622,51 @@ function adminSafeComplaintOrder($order) {
     return $order;
 }
 
-function adminComplaintOrders() {
+function adminListParams() {
+    return [
+        'page' => intval($_GET['page'] ?? $_POST['page'] ?? 1),
+        'page_size' => intval($_GET['page_size'] ?? $_POST['page_size'] ?? 20),
+        'keyword' => trim((string)($_GET['keyword'] ?? $_POST['keyword'] ?? '')),
+        'status' => trim((string)($_GET['status'] ?? $_POST['status'] ?? 'all')),
+        'merchant_status' => trim((string)($_GET['merchant_status'] ?? $_POST['merchant_status'] ?? '')),
+    ];
+}
+
+function adminPaginatedResponse($payload) {
+    adminJsonResponse(array_merge(['success' => true], $payload));
+}
+
+function adminComplaintOrdersPage(array $params) {
     global $db;
-    $orders = $db->getOrders();
+    $result = $db->adminQuery()->complaintOrdersPage(
+        $params['page'],
+        $params['page_size'],
+        $params['keyword'],
+        $params['status']
+    );
     $items = [];
-    foreach ($orders as $order) {
+    foreach ($result['orders'] as $order) {
         if (!empty($order['complaint']) && is_array($order['complaint'])) {
             $items[] = adminSafeComplaintOrder($order);
         }
     }
     OrderTradeNo::attachToOrders($items, $db, false);
-    usort($items, fn($a, $b) => (($b['complaint']['updated_at'] ?? $b['complaint']['created_at'] ?? 0) - ($a['complaint']['updated_at'] ?? $a['complaint']['created_at'] ?? 0)));
-    return array_values($items);
+    return [
+        'complaints' => array_values($items),
+        'total' => $result['total'],
+        'page' => $result['page'],
+        'page_size' => $result['pageSize'],
+        'summary' => $result['summary'],
+    ];
 }
 
 function adminDashboardPayload() {
     global $db;
-    $users = array_map('adminSafeUser', $db->getTable('users'));
-    usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
     $requests = adminFinanceRequests();
     $pendingRequests = array_values(array_filter($requests, fn($r) => ($r['status'] ?? '') === 'pending'));
-    $openComplaints = 0;
-    foreach ($db->getOrders() as $order) {
-        if (!empty($order['complaint']) && ($order['complaint']['status'] ?? 'open') === 'open') {
-            $openComplaints++;
-        }
-    }
-    $todayStart = strtotime('today');
-    $todayReceipt = 0.0;
-    $todayProfit = 0.0;
-    foreach ($db->getPaymentOrders() as $order) {
-        if (($order['status'] ?? '') !== 'paid') {
-            continue;
-        }
-        $paidAt = intval($order['paid_at'] ?? $order['created_at'] ?? 0);
-        if ($paidAt < $todayStart) {
-            continue;
-        }
-        $type = (string)($order['type'] ?? $order['order_type'] ?? 'recharge');
-        if (in_array($type, ['recharge', 'membership_upgrade', 'product_online_purchase'], true)) {
-            $todayReceipt += floatval($order['actual_amount'] ?? $order['amount'] ?? 0);
-        }
-        if ($type === 'membership_upgrade') {
-            $todayProfit += floatval($order['amount'] ?? 0);
-        } elseif (in_array($type, ['product_online_purchase', 'recharge'], true)) {
-            $todayProfit += floatval($order['fee'] ?? 0);
-        } elseif ($type === 'publish_fee') {
-            $todayProfit += abs(floatval($order['amount'] ?? 0));
-        }
-    }
     return [
-        'stats' => [
-            'user_count' => count($users),
-            'product_count' => count($db->getTable('products')),
-            'pay_order_count' => count($db->getPaymentOrders()),
-            'open_complaints' => $openComplaints,
-            'pending_requests' => count($pendingRequests),
-            'today_receipt' => round($todayReceipt, 2),
-            'today_profit' => round($todayProfit, 2),
-        ],
-        'recent_users' => array_slice($users, 0, 6),
+        'stats' => $db->adminQuery()->dashboardStats(),
+        'recent_users' => array_map('adminSafeUser', $db->adminQuery()->recentUsers(6)),
         'pending_requests' => array_slice($pendingRequests, 0, 6),
     ];
 }
@@ -1021,14 +1006,36 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'dashboard' => adminDashboardPayload()]);
 
     case 'users':
-        $users = array_map('adminSafeUser', $db->getTable('users'));
-        usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-        adminJsonResponse(['success' => true, 'users' => array_values($users)]);
+        $params = adminListParams();
+        if (!empty($_GET['all']) || !empty($_POST['all'])) {
+            $users = array_map('adminSafeUser', $db->getTable('users'));
+            usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+            adminJsonResponse(['success' => true, 'users' => array_values($users)]);
+        }
+        $result = $db->adminQuery()->usersPage($params['page'], $params['page_size'], $params['keyword'], $params['merchant_status']);
+        $levels = $db->getMembershipLevels();
+        adminPaginatedResponse([
+            'users' => array_map('adminSafeUser', $result['users']),
+            'levels' => $levels,
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
 
     case 'products':
-        $products = array_filter(array_map('adminSafeProduct', $db->getTable('products')));
-        usort($products, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-        adminJsonResponse(['success' => true, 'products' => array_values($products)]);
+        $params = adminListParams();
+        if (!empty($_GET['all']) || !empty($_POST['all'])) {
+            $products = array_filter(array_map('adminSafeProduct', $db->getTable('products')));
+            usort($products, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+            adminJsonResponse(['success' => true, 'products' => array_values($products)]);
+        }
+        $result = $db->adminQuery()->productsPage($params['page'], $params['page_size'], $params['keyword']);
+        adminPaginatedResponse([
+            'products' => array_values(array_filter(array_map('adminSafeProduct', $result['products']))),
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
 
     case 'finance_requests':
         adminJsonResponse(['success' => true, 'requests' => adminFinanceRequests()]);
@@ -1243,7 +1250,22 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'message' => '已删除 ' . $deleted . ' 个商品', 'deleted' => $deleted, 'missing' => $missing]);
 
     case 'comments':
-        adminJsonResponse(['success' => true, 'comments' => adminCommentItems()]);
+        $params = adminListParams();
+        if (!empty($_GET['all']) || !empty($_POST['all'])) {
+            adminJsonResponse(['success' => true, 'comments' => adminCommentItems()]);
+        }
+        $result = $db->adminQuery()->commentsPage($params['page'], $params['page_size'], $params['keyword']);
+        $comments = [];
+        foreach ($result['comments'] as $comment) {
+            $comments[] = adminAttachUserEmails($comment);
+            $comments[count($comments) - 1]['seller_id_email'] = adminEmailForUserId($comment['seller_id'] ?? '');
+        }
+        adminPaginatedResponse([
+            'comments' => $comments,
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
 
     case 'delete_comment':
         $id = trim($_POST['id'] ?? '');
@@ -1266,7 +1288,7 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'message' => '评价已删除']);
 
     case 'complaints':
-        adminJsonResponse(['success' => true, 'complaints' => adminComplaintOrders()]);
+        adminPaginatedResponse(adminComplaintOrdersPage(adminListParams()));
 
     case 'get_complaint':
         $id = trim($_GET['order_id'] ?? $_POST['order_id'] ?? '');

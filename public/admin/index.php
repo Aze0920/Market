@@ -349,23 +349,49 @@ if (isset($_SESSION['user_id'])) {
 <?php endif; ?>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, dataLoaded: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, dataLoaded: {}, cacheLoadedAt: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, orders: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, complaints: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, comments: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, products: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' } } };
+const ADMIN_CACHE_TTL_MS = 45000;
+const adminSearchTimers = {};
+function adminListQuery(key) {
+    const defaults = { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' };
+    if (!Admin.listState[key]) Admin.listState[key] = { ...defaults };
+    return Admin.listState[key];
+}
+function adminListUrl(action, key, extra = {}) {
+    const q = adminListQuery(key);
+    const params = new URLSearchParams({
+        page: String(q.page || 1),
+        page_size: String(q.pageSize || 20),
+        keyword: q.keyword || ''
+    });
+    Object.entries(extra).forEach(([name, value]) => {
+        if (value !== undefined && value !== null && value !== '') params.set(name, String(value));
+    });
+    if (q.status && q.status !== 'all' && !params.has('status')) params.set('status', q.status);
+    if (q.merchant_status && !params.has('merchant_status')) params.set('merchant_status', q.merchant_status);
+    return `${action}${action.includes('?') ? '&' : '?'}${params.toString()}`;
+}
 const ADMIN_DATA_LOADERS = {
     dashboard: () => request('admin.php?action=dashboard'),
-    users: () => request('admin.php?action=users'),
-    products: () => request('admin.php?action=products'),
-    payOrders: () => request('payment.php?action=get_orders&lite=1'),
+    users: () => {
+        const extra = Admin.page === 'merchant_review'
+            ? { merchant_status: 'pending', page_size: '100' }
+            : {};
+        return request(adminListUrl('admin.php?action=users', 'users', extra));
+    },
+    products: () => request(adminListUrl('admin.php?action=products', 'products')),
+    payOrders: () => request(adminListUrl('payment.php?action=get_orders&lite=1', 'orders')),
     requests: () => request('admin.php?action=finance_requests'),
     cards: () => request('admin.php?action=cards'),
     payConfigs: () => request('admin.php?action=payment_configs'),
     sysConfig: () => request('admin.php?action=system_config'),
-    complaints: () => request('admin.php?action=complaints'),
+    complaints: () => request(adminListUrl('admin.php?action=complaints', 'complaints')),
     membershipLevels: () => request('admin.php?action=membership_levels'),
-    comments: () => request('admin.php?action=comments')
+    comments: () => request(adminListUrl('admin.php?action=comments', 'comments'))
 };
 const ADMIN_PAGE_KEYS = {
     overview: ['dashboard'],
-    users: ['users', 'membershipLevels'],
+    users: ['users'],
     products: ['products'],
     comments: ['comments'],
     orders: ['payOrders'],
@@ -379,6 +405,7 @@ const ADMIN_PAGE_KEYS = {
     updates: [],
     logs: []
 };
+const ADMIN_LIST_KEY_MAP = { users: 'users', orders: 'payOrders', complaints: 'complaints', comments: 'comments', products: 'products' };
 const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
 const apiBase = <?php echo json_encode($apiBasePath, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 
@@ -460,6 +487,7 @@ function handleAdminAuthFailure(message = '需要管理员权限，请重新登�
     Admin.user = null;
     Admin.cache = {};
     Admin.dataLoaded = {};
+    Admin.cacheLoadedAt = {};
     Admin.csrfToken = null;
     const content = document.getElementById('adminContent');
     if (content) content.innerHTML = '';
@@ -638,12 +666,16 @@ function applyAdminCacheKey(key, res) {
             break;
         case 'users':
             Admin.cache.users = res.users || [];
+            Admin.cache.usersMeta = { total: Number(res.total ?? Admin.cache.users.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
+            if (res.levels) Admin.cache.membershipLevels = res.levels;
             break;
         case 'products':
             Admin.cache.products = res.products || [];
+            Admin.cache.productsMeta = { total: Number(res.total ?? Admin.cache.products.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
             break;
         case 'payOrders':
             Admin.cache.payOrders = res.orders || [];
+            Admin.cache.payOrdersMeta = { total: Number(res.total ?? Admin.cache.payOrders.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
             break;
         case 'requests':
             Admin.cache.requests = res.requests || [];
@@ -659,14 +691,28 @@ function applyAdminCacheKey(key, res) {
             break;
         case 'complaints':
             Admin.cache.complaints = res.complaints || [];
+            Admin.cache.complaintsMeta = { total: Number(res.total ?? Admin.cache.complaints.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
+            Admin.cache.complaintsSummary = res.summary || Admin.cache.complaintsSummary || { all: 0, open: 0 };
             break;
         case 'membershipLevels':
             Admin.cache.membershipLevels = res.levels || {};
             break;
         case 'comments':
             Admin.cache.comments = res.comments || [];
+            Admin.cache.commentsMeta = { total: Number(res.total ?? Admin.cache.comments.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
             break;
     }
+}
+function scheduleAdminListReload(listKey, delay = 350) {
+    clearTimeout(adminSearchTimers[listKey]);
+    adminSearchTimers[listKey] = setTimeout(() => reloadAdminListKey(listKey), delay);
+}
+async function reloadAdminListKey(listKey) {
+    const loaderKey = ADMIN_LIST_KEY_MAP[listKey];
+    if (!loaderKey) return;
+    Admin.dataLoaded[loaderKey] = false;
+    const ok = await loadAdminKeys([loaderKey], { force: true });
+    if (ok) renderPage();
 }
 function renderPageLoading() {
     const area = document.getElementById('adminContent');
@@ -675,7 +721,8 @@ function renderPageLoading() {
 }
 async function loadAdminKeys(keys, { force = false } = {}) {
     const uniqueKeys = [...new Set((keys || []).filter(Boolean))];
-    const pendingKeys = uniqueKeys.filter(key => force || !Admin.dataLoaded[key]);
+    const now = Date.now();
+    const pendingKeys = uniqueKeys.filter(key => force || !Admin.dataLoaded[key] || (now - Number(Admin.cacheLoadedAt[key] || 0) > ADMIN_CACHE_TTL_MS));
     if (!pendingKeys.length) return true;
     const results = await Promise.all(pendingKeys.map(async key => ({ key, res: await ADMIN_DATA_LOADERS[key]() })));
     const failed = results.find(item => !item.res || item.res.success === false);
@@ -687,6 +734,7 @@ async function loadAdminKeys(keys, { force = false } = {}) {
     results.forEach(({ key, res }) => {
         applyAdminCacheKey(key, res);
         Admin.dataLoaded[key] = true;
+        Admin.cacheLoadedAt[key] = Date.now();
     });
     return true;
 }
@@ -697,12 +745,18 @@ function adminPageDataKeys(page = Admin.page) {
     }
     return keys;
 }
-async function loadAdminPageData(page = Admin.page, { force = false } = {}) {
-    const ok = await loadAdminKeys(adminPageDataKeys(page), { force });
+async function loadAdminPageData(page = Admin.page, { force = false, silent = false } = {}) {
+    const keys = adminPageDataKeys(page);
+    const hasCached = keys.length > 0 && keys.every(key => Admin.dataLoaded[key]);
+    if (!silent && !hasCached) renderPageLoading();
+    const ok = await loadAdminKeys(keys, { force });
     if (ok) renderPage();
     return ok;
 }
 async function loadAdminData() {
+    if (Admin.page === 'orders') {
+        await request('payment.php?action=get_orders&expire=1&page=1&page_size=1&lite=1');
+    }
     return loadAdminPageData(Admin.page, { force: true });
 }
 function switchAdminPage(page, settingsTab = null) {
@@ -711,8 +765,13 @@ function switchAdminPage(page, settingsTab = null) {
     saveAdminState();
     updateAdminNavActive(settingsTab);
     const keys = adminPageDataKeys(page);
-    if (!keys.length || keys.every(key => Admin.dataLoaded[key])) {
+    if (!keys.length) {
         renderPage();
+        return;
+    }
+    if (keys.every(key => Admin.dataLoaded[key])) {
+        renderPage();
+        loadAdminPageData(page, { silent: true });
         return;
     }
     renderPageLoading();
@@ -748,23 +807,19 @@ function renderOverview() {
 function stat(icon, bg, color, value, label) { return `<div class="col-md-6 col-xl-3"><div class="stat-card"><div class="stat-icon" style="background:${bg};color:${color}"><i class="bi ${icon}"></i></div><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div></div>`; }
 function renderUsers() {
     setTitle('用户管理');
-    const keyword = (document.getElementById('userSearchInput')?.value || '').trim().toLowerCase();
+    const state = adminListQuery('users');
+    const meta = Admin.cache.usersMeta || {};
+    const keyword = state.keyword || '';
     const users = Admin.cache.users || [];
-    const state = Admin.listState.users || (Admin.listState.users = { page: 1, pageSize: 10 });
-    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('userPageSizeSelect')?.value || state.pageSize || 10)));
-    const filteredUsers = keyword ? users.filter(u =>
-        String(u.username || '').toLowerCase().includes(keyword) ||
-        String(u.email || '').toLowerCase().includes(keyword)
-    ) : users;
-    const totalPages = Math.max(1, Math.ceil(filteredUsers.length / state.pageSize));
-    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
-    const pageUsers = filteredUsers.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
+    const total = Number(meta.total ?? users.length);
+    state.pageSize = Math.max(10, Math.min(200, Number(document.getElementById('userPageSizeSelect')?.value || state.pageSize || 20)));
+    state.page = Math.max(1, Number(meta.page || state.page || 1));
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>全部用户</h5>
-                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filteredUsers.length + ' / ' + users.length + ' 个用户' : '共 ' + users.length + ' 个用户'}，当前显示 ${pageUsers.length} 个</div>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选，共 ' + total + ' 个用户' : '共 ' + total + ' 个用户'}，当前显示 ${users.length} 个</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button id="batchDeleteUsersBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedUsersAdmin()" disabled><i class="bi bi-trash3 me-1"></i>删除选中</button>
@@ -775,7 +830,7 @@ function renderUsers() {
                 <div class="col-md-7 col-lg-5">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="userSearchInput" class="form-control" placeholder="搜索用户名或邮箱" value="${escapeHtml(keyword)}" oninput="Admin.listState.users.page=1;renderUsers()" autocomplete="off">
+                        <input id="userSearchInput" class="form-control" placeholder="搜索用户名或邮箱" value="${escapeHtml(keyword)}" oninput="adminListQuery('users').keyword=this.value.trim();adminListQuery('users').page=1;scheduleAdminListReload('users')" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-auto">
@@ -785,8 +840,8 @@ function renderUsers() {
                     ${adminPageSizeSelect('userPageSizeSelect', state.pageSize, 'setUsersPageSize(this.value)')}
                 </div>
             </div>
-            ${userTable(pageUsers, true, true)}
-            ${adminPaginationHtml(state.page, state.pageSize, filteredUsers.length, 'setUsersPage', '个用户')}
+            ${userTable(users, true, true)}
+            ${adminPaginationHtml(state.page, state.pageSize, total, 'setUsersPage', '个用户')}
         </div>`;
     updateUserBatchToolbar();
     if (keyword) {
@@ -796,19 +851,18 @@ function renderUsers() {
     }
 }
 function setUsersPage(page) {
-    Admin.listState.users.page = Number(page) || 1;
-    renderUsers();
+    adminListQuery('users').page = Number(page) || 1;
+    reloadAdminListKey('users');
 }
 function setUsersPageSize(size) {
-    Admin.listState.users.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
-    Admin.listState.users.page = 1;
-    renderUsers();
+    adminListQuery('users').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
+    adminListQuery('users').page = 1;
+    reloadAdminListKey('users');
 }
 function clearUserSearch() {
-    const input = document.getElementById('userSearchInput');
-    if (input) input.value = '';
-    Admin.listState.users.page = 1;
-    renderUsers();
+    adminListQuery('users').keyword = '';
+    adminListQuery('users').page = 1;
+    reloadAdminListKey('users');
 }
 function adminModal({ title = '详情', body = '', footer = '', size = 'lg' } = {}) {
     const modalId = 'adminDynamicModal';
@@ -884,12 +938,11 @@ function adminPaymentOrderTitle(order = {}) {
     return titleMap[type] || (amount >= 0 ? '余额收入' : '余额支出');
 }
 async function openUserBalanceDetails(userId) {
-    const cachedUser = (Admin.cache.users || []).find(u => String(u.id || '') === String(userId || ''));
-    if (!cachedUser) return showToast('用户不存在', 'error');
     const res = await request(`admin.php?action=user_balance_details&id=${encodeURIComponent(userId)}`);
     if (!res.success) return showToast(res.message || '加载余额明细失败', 'error');
     const details = res.details || {};
-    const user = details.user || cachedUser;
+    const user = details.user || findAdminUserById(userId);
+    if (!user) return showToast('用户不存在', 'error');
     const entries = Array.isArray(details.entries) ? details.entries : [];
     const income = Number(details.income || 0);
     const expense = Number(details.expense || 0);
@@ -1081,7 +1134,7 @@ async function deleteSelectedUsersAdmin() {
 }
 function renderMerchantReview() {
     setTitle('商家审核');
-    const users = (Admin.cache.users || []).filter(u => u.merchant_status === 'pending');
+    const users = Admin.cache.users || [];
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
@@ -1121,12 +1174,17 @@ async function reviewMerchant(id, decision) {
 function renderProducts() {
     setTitle('商品管理');
     const products = Admin.cache.products || [];
+    const state = adminListQuery('products');
+    const meta = Admin.cache.productsMeta || {};
+    const total = Number(meta.total ?? products.length);
+    state.pageSize = Math.max(10, Math.min(200, Number(state.pageSize || 20)));
+    state.page = Math.max(1, Number(meta.page || state.page || 1));
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>全部商品</h5>
-                    <div class="small text-muted mt-1">可单独删除，也可勾选多个商品后批量删除。</div>
+                    <div class="small text-muted mt-1">共 ${total} 个商品，当前显示 ${products.length} 个。可单独删除，也可勾选多个商品后批量删除。</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button id="batchDeleteProductsBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedProductsAdmin()" disabled>
@@ -1174,26 +1232,34 @@ function renderProducts() {
                     </tbody>
                 </table>
             </div>
+            ${adminPaginationHtml(state.page, state.pageSize, total, 'setProductsPage', '个商品')}
         </div>`;
     updateProductBatchToolbar();
 }
+function setProductsPage(page) {
+    adminListQuery('products').page = Number(page) || 1;
+    reloadAdminListKey('products');
+}
+function setProductsPageSize(size) {
+    adminListQuery('products').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
+    adminListQuery('products').page = 1;
+    reloadAdminListKey('products');
+}
 function renderComments() {
     setTitle('评价管理');
-    const keyword = (document.getElementById('commentSearchInput')?.value || '').trim().toLowerCase();
+    const state = adminListQuery('comments');
+    const meta = Admin.cache.commentsMeta || {};
+    const keyword = state.keyword || '';
     const comments = Admin.cache.comments || [];
-    const filtered = keyword ? comments.filter(c =>
-        String(c.username || '').toLowerCase().includes(keyword) ||
-        String(c.user_id_email || '').toLowerCase().includes(keyword) ||
-        String(c.product_title || '').toLowerCase().includes(keyword) ||
-        String(c.content || '').toLowerCase().includes(keyword) ||
-        String(c.order_id || '').toLowerCase().includes(keyword)
-    ) : comments;
+    const total = Number(meta.total ?? comments.length);
+    state.pageSize = Math.max(10, Math.min(200, Number(state.pageSize || 20)));
+    state.page = Math.max(1, Number(meta.page || state.page || 1));
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>全部评价</h5>
-                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filtered.length + ' / ' + comments.length + ' 条评价' : '共 ' + comments.length + ' 条评价'}，支持查看详情和删除指定评价。</div>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选，共 ' + total + ' 条评价' : '共 ' + total + ' 条评价'}，当前显示 ${comments.length} 条。</div>
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
@@ -1201,12 +1267,14 @@ function renderComments() {
                 <div class="col-md-7 col-lg-5">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="commentSearchInput" class="form-control" placeholder="搜索用户、商品、订单号或评价内容" value="${escapeHtml(keyword)}" oninput="renderComments()" autocomplete="off">
+                        <input id="commentSearchInput" class="form-control" placeholder="搜索用户、商品、订单号或评价内容" value="${escapeHtml(keyword)}" oninput="adminListQuery('comments').keyword=this.value.trim();adminListQuery('comments').page=1;scheduleAdminListReload('comments')" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-auto"><button class="btn btn-outline-secondary" onclick="clearCommentSearch()" ${keyword ? '' : 'disabled'}>清空</button></div>
+                <div class="col-md-auto ms-md-auto">${adminPageSizeSelect('commentPageSizeSelect', state.pageSize, 'setCommentsPageSize(this.value)')}</div>
             </div>
-            ${commentTable(filtered)}
+            ${commentTable(comments)}
+            ${adminPaginationHtml(state.page, state.pageSize, total, 'setCommentsPage', '条评价')}
         </div>`;
     if (keyword) {
         const input = document.getElementById('commentSearchInput');
@@ -1214,10 +1282,19 @@ function renderComments() {
         input?.setSelectionRange(input.value.length, input.value.length);
     }
 }
+function setCommentsPage(page) {
+    adminListQuery('comments').page = Number(page) || 1;
+    reloadAdminListKey('comments');
+}
+function setCommentsPageSize(size) {
+    adminListQuery('comments').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
+    adminListQuery('comments').page = 1;
+    reloadAdminListKey('comments');
+}
 function clearCommentSearch() {
-    const input = document.getElementById('commentSearchInput');
-    if (input) input.value = '';
-    renderComments();
+    adminListQuery('comments').keyword = '';
+    adminListQuery('comments').page = 1;
+    reloadAdminListKey('comments');
 }
 function commentRatingBadge(rating) {
     const value = Number(rating || 0);
@@ -1651,26 +1728,25 @@ function complaintStatusBadge(status) {
 }
 function renderComplaints() {
     setTitle('投诉管理');
-    const status = document.getElementById('complaintStatusFilter')?.value || 'all';
-    const keyword = (document.getElementById('complaintSearchInput')?.value || '').trim().toLowerCase();
-    let complaints = Admin.cache.complaints || [];
-    if (status !== 'all') complaints = complaints.filter(o => (o.complaint?.status || '') === status);
-    if (keyword) {
-        complaints = complaints.filter(o => [o.id, o.payment_trade_no, o.product_title, o.buyer_name, o.seller_name, o.complaint?.reason].some(v => String(v || '').toLowerCase().includes(keyword)));
-    }
-    const allCount = Admin.cache.complaints?.length || 0;
-    const openCount = (Admin.cache.complaints || []).filter(o => (o.complaint?.status || '') === 'open').length;
-    const state = Admin.listState.complaints || (Admin.listState.complaints = { page: 1, pageSize: 10 });
-    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('complaintPageSizeSelect')?.value || state.pageSize || 10)));
-    const totalPages = Math.max(1, Math.ceil(complaints.length / state.pageSize));
-    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
-    const pageComplaints = complaints.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
+    const state = adminListQuery('complaints');
+    const meta = Admin.cache.complaintsMeta || {};
+    const summary = Admin.cache.complaintsSummary || {};
+    const status = state.status || document.getElementById('complaintStatusFilter')?.value || 'all';
+    state.status = status;
+    const keyword = state.keyword || '';
+    const complaints = Admin.cache.complaints || [];
+    const allCount = Number(summary.all ?? meta.total ?? complaints.length);
+    const openCount = Number(summary.open ?? 0);
+    const total = Number(meta.total ?? complaints.length);
+    state.pageSize = Math.max(10, Math.min(200, Number(document.getElementById('complaintPageSizeSelect')?.value || state.pageSize || 20)));
+    state.page = Math.max(1, Number(meta.page || state.page || 1));
+    const pageComplaints = complaints;
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>投诉管理</h5>
-                    <div class="small text-muted mt-1">${keyword || status !== 'all' ? '已筛选 ' + complaints.length + ' / ' + allCount + ' 条' : '共 ' + allCount + ' 条'}，进行中 ${openCount} 条，当前显示 ${pageComplaints.length} 条</div>
+                    <div class="small text-muted mt-1">${keyword || status !== 'all' ? '已筛选，共 ' + total + ' / ' + allCount + ' 条' : '共 ' + allCount + ' 条'}，进行中 ${openCount} 条，当前显示 ${pageComplaints.length} 条</div>
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
@@ -1678,11 +1754,11 @@ function renderComplaints() {
                 <div class="col-md-5 col-lg-4">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="Admin.listState.complaints.page=1;renderComplaints()" autocomplete="off">
+                        <input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="adminListQuery('complaints').keyword=this.value.trim();adminListQuery('complaints').page=1;scheduleAdminListReload('complaints')" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <select id="complaintStatusFilter" class="form-select" onchange="Admin.listState.complaints.page=1;renderComplaints()">
+                    <select id="complaintStatusFilter" class="form-select" onchange="adminListQuery('complaints').status=this.value;adminListQuery('complaints').page=1;reloadAdminListKey('complaints')">
                         ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','卖家胜'],['rejected','买家胜']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
                     </select>
                 </div>
@@ -1701,7 +1777,7 @@ function renderComplaints() {
                     <tbody>${complaintAdminTableRows(pageComplaints)}</tbody>
                 </table>
             </div>
-            ${adminPaginationHtml(state.page, state.pageSize, complaints.length, 'setComplaintsPage', '条投诉')}
+            ${adminPaginationHtml(state.page, state.pageSize, total, 'setComplaintsPage', '条投诉')}
         </div>`;
     if (keyword) {
         const input = document.getElementById('complaintSearchInput');
@@ -1797,19 +1873,18 @@ function toggleComplaintDetail(orderId, forceOpen = null) {
     if (shouldOpen && summaryRow) summaryRow.classList.add('expanded');
 }
 function setComplaintsPage(page) {
-    Admin.listState.complaints.page = Number(page) || 1;
-    renderComplaints();
+    adminListQuery('complaints').page = Number(page) || 1;
+    reloadAdminListKey('complaints');
 }
 function setComplaintsPageSize(size) {
-    Admin.listState.complaints.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
-    Admin.listState.complaints.page = 1;
-    renderComplaints();
+    adminListQuery('complaints').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
+    adminListQuery('complaints').page = 1;
+    reloadAdminListKey('complaints');
 }
 function clearComplaintSearch() {
-    const input = document.getElementById('complaintSearchInput');
-    if (input) input.value = '';
-    Admin.listState.complaints.page = 1;
-    renderComplaints();
+    adminListQuery('complaints').keyword = '';
+    adminListQuery('complaints').page = 1;
+    reloadAdminListKey('complaints');
 }
 function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '卖家胜', rejected: '买家胜' })[status] || status; }
 async function saveAdminComplaintReply(orderId) {
@@ -1880,22 +1955,19 @@ function paymentOrderAdminCard(o) {
 
 function renderOrders() {
     setTitle('订单记录');
-    const keyword = (document.getElementById('orderSearchInput')?.value || '').trim().toLowerCase();
-    const allOrders = Admin.cache.payOrders || [];
-    const state = Admin.listState.orders || (Admin.listState.orders = { page: 1, pageSize: 10 });
-    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('orderPageSizeSelect')?.value || state.pageSize || 10)));
-    const orders = keyword ? allOrders.filter(o => [
-        o.id, o.trade_no, o.user_id, recordUserEmail(o, 'user_id', ''), o.pay_type, o.type, orderTypeLabel(o.type, o.pay_type), o.title, o.description, o.status, orderStatusMeta(o.status).label, o.delivery_status, o.delivery_error
-    ].some(v => String(v || '').toLowerCase().includes(keyword))) : allOrders;
-    const totalPages = Math.max(1, Math.ceil(orders.length / state.pageSize));
-    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
-    const pageOrders = orders.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
+    const state = adminListQuery('orders');
+    const meta = Admin.cache.payOrdersMeta || {};
+    const keyword = state.keyword || '';
+    const pageOrders = Admin.cache.payOrders || [];
+    const total = Number(meta.total ?? pageOrders.length);
+    state.pageSize = Math.max(10, Math.min(200, Number(document.getElementById('orderPageSizeSelect')?.value || state.pageSize || 20)));
+    state.page = Math.max(1, Number(meta.page || state.page || 1));
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>支付订单</h5>
-                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + orders.length + ' / ' + allOrders.length + ' 条订单' : '共 ' + allOrders.length + ' 条订单'}，当前显示 ${pageOrders.length} 条</div>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选，共 ' + total + ' 条订单' : '共 ' + total + ' 条订单'}，当前显示 ${pageOrders.length} 条</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button id="batchDeleteOrdersBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedPaymentOrdersAdmin()" disabled><i class="bi bi-trash3 me-1"></i>删除选中</button>
@@ -1908,7 +1980,7 @@ function renderOrders() {
                 <div class="col-md-7 col-lg-5">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="orderSearchInput" class="form-control" placeholder="搜索交易号、邮箱、类型、说明、状态" value="${escapeHtml(keyword)}" oninput="Admin.listState.orders.page=1;renderOrders()" autocomplete="off">
+                        <input id="orderSearchInput" class="form-control" placeholder="搜索交易号、邮箱、类型、说明、状态" value="${escapeHtml(keyword)}" oninput="adminListQuery('orders').keyword=this.value.trim();adminListQuery('orders').page=1;scheduleAdminListReload('orders')" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-auto">
@@ -1947,7 +2019,7 @@ function renderOrders() {
                     </tbody>
                 </table>
             </div>
-            ${adminPaginationHtml(state.page, state.pageSize, orders.length, 'setOrdersPage', '条订单')}
+            ${adminPaginationHtml(state.page, state.pageSize, total, 'setOrdersPage', '条订单')}
         </div>`;
     updateOrderBatchToolbar();
     if (keyword) {
@@ -1957,19 +2029,18 @@ function renderOrders() {
     }
 }
 function setOrdersPage(page) {
-    Admin.listState.orders.page = Number(page) || 1;
-    renderOrders();
+    adminListQuery('orders').page = Number(page) || 1;
+    reloadAdminListKey('orders');
 }
 function setOrdersPageSize(size) {
-    Admin.listState.orders.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
-    Admin.listState.orders.page = 1;
-    renderOrders();
+    adminListQuery('orders').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
+    adminListQuery('orders').page = 1;
+    reloadAdminListKey('orders');
 }
 function clearOrderSearch() {
-    const input = document.getElementById('orderSearchInput');
-    if (input) input.value = '';
-    Admin.listState.orders.page = 1;
-    renderOrders();
+    adminListQuery('orders').keyword = '';
+    adminListQuery('orders').page = 1;
+    reloadAdminListKey('orders');
 }
 function selectedPaymentOrderIds() {
     return Array.from(document.querySelectorAll('.order-select:checked')).map(input => input.value).filter(Boolean);

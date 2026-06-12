@@ -180,6 +180,15 @@ class Database {
         $this->data['membership_levels'] = [];
     }
 
+    public function adminQuery() {
+        static $query = null;
+        if ($query === null) {
+            require_once __DIR__ . '/AdminQuery.php';
+            $query = new AdminQuery($this->pdo, $this->store);
+        }
+        return $query;
+    }
+
     private function normalizeTableName($name) {
         return preg_replace('/[^a-z0-9_]/', '', strtolower((string)$name));
     }

@@ -1138,6 +1138,7 @@ switch ($action) {
         ]);
 
     case 'notify':
+        $db->adminQuery()->expireStalePendingPaymentOrders();
         $data = $_GET;
         if (empty($data['out_trade_no']) && !empty($_POST['out_trade_no'])) {
             $data = $_POST;
@@ -1224,11 +1225,41 @@ switch ($action) {
     case 'get_orders':
         requireAdmin();
         $lite = !isset($_GET['lite']) || (string)$_GET['lite'] !== '0';
-        $orders = expirePendingPaymentOrders($db->getPaymentOrders());
-        usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-        $orders = attachPaymentOrderEmails($orders);
+        $loadAll = !empty($_GET['all']) || !empty($_POST['all']);
+        if (!empty($_GET['expire']) || !empty($_POST['expire'])) {
+            $db->adminQuery()->expireStalePendingPaymentOrders();
+            if (method_exists($db, 'reloadTable')) {
+                $db->reloadTable('payment_orders');
+            }
+        }
+        if ($loadAll) {
+            $orders = expirePendingPaymentOrders($db->getPaymentOrders());
+            usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+            $orders = attachPaymentOrderEmails($orders);
+            if ($lite) {
+                $orders = attachPaymentOrderDeliveryFlags($orders);
+            } else {
+                $orders = attachPaymentOrderPurchaseDetails($orders);
+                $orders = array_map(function($order) {
+                    $order['credit'] = paymentOrderCreditStatus($order);
+                    return $order;
+                }, $orders);
+            }
+            jsonResponse(['success' => true, 'orders' => $orders]);
+        }
+        $page = max(1, intval($_GET['page'] ?? $_POST['page'] ?? 1));
+        $pageSize = max(10, min(200, intval($_GET['page_size'] ?? $_POST['page_size'] ?? 20)));
+        $keyword = trim((string)($_GET['keyword'] ?? $_POST['keyword'] ?? ''));
+        $result = $db->adminQuery()->paymentOrdersPage($page, $pageSize, $keyword);
+        $orders = attachPaymentOrderEmails($result['orders']);
         if ($lite) {
-            $orders = attachPaymentOrderDeliveryFlags($orders);
+            $relatedIds = array_map(fn($order) => (string)($order['related_id'] ?? ''), $orders);
+            $deliveryMap = $db->adminQuery()->deliveryFlagsForRelatedIds($relatedIds);
+            $orders = array_map(function($order) use ($deliveryMap) {
+                $relatedId = trim((string)($order['related_id'] ?? ''));
+                $order['has_purchase_delivery'] = !empty($deliveryMap[$relatedId]);
+                return $order;
+            }, $orders);
         } else {
             $orders = attachPaymentOrderPurchaseDetails($orders);
             $orders = array_map(function($order) {
@@ -1236,7 +1267,13 @@ switch ($action) {
                 return $order;
             }, $orders);
         }
-        jsonResponse(['success' => true, 'orders' => $orders]);
+        jsonResponse([
+            'success' => true,
+            'orders' => $orders,
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
 
     case 'get_order_detail':
         requireAdmin();

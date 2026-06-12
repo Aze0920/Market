@@ -263,6 +263,42 @@ class RelationalStore {
         $this->ensureColumn('kn_card_codes', 'target_level', "varchar(50) NOT NULL DEFAULT ''");
         $this->ensureSignedDecimalColumn('kn_users', 'balance', 'decimal(14,2)', '0.00');
         $this->ensureSignedDecimalColumn('kn_users', 'frozen_balance', 'decimal(14,2)', '0.00');
+        require_once __DIR__ . '/AdminQuery.php';
+        (new AdminQuery($this->pdo, $this))->ensurePerformanceIndexes();
+    }
+
+    public function hydrateUserRow(array $row) {
+        return $this->rowToUser($row);
+    }
+
+    public function hydrateOrderRow(array $row) {
+        return $this->rowToOrder($row);
+    }
+
+    public function hydrateProductSummaryRow(array $row) {
+        return [
+            'id' => $row['id'],
+            'seller_id' => $row['seller_id'] ?? '',
+            'seller_name' => $row['seller_name'] ?? '',
+            'title' => $row['title'] ?? '',
+            'category' => $row['category'] ?? '',
+            'price' => floatval($row['price'] ?? 0),
+            'stock' => intval($row['stock'] ?? 0),
+            'sales' => intval($row['sales'] ?? 0),
+            'description' => $row['description'] ?? '',
+            'image' => $row['image'] ?? '',
+            'pickup_password_enabled' => !empty($row['pickup_password_enabled']),
+            'created_at' => intval($row['created_at'] ?? 0),
+            'updated_at' => intval($row['updated_at'] ?? 0),
+        ];
+    }
+
+    public function hydratePaymentOrderRow(array $row) {
+        return $this->rowToPaymentOrder($row);
+    }
+
+    public function hydrateCommentRow(array $row) {
+        return $this->rowToComment($row);
     }
 
     private function ensureSignedDecimalColumn($table, $column, $type, $default) {
