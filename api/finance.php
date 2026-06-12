@@ -61,6 +61,129 @@ function attachFinanceUserEmails($records) {
     }, $records);
 }
 
+function encryptSmtpPasswordValue($plainPassword) {
+    $plainPassword = (string)$plainPassword;
+    if ($plainPassword === '') {
+        return '';
+    }
+    $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
+    $iv = openssl_random_pseudo_bytes(16);
+    $encrypted = openssl_encrypt($plainPassword, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    return $encrypted !== false ? base64_encode($iv . $encrypted) : $plainPassword;
+}
+
+function normalizeStoredEmailProfiles(array $config) {
+    $profiles = $config['email_profiles'] ?? [];
+    if (is_string($profiles)) {
+        $decoded = json_decode($profiles, true);
+        $profiles = is_array($decoded) ? $decoded : [];
+    }
+    if (!is_array($profiles) || empty($profiles)) {
+        return [];
+    }
+    $normalized = [];
+    foreach ($profiles as $profile) {
+        if (!is_array($profile)) {
+            continue;
+        }
+        $id = trim((string)($profile['id'] ?? ''));
+        if ($id === '') {
+            $id = 'email_' . time() . '_' . bin2hex(random_bytes(3));
+        }
+        $normalized[$id] = $profile;
+    }
+    return $normalized;
+}
+
+function parseEmailProfilesInput($rawProfiles, array $currentConfig) {
+    if (is_string($rawProfiles)) {
+        $profiles = json_decode($rawProfiles, true);
+    } else {
+        $profiles = $rawProfiles;
+    }
+    if (!is_array($profiles)) {
+        return ['success' => false, 'message' => '发信配置格式错误'];
+    }
+    $existing = normalizeStoredEmailProfiles($currentConfig);
+    $normalized = [];
+    foreach ($profiles as $profile) {
+        if (!is_array($profile)) {
+            continue;
+        }
+        $id = sanitizeString($profile['id'] ?? ('email_' . time() . '_' . bin2hex(random_bytes(3))));
+        $old = $existing[$id] ?? null;
+        $provider = strtolower(trim((string)($profile['provider'] ?? 'smtp')));
+        if (!in_array($provider, ['smtp', 'resend'], true)) {
+            $provider = 'smtp';
+        }
+        $secure = strtolower(trim((string)($profile['smtp_secure'] ?? 'ssl')));
+        if (!in_array($secure, ['ssl', 'tls', 'none'], true)) {
+            $secure = 'ssl';
+        }
+        $item = [
+            'id' => $id,
+            'name' => sanitizeString($profile['name'] ?? ''),
+            'enabled' => filter_var($profile['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'provider' => $provider,
+            'resend_from_email' => sanitizeString($profile['resend_from_email'] ?? ''),
+            'resend_from_name' => sanitizeString($profile['resend_from_name'] ?? 'KeyNest'),
+            'smtp_host' => sanitizeString($profile['smtp_host'] ?? ''),
+            'smtp_port' => max(1, min(65535, intval($profile['smtp_port'] ?? 465))),
+            'smtp_username' => sanitizeString($profile['smtp_username'] ?? ''),
+            'smtp_secure' => $secure,
+            'resend_api_key' => '',
+            'smtp_password' => '',
+        ];
+        $newApiKey = trim((string)($profile['resend_api_key'] ?? ''));
+        if ($newApiKey !== '') {
+            $item['resend_api_key'] = sanitizeString($newApiKey);
+        } elseif (is_array($old)) {
+            $item['resend_api_key'] = (string)($old['resend_api_key'] ?? '');
+        }
+        if ($item['resend_api_key'] === '' && $item['provider'] === 'resend' && ($currentConfig['resend_from_email'] ?? '') === $item['resend_from_email']) {
+            $item['resend_api_key'] = (string)($currentConfig['resend_api_key'] ?? '');
+        }
+        $newPassword = (string)($profile['smtp_password'] ?? '');
+        if ($newPassword !== '') {
+            $item['smtp_password'] = encryptSmtpPasswordValue($newPassword);
+        } elseif (is_array($old)) {
+            $item['smtp_password'] = (string)($old['smtp_password'] ?? '');
+        }
+        if ($item['smtp_password'] === '' && $item['smtp_username'] !== '' && ($currentConfig['smtp_username'] ?? '') === $item['smtp_username']) {
+            $item['smtp_password'] = (string)($currentConfig['smtp_password'] ?? '');
+        }
+        $normalized[] = $item;
+    }
+    if (empty($normalized)) {
+        return ['success' => false, 'message' => '请至少保留一个发信方式'];
+    }
+    return ['success' => true, 'profiles' => $normalized];
+}
+
+function syncLegacyEmailConfigFromProfiles(array $profiles) {
+    $selected = null;
+    foreach ($profiles as $profile) {
+        if (!empty($profile['enabled'])) {
+            $selected = $profile;
+            break;
+        }
+    }
+    if (!$selected) {
+        $selected = $profiles[0];
+    }
+    return [
+        'email_provider' => ($selected['provider'] ?? '') === 'resend' ? 'resend' : 'smtp',
+        'resend_from_email' => $selected['resend_from_email'] ?? '',
+        'resend_from_name' => $selected['resend_from_name'] ?? 'KeyNest',
+        'resend_api_key' => $selected['resend_api_key'] ?? '',
+        'smtp_host' => $selected['smtp_host'] ?? '',
+        'smtp_port' => intval($selected['smtp_port'] ?? 465),
+        'smtp_username' => $selected['smtp_username'] ?? '',
+        'smtp_password' => $selected['smtp_password'] ?? '',
+        'smtp_secure' => $selected['smtp_secure'] ?? 'ssl',
+    ];
+}
+
 switch ($action) {
     case 'balance':
         $user = getCurrentUser();
@@ -367,6 +490,7 @@ switch ($action) {
         jsonResponse(['success' => true, 'requests' => $requests]);
 
     case 'get_system_config':
+        require_once __DIR__ . '/../core/Mailer.php';
         $user = getCurrentUser();
         $config = $db->getSystemConfig();
         
@@ -380,6 +504,8 @@ switch ($action) {
             unset($config['oauth_wechat_app_secret']);
             unset($config['oauth_caihong_key']);
         }
+        $config = KeyNestMailer::stripProfileSecrets($config);
+        unset($config['smtp_password'], $config['resend_api_key']);
         
         jsonResponse(['success' => true, 'config' => $config]);
 
@@ -498,11 +624,7 @@ switch ($action) {
         }
 
         if (isset($_POST['smtp_password']) && $_POST['smtp_password'] !== '') {
-            $plainPassword = sanitizeString($_POST['smtp_password']);
-            $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
-            $iv = openssl_random_pseudo_bytes(16);
-            $encrypted = openssl_encrypt($plainPassword, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
-            $config['smtp_password'] = $encrypted !== false ? base64_encode($iv . $encrypted) : $plainPassword;
+            $config['smtp_password'] = encryptSmtpPasswordValue(sanitizeString($_POST['smtp_password']));
         }
         if (isset($_POST['resend_api_key']) && $_POST['resend_api_key'] !== '') {
             $config['resend_api_key'] = sanitizeString($_POST['resend_api_key']);
@@ -558,6 +680,15 @@ switch ($action) {
             $domain = SubdomainHelper::normalizeBaseDomain($_POST['subdomain_base_domain']);
             $config['subdomain_base_domain'] = $domain;
             $config['subdomain_base_domains'] = $domain !== '' ? [$domain] : [];
+        }
+        if (isset($_POST['email_profiles'])) {
+            $parsed = parseEmailProfilesInput($_POST['email_profiles'], $currentConfig);
+            if (empty($parsed['success'])) {
+                jsonResponse(['success' => false, 'message' => $parsed['message'] ?? '发信配置保存失败'], 400);
+            }
+            $profiles = $parsed['profiles'];
+            $config['email_profiles'] = $profiles;
+            $config = array_merge($config, syncLegacyEmailConfigFromProfiles($profiles));
         }
         
         $db->updateSystemConfig($config);

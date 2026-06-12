@@ -1,11 +1,91 @@
 <?php
 class KeyNestMailer {
-    public static function send($to, $subject, $html, $config) {
+    public static function send($to, $subject, $html, $config, $options = []) {
+        $profileId = trim((string)($options['profile_id'] ?? ''));
+        $profiles = self::getProfiles($config);
+        if (empty($profiles)) {
+            return self::sendWithConfig($to, $subject, $html, $config);
+        }
+        if ($profileId !== '') {
+            foreach ($profiles as $profile) {
+                if (($profile['id'] ?? '') === $profileId) {
+                    $result = self::sendWithProfile($to, $subject, $html, $config, $profile);
+                    if (!empty($result['success'])) {
+                        $result['used_profile'] = self::profileLabel($profile);
+                    }
+                    return $result;
+                }
+            }
+            return ['success' => false, 'message' => '指定的发信配置不存在'];
+        }
+        $errors = [];
+        foreach ($profiles as $profile) {
+            if (($profile['enabled'] ?? true) === false) {
+                continue;
+            }
+            $result = self::sendWithProfile($to, $subject, $html, $config, $profile);
+            if (!empty($result['success'])) {
+                $result['used_profile'] = self::profileLabel($profile);
+                return $result;
+            }
+            $errors[] = self::profileLabel($profile) . '：' . ($result['message'] ?? '发送失败');
+        }
+        return ['success' => false, 'message' => $errors ? implode('；', $errors) : '没有可用的发信配置'];
+    }
+
+    private static function getProfiles($config) {
+        $profiles = $config['email_profiles'] ?? [];
+        if (is_string($profiles)) {
+            $decoded = json_decode($profiles, true);
+            $profiles = is_array($decoded) ? $decoded : [];
+        }
+        return is_array($profiles) ? $profiles : [];
+    }
+
+    private static function profileLabel(array $profile) {
+        $name = trim((string)($profile['name'] ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+        $from = trim((string)($profile['resend_from_email'] ?? $profile['smtp_username'] ?? ''));
+        return $from !== '' ? $from : '发信方式';
+    }
+
+    private static function sendWithProfile($to, $subject, $html, $baseConfig, array $profile) {
+        $mailConfig = array_merge($baseConfig, [
+            'email_provider' => ($profile['provider'] ?? '') === 'resend' ? 'resend' : 'smtp',
+            'resend_from_email' => $profile['resend_from_email'] ?? '',
+            'resend_from_name' => $profile['resend_from_name'] ?? ($baseConfig['resend_from_name'] ?? 'KeyNest'),
+            'resend_api_key' => $profile['resend_api_key'] ?? '',
+            'smtp_host' => $profile['smtp_host'] ?? '',
+            'smtp_port' => intval($profile['smtp_port'] ?? 465),
+            'smtp_username' => $profile['smtp_username'] ?? '',
+            'smtp_password' => $profile['smtp_password'] ?? '',
+            'smtp_secure' => $profile['smtp_secure'] ?? 'ssl',
+        ]);
+        return self::sendWithConfig($to, $subject, $html, $mailConfig);
+    }
+
+    private static function sendWithConfig($to, $subject, $html, $config) {
         $provider = $config['email_provider'] ?? 'smtp';
         if ($provider === 'resend') {
             return self::sendResend($to, $subject, $html, $config);
         }
         return self::sendSmtp($to, $subject, $html, $config);
+    }
+
+    public static function stripProfileSecrets(array $config) {
+        if (!isset($config['email_profiles']) || !is_array($config['email_profiles'])) {
+            return $config;
+        }
+        foreach ($config['email_profiles'] as &$profile) {
+            if (!is_array($profile)) {
+                continue;
+            }
+            unset($profile['smtp_password'], $profile['resend_api_key']);
+        }
+        unset($profile);
+        return $config;
     }
 
     public static function defaultTemplate() {

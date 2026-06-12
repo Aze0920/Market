@@ -1175,7 +1175,10 @@ switch ($action) {
         ]);
 
     case 'system_config':
-        adminJsonResponse(['success' => true, 'config' => $db->getSystemConfig()]);
+        $config = $db->getSystemConfig();
+        $config = KeyNestMailer::stripProfileSecrets($config);
+        unset($config['smtp_password'], $config['resend_api_key'], $config['captcha_secret_key'], $config['oauth_qq_app_key'], $config['oauth_wechat_app_secret'], $config['oauth_caihong_key']);
+        adminJsonResponse(['success' => true, 'config' => $config]);
 
     case 'user_balance_details':
         $id = trim($_GET['id'] ?? $_POST['id'] ?? '');
@@ -1749,10 +1752,21 @@ switch ($action) {
             'footer' => '这是一封后台测试邮件，不会用于真实注册验证。',
             'time' => date('Y-m-d H:i:s')
         ]);
-        $result = KeyNestMailer::send($to, $subject, $html, $config);
+        $result = KeyNestMailer::send($to, $subject, $html, $config, [
+            'profile_id' => trim((string)($_POST['profile_id'] ?? '')),
+        ]);
         if (!empty($result['success'])) {
+            $db->updateSystemConfig([
+                'email_last_error' => '',
+                'email_last_error_at' => 0,
+            ]);
             $result['message'] = ($result['message'] ?? '测试邮件已发送') . '；测试验证码：' . $code;
             $result['test_code'] = $code;
+        } else {
+            $db->updateSystemConfig([
+                'email_last_error' => (string)($result['message'] ?? '测试发送失败'),
+                'email_last_error_at' => time(),
+            ]);
         }
         adminJsonResponse($result);
 
