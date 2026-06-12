@@ -414,8 +414,14 @@ const API = {
         return this.request('card.php?action=list' + param);
     },
 
-    createCards(amount, count, cardType = 'balance', targetLevel = '') {
-        return this.request('card.php?action=create', 'POST', { amount, count, card_type: cardType, target_level: targetLevel });
+    createCards(amount, count, cardType = 'balance', targetLevel = '', baseDomain = '') {
+        const payload = { amount, count, card_type: cardType, target_level: targetLevel };
+        if (baseDomain) payload.base_domain = baseDomain;
+        return this.request('card.php?action=create', 'POST', payload);
+    },
+
+    peekCard(code) {
+        return this.request('card.php?action=peek', 'POST', { code });
     },
 
     deleteCard(id) {

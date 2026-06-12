@@ -317,6 +317,9 @@ async function initSellerStoreContext() {
         status: res.status || ''
     };
     updateSellerStoreBanner();
+    if (window.SellerStore.prefix && !window.SellerStore.active && typeof setSubdomainUnavailablePageMode === 'function') {
+        setSubdomainUnavailablePageMode(true);
+    }
 }
 
 function updateSellerStoreBanner() {
@@ -399,6 +402,9 @@ function showHome(options = {}) {
 
     const store = window.SellerStore || {};
     const isUnavailableSubdomain = !!store.prefix && !store.active;
+    if (typeof setSubdomainUnavailablePageMode === 'function') {
+        setSubdomainUnavailablePageMode(isUnavailableSubdomain);
+    }
     const marketTitle = document.getElementById('marketTitle');
     const marketDescription = document.getElementById('marketDescription');
     if (!isUnavailableSubdomain && store.sellerId && marketTitle) {
@@ -2371,6 +2377,7 @@ async function loadSubdomainTab(area) {
                         <div class="col-md-6">
                             <label class="form-label">二级域名卡密</label>
                             <input id="subdomainCardCodeInput" class="form-control" placeholder="输入卡密代码">
+                            <div id="subdomainCardHint" class="form-text"></div>
                         </div>
                         <div class="col-12">
                             <button class="btn btn-outline-primary" onclick="redeemSubdomainCard()" ${!config.enabled || !merchantApproved ? 'disabled' : ''}>兑换并提交审核</button>
@@ -2399,6 +2406,61 @@ async function loadSubdomainTab(area) {
                 hint.className = 'form-text ' + (check.success && check.available ? 'text-success' : 'text-danger');
             }, 300);
         });
+    }
+    const cardCodeInput = document.getElementById('subdomainCardCodeInput');
+    if (cardCodeInput) {
+        cardCodeInput.addEventListener('input', () => {
+            clearTimeout(window.__subdomainCardPeekTimer);
+            window.__subdomainCardPeekTimer = setTimeout(() => previewSubdomainCardCode(), 350);
+        });
+    }
+}
+
+function resetSubdomainCardDomainLock() {
+    const domainInput = document.getElementById('subdomainCardBaseDomainInput');
+    if (domainInput) {
+        domainInput.disabled = false;
+        domainInput.removeAttribute('data-card-locked');
+    }
+    const hint = document.getElementById('subdomainCardHint');
+    if (hint) {
+        hint.textContent = '';
+        hint.className = 'form-text';
+    }
+}
+
+async function previewSubdomainCardCode() {
+    const code = document.getElementById('subdomainCardCodeInput')?.value?.trim() || '';
+    const hint = document.getElementById('subdomainCardHint');
+    resetSubdomainCardDomainLock();
+    if (!code) return;
+    const result = await API.peekCard(code);
+    if (!result.success) {
+        if (hint) {
+            hint.textContent = result.message || '无效的卡密';
+            hint.className = 'form-text text-danger';
+        }
+        return;
+    }
+    if (result.card_type !== 'subdomain') {
+        if (hint) {
+            hint.textContent = '该卡密不是二级域名卡';
+            hint.className = 'form-text text-warning';
+        }
+        return;
+    }
+    const domainInput = document.getElementById('subdomainCardBaseDomainInput');
+    if (result.base_domain && domainInput) {
+        domainInput.value = result.base_domain;
+        domainInput.disabled = true;
+        domainInput.setAttribute('data-card-locked', '1');
+    }
+    if (hint) {
+        const months = result.target_level || '1';
+        hint.textContent = result.base_domain
+            ? `该卡密绑定 *.${result.base_domain}，可兑换 ${months} 个月`
+            : `二级域名卡，可兑换 ${months} 个月（请自行选择主域名）`;
+        hint.className = 'form-text text-success';
     }
 }
 
@@ -2429,13 +2491,15 @@ async function redeemSubdomainCard() {
     const code = document.getElementById('subdomainCardCodeInput')?.value?.trim() || '';
     if (!prefix) return Toast.warning('请输入域名前缀');
     if (!code) return Toast.warning('请输入卡密');
-    const baseDomain = document.getElementById('subdomainCardBaseDomainInput')?.value || document.getElementById('subdomainBaseDomainInput')?.value || '';
+    const domainInput = document.getElementById('subdomainCardBaseDomainInput');
+    const baseDomain = domainInput?.value || document.getElementById('subdomainBaseDomainInput')?.value || '';
     const result = await API.useCard(code, { subdomain_prefix: prefix, subdomain_base_domain: baseDomain });
     if (!result.success) return Toast.error(result.message || '兑换失败');
     if ((result.card_type || '') !== 'subdomain') {
         return Toast.error('该卡密不是二级域名卡，请到余额管理或会员中心使用对应卡密');
     }
     Toast.success(result.message || '兑换成功，请等待管理员审核');
+    resetSubdomainCardDomainLock();
     renderDashboardTab('subdomain');
 }
 

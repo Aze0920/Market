@@ -3550,9 +3550,9 @@ body.subdomain-unavailable-page {
     background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
 }
 
-body.subdomain-unavailable-page .navbar,
+body.subdomain-unavailable-page .page-wrapper > .navbar,
 body.subdomain-unavailable-page footer,
-body.subdomain-unavailable-page #homeMarketHeader,
+body.subdomain-unavailable-page #homePage > :not(#emptyProductState),
 body.subdomain-unavailable-page #sellerStoreBanner,
 body.subdomain-unavailable-page #productGrid {
     display: none !important;

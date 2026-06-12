@@ -161,6 +161,7 @@ class RelationalStore {
                 `amount` decimal(14,2) NOT NULL DEFAULT 0.00,
                 `card_type` varchar(20) NOT NULL DEFAULT 'balance',
                 `target_level` varchar(50) NOT NULL DEFAULT '',
+                `base_domain` varchar(120) NOT NULL DEFAULT '',
                 `is_used` tinyint(1) NOT NULL DEFAULT 0,
                 `used_by` varchar(80) DEFAULT NULL,
                 `used_at` int unsigned DEFAULT NULL,
@@ -278,6 +279,7 @@ class RelationalStore {
         $this->ensureColumn('kn_payment_orders', 'refunded_at', "int unsigned DEFAULT NULL");
         $this->ensureColumn('kn_card_codes', 'card_type', "varchar(20) NOT NULL DEFAULT 'balance'");
         $this->ensureColumn('kn_card_codes', 'target_level', "varchar(50) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_card_codes', 'base_domain', "varchar(120) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_seller_subdomains', 'base_domain', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureSignedDecimalColumn('kn_users', 'balance', 'decimal(14,2)', '0.00');
         $this->ensureSignedDecimalColumn('kn_users', 'frozen_balance', 'decimal(14,2)', '0.00');
@@ -879,6 +881,7 @@ class RelationalStore {
             'amount' => floatval($row['amount']),
             'card_type' => $row['card_type'] ?? 'balance',
             'target_level' => $row['target_level'] ?? '',
+            'base_domain' => $row['base_domain'] ?? '',
             'used' => !empty($row['is_used']),
             'used_by' => $row['used_by'],
             'used_at' => $row['used_at'] !== null ? intval($row['used_at']) : null,
@@ -897,10 +900,11 @@ class RelationalStore {
         $targetLevel = in_array($cardType, ['membership', 'subdomain'], true)
             ? trim((string)($card['target_level'] ?? ''))
             : '';
+        $baseDomain = $cardType === 'subdomain' ? trim((string)($card['base_domain'] ?? '')) : '';
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_card_codes (id, code, amount, card_type, target_level, is_used, used_by, used_at, created_by, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE code = VALUES(code), amount = VALUES(amount), card_type = VALUES(card_type), target_level = VALUES(target_level), is_used = VALUES(is_used), used_by = VALUES(used_by), used_at = VALUES(used_at), created_by = VALUES(created_by), created_at = VALUES(created_at)'
+            'INSERT INTO kn_card_codes (id, code, amount, card_type, target_level, base_domain, is_used, used_by, used_at, created_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE code = VALUES(code), amount = VALUES(amount), card_type = VALUES(card_type), target_level = VALUES(target_level), base_domain = VALUES(base_domain), is_used = VALUES(is_used), used_by = VALUES(used_by), used_at = VALUES(used_at), created_by = VALUES(created_by), created_at = VALUES(created_at)'
         );
         return $stmt->execute([
             $card['id'],
@@ -908,6 +912,7 @@ class RelationalStore {
             floatval($card['amount'] ?? 0),
             $cardType,
             $targetLevel,
+            $baseDomain,
             !empty($card['used']) ? 1 : 0,
             $card['used_by'] ?? null,
             isset($card['used_at']) ? intval($card['used_at']) : null,

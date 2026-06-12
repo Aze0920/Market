@@ -71,6 +71,36 @@ function checkCardUseRateLimit() {
     return true;
 }
 
+function validateSubdomainBaseDomain($db, $baseDomain) {
+    $config = $db->getSystemConfig();
+    $baseDomains = SubdomainHelper::getBaseDomains($config);
+    $normalized = SubdomainHelper::normalizeBaseDomain($baseDomain);
+    if ($normalized === '' || !in_array($normalized, $baseDomains, true)) {
+        return null;
+    }
+    return $normalized;
+}
+
+function resolveSubdomainCardBaseDomain($db, array $card, $requestedBaseDomain = '') {
+    $cardBaseDomain = trim((string)($card['base_domain'] ?? ''));
+    if ($cardBaseDomain !== '') {
+        $validated = validateSubdomainBaseDomain($db, $cardBaseDomain);
+        if (!$validated) {
+            return ['success' => false, 'message' => '卡密绑定的主域名配置无效，请联系管理员'];
+        }
+        $requested = SubdomainHelper::normalizeBaseDomain($requestedBaseDomain);
+        if ($requested !== '' && $requested !== $validated) {
+            return ['success' => false, 'message' => '该卡密仅可用于 ' . $validated . ' 域名'];
+        }
+        return ['success' => true, 'base_domain' => $validated];
+    }
+    $requested = validateSubdomainBaseDomain($db, $requestedBaseDomain);
+    if (!$requested) {
+        return ['success' => false, 'message' => '请选择有效的主域名'];
+    }
+    return ['success' => true, 'base_domain' => $requested];
+}
+
 switch ($action) {
     case 'use':
         $userId = requireAuth();
@@ -102,7 +132,11 @@ switch ($action) {
             }
             $prefix = strtolower(trim((string)($_POST['subdomain_prefix'] ?? '')));
             $months = max(1, min(36, intval($card['target_level'] ?? 1)));
-            $baseDomain = trim((string)($_POST['subdomain_base_domain'] ?? ''));
+            $domainResult = resolveSubdomainCardBaseDomain($db, $card, $_POST['subdomain_base_domain'] ?? '');
+            if (empty($domainResult['success'])) {
+                jsonResponse(['success' => false, 'message' => $domainResult['message'] ?? '主域名无效'], 400);
+            }
+            $baseDomain = $domainResult['base_domain'];
             $result = SubdomainHelper::submitApplication($db, $userId, $prefix, $months, [
                 'base_domain' => $baseDomain,
                 'price_paid' => 0,
@@ -122,7 +156,7 @@ switch ($action) {
                 'status' => 'paid',
                 'type' => 'subdomain_card',
                 'title' => '二级域名卡密兑换',
-                'description' => '使用卡密申请二级域名 ' . $prefix . ' × ' . $months . ' 个月（待审核）',
+                'description' => '使用卡密申请二级域名 ' . $prefix . '.' . $baseDomain . ' × ' . $months . ' 个月（待审核）',
                 'related_id' => $card['id'] ?? '',
                 'paid_at' => time()
             ]);
@@ -131,6 +165,7 @@ switch ($action) {
                 'message' => '二级域名卡密兑换成功，请等待管理员审核通过后生效',
                 'card_type' => 'subdomain',
                 'months' => $months,
+                'base_domain' => $baseDomain,
             ]);
         }
 
@@ -196,6 +231,28 @@ switch ($action) {
             'new_balance' => $user['balance'] + $card['amount']
         ]);
 
+    case 'peek':
+        requireAuth();
+        if (!checkCardUseRateLimit()) {
+            jsonResponse(['success' => false, 'message' => '尝试过于频繁，请15分钟后再试'], 429);
+        }
+        $code = trim($_POST['code'] ?? $_GET['code'] ?? '');
+        if (empty($code) || strlen($code) > 50) {
+            jsonResponse(['success' => false, 'message' => '无效的卡密'], 400);
+        }
+        $card = $db->getCardCode($code);
+        if (!$card || !empty($card['used'])) {
+            jsonResponse(['success' => false, 'message' => '无效的卡密'], 400);
+        }
+        $cardType = normalizeCardType($card['card_type'] ?? 'balance');
+        jsonResponse([
+            'success' => true,
+            'card_type' => $cardType,
+            'target_level' => $card['target_level'] ?? '',
+            'base_domain' => $card['base_domain'] ?? '',
+            'amount' => floatval($card['amount'] ?? 0),
+        ]);
+
     case 'list':
         requireAdmin();
         $onlyUnused = isset($_GET['only_unused']) && $_GET['only_unused'] === '1';
@@ -215,6 +272,7 @@ switch ($action) {
         $amount = floatval($_POST['amount'] ?? 0);
         $targetLevel = trim((string)($_POST['target_level'] ?? ''));
         $count = intval($_POST['count'] ?? 1);
+        $baseDomain = '';
 
         if ($cardType === 'balance' && ($amount <= 0 || $amount > 1000000)) {
             jsonResponse(['success' => false, 'message' => $amount <= 0 ? '无效的卡密类型或金额' : '无效的金额'], 400);
@@ -232,6 +290,10 @@ switch ($action) {
             }
             $months = max(1, min(36, intval($targetLevel !== '' ? $targetLevel : ($_POST['target_level'] ?? 1))));
             $targetLevel = (string)$months;
+            $baseDomain = validateSubdomainBaseDomain($db, $_POST['base_domain'] ?? '');
+            if (!$baseDomain) {
+                jsonResponse(['success' => false, 'message' => '请选择有效的主域名'], 400);
+            }
             $amount = 0;
         }
         if ($count < 1 || $count > 100) {
@@ -246,6 +308,7 @@ switch ($action) {
                 'amount' => $amount,
                 'card_type' => $cardType,
                 'target_level' => in_array($cardType, ['membership', 'subdomain'], true) ? $targetLevel : '',
+                'base_domain' => $cardType === 'subdomain' ? ($baseDomain ?? '') : '',
                 'used' => false,
                 'used_by' => null,
                 'used_at' => null,

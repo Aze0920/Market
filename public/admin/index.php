@@ -2478,6 +2478,16 @@ function toggleAdminCardCreateType() {
     document.getElementById('cardAmountWrap')?.classList.toggle('d-none', type !== 'balance');
     document.getElementById('cardMembershipWrap')?.classList.toggle('d-none', type !== 'membership');
     document.getElementById('cardSubdomainWrap')?.classList.toggle('d-none', type !== 'subdomain');
+    document.getElementById('cardSubdomainDomainWrap')?.classList.toggle('d-none', type !== 'subdomain');
+}
+function subdomainCardDomainOptionsAdmin() {
+    const plans = getSubdomainDomainPlansAdmin();
+    if (!plans.length) return '<option value="">未配置主域名</option>';
+    return plans.map(plan => {
+        const domain = String(plan.domain || '').replace(/^\*\./, '');
+        const price = Number(plan.monthly_price || 10).toFixed(2);
+        return `<option value="${escapeHtml(domain)}">*.${escapeHtml(domain)}（¥${price}/月）</option>`;
+    }).join('');
 }
 function isSubdomainFeatureEnabledAdmin() {
     const c = Admin.cache.sysConfig || {};
@@ -2494,7 +2504,7 @@ function renderCards() {
             <div class="panel-title">
                 <div>
                     <h5>生成卡密</h5>
-                    <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级；二级域名卡用于兑换指定月数的二级域名。</div>
+                    <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级；二级域名卡用于兑换指定主域名及时长的二级域名。</div>
                 </div>
             </div>
             <div class="row g-3 align-items-end">
@@ -2514,7 +2524,11 @@ function renderCards() {
                     <label class="form-label">会员权益</label>
                     <select id="cardTargetLevel" class="form-select" ${hasMembershipLevels ? '' : 'disabled'}>${cardMembershipOptionsAdmin()}</select>
                 </div>
-                <div class="col-md-6 col-lg-4 d-none" id="cardSubdomainWrap">
+                <div class="col-md-6 col-lg-3 d-none" id="cardSubdomainDomainWrap">
+                    <label class="form-label">绑定主域名</label>
+                    <select id="cardSubdomainDomain" class="form-select">${subdomainCardDomainOptionsAdmin()}</select>
+                </div>
+                <div class="col-md-6 col-lg-2 d-none" id="cardSubdomainWrap">
                     <label class="form-label">兑换月数</label>
                     <input id="cardSubdomainMonths" class="form-control" type="number" min="1" max="36" value="1" placeholder="例如：1">
                 </div>
@@ -2553,7 +2567,7 @@ function renderCards() {
                         ${cards.map(c => {
                             const type = ['membership', 'subdomain'].includes(c.card_type || 'balance') ? c.card_type : 'balance';
                             const typeLabel = type === 'membership' ? '<span class="badge-soft primary">会员卡</span>' : (type === 'subdomain' ? '<span class="badge-soft warning">二级域名卡</span>' : '<span class="badge-soft success">余额卡</span>');
-                            const valueLabel = type === 'membership' ? escapeHtml(c.target_level || '-') : (type === 'subdomain' ? escapeHtml((c.target_level || '1') + ' 个月') : '余额充值');
+                            const valueLabel = type === 'membership' ? escapeHtml(c.target_level || '-') : (type === 'subdomain' ? escapeHtml((c.base_domain ? ('*.' + c.base_domain + ' · ') : '') + (c.target_level || '1') + ' 个月') : '余额充值');
                             return `
                             <tr>
                                 <td><input class="form-check-input card-select" type="checkbox" value="${escapeHtml(c.id)}" onchange="updateCardBatchToolbar()"></td>
@@ -2652,7 +2666,27 @@ async function createCards() {
     let targetLevel = document.getElementById('cardTargetLevel')?.value || '';
     if (cardType === 'balance' && Number(amount) <= 0) return showToast('请输入大于 0 的充值金额', 'error');
     if (cardType === 'membership' && !targetLevel) return showToast('请选择要生成的会员权益', 'error');
-    if (cardType === 'subdomain') targetLevel = document.getElementById('cardSubdomainMonths')?.value || '1';
+    if (cardType === 'subdomain') {
+        targetLevel = document.getElementById('cardSubdomainMonths')?.value || '1';
+        const baseDomain = document.getElementById('cardSubdomainDomain')?.value || '';
+        if (!baseDomain) return showToast('请选择绑定的主域名', 'error');
+        const res = await request('card.php?action=create', 'POST', { amount, count, card_type: cardType, target_level: targetLevel, base_domain: baseDomain });
+        if (!res.success) return showToast(res.message || '生成失败', 'error');
+        showToast(res.message || '生成成功', 'success');
+        await loadAdminData();
+        renderCards();
+        const codes = (res.cards || []).map(card => card.code).filter(Boolean);
+        if (codes.length) {
+            const confirmed = await adminConfirm({
+                title: '复制生成的卡密？',
+                message: '本次成功生成 ' + codes.length + ' 张卡密，确认后会按一行一个复制到剪贴板。',
+                confirmText: '复制卡密',
+                cancelText: '暂不复制'
+            });
+            if (confirmed) await copyTextToClipboard(codes.join('\n'));
+        }
+        return;
+    }
     const res = await request('card.php?action=create', 'POST', { amount, count, card_type: cardType, target_level: targetLevel });
     if (!res.success) return showToast(res.message || '生成失败', 'error');
     showToast(res.message || '生成成功', 'success');
