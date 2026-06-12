@@ -1502,7 +1502,128 @@ function userEmailById(id, fallback = '-') {
     return user?.email || fallback || id || '-';
 }
 function recordUserEmail(record, field = 'user_id', fallback = '-') {
-    return record?.[field + '_email'] || userEmailById(record?.[field], fallback || record?.[field] || '-');
+    const emailKey = field + '_email';
+    if (record?.[emailKey]) return record[emailKey];
+    const userId = record?.[field] || '';
+    const user = findAdminUserById(userId);
+    if (user?.email) return user.email;
+    if (record?.user_exists === false && userId) {
+        return `${userId}（用户不存在）`;
+    }
+    if (record?.user_username) return record.user_username;
+    if (user?.username) return user.username;
+    return fallback || userId || '-';
+}
+function orderUserDisplay(record, field = 'user_id') {
+    const username = record?.user_username || findAdminUserById(record?.[field])?.username || '';
+    const email = record?.[field + '_email'] || findAdminUserById(record?.[field])?.email || '';
+    const uid = record?.[field] || '-';
+    if (username && email) return `${username} / ${email}`;
+    if (email) return email;
+    if (username) return username;
+    return recordUserEmail(record, field, uid);
+}
+function orderCreditBadge(order) {
+    const credit = order?.credit || {};
+    const map = {
+        applied: ['success', '已入账'],
+        pending: ['warning', '待入账'],
+        failed: ['danger', '未入账'],
+        not_needed: ['info', '无需入账']
+    };
+    const item = map[credit.status];
+    if (!item) return '';
+    const title = escapeHtml(credit.message || item[1]);
+    return `<span class="badge-soft ${item[0]}" title="${title}">${item[1]}</span>`;
+}
+async function openPaymentOrderDetail(id) {
+    const res = await request(`payment.php?action=get_order_detail&id=${encodeURIComponent(id)}`);
+    if (!res.success) return showToast(res.message || '加载订单详情失败', 'error');
+    renderPaymentOrderDetailModal(res.detail || {}, id);
+}
+function renderPaymentOrderDetailModal(detail, orderId) {
+    const order = detail.order || {};
+    const credit = detail.credit || {};
+    const linkedUser = detail.linked_user || null;
+    const candidates = Array.isArray(detail.candidate_users) ? detail.candidate_users : [];
+    const creditBadgeMap = {
+        applied: 'success',
+        pending: 'warning',
+        failed: 'danger',
+        not_needed: 'info',
+        not_paid: 'secondary'
+    };
+    const creditClass = creditBadgeMap[credit.status] || 'secondary';
+    const candidateHtml = candidates.length ? `<div class="mt-3"><div class="small text-muted mb-2">可能匹配的用户（邮箱相同但 user_id 不一致）</div><div class="d-flex flex-column gap-2">${candidates.map(u => `
+        <div class="border rounded-3 p-2 d-flex justify-content-between align-items-center gap-2">
+            <div><strong>${escapeHtml(u.username || '-')}</strong><div class="small text-muted">${escapeHtml(u.email || '-')} · <code>${escapeHtml(u.id || '')}</code></div><div class="small text-muted">${escapeHtml(u.reason || '')}</div></div>
+            <button class="btn btn-sm btn-outline-primary" onclick="reassignPaymentOrderUser('${escapeHtml(orderId)}','${escapeHtml(u.id)}', true)">绑定并补入账</button>
+        </div>`).join('')}</div></div>` : '';
+    adminModal({
+        title: `订单详情 · ${escapeHtml(order.trade_no || order.id || '-')}`,
+        size: 'lg',
+        body: `
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><div class="small text-muted">交易号</div><code>${escapeHtml(order.trade_no || order.id || '-')}</code></div>
+                <div class="col-md-6"><div class="small text-muted">订单ID</div><code>${escapeHtml(order.id || '-')}</code></div>
+                <div class="col-md-6"><div class="small text-muted">类型 / 支付方式</div><strong>${escapeHtml(orderTypeLabel(order.type, order.pay_type))}</strong></div>
+                <div class="col-md-6"><div class="small text-muted">支付状态</div>${orderStatusDisplay(order)}</div>
+                <div class="col-md-6"><div class="small text-muted">金额 / 实付</div><strong>${money(order.amount)}</strong><span class="text-muted"> / ${money(order.actual_amount)}</span></div>
+                <div class="col-md-6"><div class="small text-muted">入账状态</div><span class="badge-soft ${creditClass}">${escapeHtml(credit.label || '-')}</span>${credit.message ? `<div class="small text-danger mt-1">${escapeHtml(credit.message)}</div>` : ''}</div>
+                <div class="col-md-6"><div class="small text-muted">创建 / 支付时间</div>${dateText(order.created_at)}${order.paid_at ? `<div class="small text-muted">支付 ${dateText(order.paid_at)}</div>` : ''}</div>
+                <div class="col-md-6"><div class="small text-muted">说明</div><div>${escapeHtml(order.title || '-')}<div class="small text-muted">${escapeHtml(order.description || '')}</div></div></div>
+            </div>
+            <div class="border rounded-3 p-3 bg-light-subtle mb-3">
+                <div class="fw-semibold mb-2">关联账号</div>
+                <div class="row g-2 small">
+                    <div class="col-md-4"><span class="text-muted">user_id</span><div><code>${escapeHtml(order.user_id || '-')}</code></div></div>
+                    <div class="col-md-4"><span class="text-muted">用户名</span><div><strong>${escapeHtml(order.user_username || linkedUser?.username || '-')}</strong></div></div>
+                    <div class="col-md-4"><span class="text-muted">邮箱</span><div>${escapeHtml(order.user_id_email || order.guest_email || linkedUser?.email || '-')}</div></div>
+                </div>
+                ${linkedUser ? `<div class="small text-success mt-2">当前账号存在，余额 ${money(linkedUser.balance)}，冻结 ${money(linkedUser.frozen_balance)}</div>` : `<div class="small text-danger mt-2">订单绑定的 user_id 在系统中不存在，这通常是充值不到账的原因。</div>`}
+                ${order.delivery_error ? `<div class="small text-danger mt-2">${escapeHtml(order.delivery_error)}</div>` : ''}
+            </div>
+            ${candidateHtml}
+            <div class="border rounded-3 p-3">
+                <div class="fw-semibold mb-2">手动绑定用户</div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5"><label class="form-label small text-muted">用户名</label><input id="reassignOrderUsername" class="form-control" placeholder="例如 kevinluan"></div>
+                    <div class="col-md-5"><label class="form-label small text-muted">或 user_id</label><input id="reassignOrderUserId" class="form-control" placeholder="用户ID"></div>
+                    <div class="col-md-2"><button class="btn btn-outline-primary w-100" onclick="submitReassignPaymentOrderUser('${escapeHtml(orderId)}', false)">仅绑定</button></div>
+                    <div class="col-12"><button class="btn btn-warning" onclick="submitReassignPaymentOrderUser('${escapeHtml(orderId)}', true)">绑定并补入账</button></div>
+                </div>
+            </div>
+        `,
+        footer: `
+            ${credit.can_reapply ? `<button class="btn btn-warning" onclick="reapplyPaymentOrderBalance('${escapeHtml(orderId)}')">补入账</button>` : ''}
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+        `
+    });
+}
+async function reapplyPaymentOrderBalance(id) {
+    if (!confirm('确认将该订单金额补入关联用户余额吗？')) return;
+    const res = await request('payment.php?action=reapply_order_balance', 'POST', { id });
+    if (!res.success) return showToast(res.message || '补入账失败', 'error');
+    showToast(res.message || '补入账成功', 'success');
+    await loadAdminData();
+    if (res.detail) renderPaymentOrderDetailModal(res.detail, id);
+    else renderOrders();
+}
+async function submitReassignPaymentOrderUser(id, reapply) {
+    const username = document.getElementById('reassignOrderUsername')?.value?.trim() || '';
+    const userId = document.getElementById('reassignOrderUserId')?.value?.trim() || '';
+    if (!username && !userId) return showToast('请填写用户名或 user_id', 'error');
+    const tip = reapply ? '确认绑定用户并补入账吗？' : '确认仅绑定用户吗？';
+    if (!confirm(tip)) return;
+    await reassignPaymentOrderUser(id, userId, reapply, username);
+}
+async function reassignPaymentOrderUser(id, userId, reapply = true, username = '') {
+    const res = await request('payment.php?action=reassign_order_user', 'POST', { id, user_id: userId, username, reapply: reapply ? '1' : '' });
+    if (!res.success) return showToast(res.message || '绑定失败', 'error');
+    showToast(res.message || '操作成功', 'success');
+    await loadAdminData();
+    if (res.detail) renderPaymentOrderDetailModal(res.detail, id);
+    else renderOrders();
 }
 function userEmailByNameOrId(name, id = '') {
     const users = Admin.cache.users || [];
@@ -1712,7 +1833,7 @@ async function updateAdminComplaintStatus(orderId, status) {
 function paymentOrderAdminCard(o) {
     const id = escapeHtml(o.id || '');
     const tradeNo = escapeHtml(o.trade_no || o.id || '-');
-    const userEmail = escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'));
+    const userText = escapeHtml(orderUserDisplay(o, 'user_id'));
     return `
         <div class="admin-order-card">
             <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
@@ -1723,13 +1844,13 @@ function paymentOrderAdminCard(o) {
                             <div class="admin-order-title">${escapeHtml(o.title || orderTypeLabel(o.type, o.pay_type) || '支付订单')}</div>
                             <div class="admin-order-trade">${tradeNo}</div>
                         </div>
-                        ${orderStatusDisplay(o)}
+                        ${orderStatusDisplay(o)} ${orderCreditBadge(o)}
                     </div>
                 </div>
             </div>
             <div class="admin-order-desc">${escapeHtml(o.description || '-')} ${orderDeliveryNotice(o)}</div>
             <div class="admin-order-grid">
-                <div><span>用户邮箱</span><strong>${userEmail}</strong></div>
+                <div><span>用户账号</span><strong>${userText}</strong></div>
                 <div><span>类型</span><strong>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</strong></div>
                 <div><span>金额</span><strong class="${Number(o.amount || 0) < 0 ? 'text-danger' : 'text-success'}">${money(o.amount)}</strong></div>
                 <div><span>实付</span><strong>${money(o.actual_amount)}</strong></div>
@@ -1737,6 +1858,7 @@ function paymentOrderAdminCard(o) {
             </div>
             <div id="orderStatusEditorCard-${id}" class="order-status-editor-card hidden">${orderStatusEditor(o)}</div>
             <div class="admin-order-actions">
+                <button class="btn btn-sm btn-outline-secondary" onclick="openPaymentOrderDetail('${id}')">账号详情</button>
                 ${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success" onclick="openPaymentOrderDataModal('${id}')">查看数据</button>` : ''}
                 <button class="btn btn-sm btn-outline-primary" onclick="toggleOrderStatusEditor('${id}', true)">修改状态</button>
                 <button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${id}')">删除</button>
@@ -1791,21 +1913,21 @@ function renderOrders() {
             <div class="table-responsive admin-order-table-wrap">
                 <table class="table">
                     <thead>
-                        <tr><th style="width:44px"><input class="form-check-input" type="checkbox" id="orderSelectAll" onchange="toggleAllOrderSelection(this.checked)" ${pageOrders.length ? '' : 'disabled'}></th><th>交易号</th><th>用户邮箱</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
+                        <tr><th style="width:44px"><input class="form-check-input" type="checkbox" id="orderSelectAll" onchange="toggleAllOrderSelection(this.checked)" ${pageOrders.length ? '' : 'disabled'}></th><th>交易号</th><th>用户账号</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
                     </thead>
                     <tbody>
                         ${pageOrders.map(o => `
                             <tr>
                                 <td><input class="form-check-input order-select" type="checkbox" value="${escapeHtml(o.id)}" onchange="updateOrderBatchToolbar()"></td>
                                 <td><code>${escapeHtml(o.trade_no || o.id)}</code></td>
-                                <td>${escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'))}</td>
+                                <td>${escapeHtml(orderUserDisplay(o, 'user_id'))}${orderCreditBadge(o) ? `<div class="mt-1">${orderCreditBadge(o)}</div>` : ''}</td>
                                 <td>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</td>
                                 <td><div class="fw-semibold">${escapeHtml(o.title || '-')}</div><div class="small text-muted">${escapeHtml(o.description || '')}</div>${orderDeliveryNotice(o)}</td>
                                 <td>${money(o.amount)}</td>
                                 <td>${money(o.actual_amount)}</td>
                                 <td>${orderStatusDisplay(o)}</td>
                                 <td>${dateText(o.created_at)}</td>
-                                <td class="text-end"><div class="d-inline-flex justify-content-end align-items-center gap-1 flex-nowrap">${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success text-nowrap" onclick="openPaymentOrderDataModal('${escapeHtml(o.id)}')">查看数据</button>` : ''}<button class="btn btn-sm btn-outline-danger text-nowrap" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></div></td>
+                                <td class="text-end"><div class="d-inline-flex justify-content-end align-items-center gap-1 flex-nowrap"><button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="openPaymentOrderDetail('${escapeHtml(o.id)}')">账号详情</button>${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success text-nowrap" onclick="openPaymentOrderDataModal('${escapeHtml(o.id)}')">查看数据</button>` : ''}<button class="btn btn-sm btn-outline-danger text-nowrap" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></div></td>
                             </tr>
                             <tr id="orderStatusEditor-${escapeHtml(o.id)}" class="order-status-editor-row hidden">
                                 <td colspan="10">${orderStatusEditor(o)}</td>

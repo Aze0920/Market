@@ -558,17 +558,17 @@ class Database {
 
     public function getPaymentOrders($userId = null) {
         $this->ensureTableLoaded('payment_orders');
-        if ($userId === null) {
-            return $this->data['payment_orders'];
-        }
-        return array_values(array_filter($this->data['payment_orders'], fn($o) => $o['user_id'] === $userId));
+        $orders = $userId === null
+            ? $this->data['payment_orders']
+            : array_values(array_filter($this->data['payment_orders'], fn($o) => ($o['user_id'] ?? '') === $userId));
+        return array_map([$this, 'normalizePaymentOrder'], $orders);
     }
 
     public function getPaymentOrder($id) {
         $this->ensureTableLoaded('payment_orders');
         foreach ($this->data['payment_orders'] as $order) {
             if ($order['id'] === $id) {
-                return $order;
+                return $this->normalizePaymentOrder($order);
             }
         }
         return null;
@@ -578,13 +578,25 @@ class Database {
         $this->ensureTableLoaded('payment_orders');
         foreach ($this->data['payment_orders'] as $order) {
             if ($order['trade_no'] === $tradeNo) {
-                return $order;
+                return $this->normalizePaymentOrder($order);
             }
         }
         return null;
     }
 
+    private function normalizePaymentOrder(array $order) {
+        if (!isset($order['type']) && isset($order['order_type'])) {
+            $order['type'] = $order['order_type'];
+        }
+        if (!isset($order['order_type']) && isset($order['type'])) {
+            $order['order_type'] = $order['type'];
+        }
+        $order['balance_applied'] = !empty($order['balance_applied']);
+        return $order;
+    }
+
     public function createPaymentOrder($orderData) {
+        $type = $orderData['type'] ?? 'recharge';
         $order = [
             'id' => 'pay_order_' . time() . '_' . bin2hex(random_bytes(6)),
             'trade_no' => $orderData['trade_no'] ?? 'KN' . date('YmdHis') . rand(1000, 9999),
@@ -595,7 +607,8 @@ class Database {
             'actual_amount' => $orderData['actual_amount'] ?? ($orderData['amount'] ?? 0),
             'fee' => $orderData['fee'] ?? 0,
             'status' => $orderData['status'] ?? 'pending',
-            'order_type' => $orderData['type'] ?? 'recharge',
+            'type' => $type,
+            'order_type' => $type,
             'title' => $orderData['title'] ?? '',
             'description' => $orderData['description'] ?? '',
             'target_level' => $orderData['target_level'] ?? '',
@@ -608,12 +621,13 @@ class Database {
             'guest_query_code' => $orderData['guest_query_code'] ?? '',
             'buyer_name' => $orderData['buyer_name'] ?? '',
             'related_id' => $orderData['related_id'] ?? '',
+            'balance_applied' => !empty($orderData['balance_applied']),
             'created_at' => time(),
             'paid_at' => $orderData['paid_at'] ?? null
         ];
         $this->data['payment_orders'][] = $order;
         $this->saveRecord('payment_orders', $order);
-        return $order;
+        return $this->normalizePaymentOrder($order);
     }
 
     public function updatePaymentOrder($id, $update) {
@@ -621,6 +635,13 @@ class Database {
         foreach ($this->data['payment_orders'] as &$order) {
             if ($order['id'] === $id) {
                 $order = array_merge($order, $update);
+                if (isset($order['order_type']) && !isset($update['type']) && !array_key_exists('type', $update)) {
+                    $order['type'] = $order['order_type'];
+                }
+                if (isset($order['type']) && !isset($update['order_type']) && !array_key_exists('order_type', $update)) {
+                    $order['order_type'] = $order['type'];
+                }
+                $order = $this->normalizePaymentOrder($order);
                 return $this->saveRecord('payment_orders', $order);
             }
         }

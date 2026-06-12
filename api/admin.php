@@ -702,7 +702,7 @@ function adminUserBalanceDetails($userId) {
     $balanceTypes = ['recharge', 'card_recharge', 'membership_upgrade_balance', 'product_purchase', 'product_purchase_refund', 'product_sale_income', 'publish_fee', 'publish_fee_refund', 'admin_balance_adjust'];
     $paymentOrders = $db->getPaymentOrders($userId);
     foreach ($paymentOrders as $order) {
-        $type = (string)($order['type'] ?? '');
+        $type = (string)($order['type'] ?? $order['order_type'] ?? '');
         $payType = (string)($order['pay_type'] ?? '');
         $amount = floatval($order['amount'] ?? 0);
         if (($order['status'] ?? '') === 'paid' && abs($amount) >= 0.01 && (in_array($type, $balanceTypes, true) || strpos($payType, 'balance') !== false || $payType === 'admin_adjust' || $payType === 'card_code')) {
