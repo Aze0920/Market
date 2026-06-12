@@ -654,6 +654,169 @@ function adminCommentItems() {
     return array_values($items);
 }
 
+function adminListParams() {
+    $page = max(1, intval($_GET['page'] ?? $_POST['page'] ?? 1));
+    $pageSize = max(10, min(200, intval($_GET['page_size'] ?? $_POST['page_size'] ?? 20)));
+    $keyword = strtolower(trim((string)($_GET['keyword'] ?? $_POST['keyword'] ?? '')));
+    $status = trim((string)($_GET['status'] ?? $_POST['status'] ?? ''));
+    if ($status === 'all') {
+        $status = '';
+    }
+    $merchantStatus = trim((string)($_GET['merchant_status'] ?? $_POST['merchant_status'] ?? ''));
+    return compact('page', 'pageSize', 'keyword', 'status', 'merchantStatus');
+}
+
+function adminPaginateArray(array $items, $page, $pageSize) {
+    $total = count($items);
+    $offset = max(0, ($page - 1) * $pageSize);
+    return [
+        'items' => array_slice($items, $offset, $pageSize),
+        'total' => $total,
+        'page' => $page,
+        'pageSize' => $pageSize,
+    ];
+}
+
+function adminFilterUsers(array $users, array $params) {
+    if ($params['merchantStatus'] !== '') {
+        $users = array_values(array_filter($users, fn($user) => ($user['merchant_status'] ?? 'none') === $params['merchantStatus']));
+    }
+    if ($params['keyword'] !== '') {
+        $keyword = $params['keyword'];
+        $users = array_values(array_filter($users, function($user) use ($keyword) {
+            $haystack = strtolower(implode(' ', [
+                (string)($user['username'] ?? ''),
+                (string)($user['email'] ?? ''),
+                (string)($user['id'] ?? ''),
+            ]));
+            return strpos($haystack, $keyword) !== false;
+        }));
+    }
+    return $users;
+}
+
+function adminFilterProducts(array $products, array $params) {
+    if ($params['keyword'] !== '') {
+        $keyword = $params['keyword'];
+        $products = array_values(array_filter($products, function($product) use ($keyword) {
+            $haystack = strtolower(implode(' ', [
+                (string)($product['title'] ?? ''),
+                (string)($product['seller_name'] ?? ''),
+                (string)($product['seller_id'] ?? ''),
+                (string)($product['category'] ?? ''),
+                (string)($product['id'] ?? ''),
+            ]));
+            return strpos($haystack, $keyword) !== false;
+        }));
+    }
+    return $products;
+}
+
+function adminFilterComments(array $comments, array $params) {
+    if ($params['keyword'] !== '') {
+        $keyword = $params['keyword'];
+        $comments = array_values(array_filter($comments, function($comment) use ($keyword) {
+            $haystack = strtolower(implode(' ', [
+                (string)($comment['username'] ?? ''),
+                (string)($comment['user_id_email'] ?? ''),
+                (string)($comment['product_title'] ?? ''),
+                (string)($comment['seller_name'] ?? ''),
+                (string)($comment['seller_id_email'] ?? ''),
+                (string)($comment['order_id'] ?? ''),
+                (string)($comment['content'] ?? ''),
+            ]));
+            return strpos($haystack, $keyword) !== false;
+        }));
+    }
+    return $comments;
+}
+
+function adminFilterComplaints(array $complaints, array $params) {
+    if ($params['status'] !== '') {
+        $status = $params['status'];
+        $complaints = array_values(array_filter($complaints, fn($order) => ($order['complaint']['status'] ?? '') === $status));
+    }
+    if ($params['keyword'] !== '') {
+        $keyword = $params['keyword'];
+        $complaints = array_values(array_filter($complaints, function($order) use ($keyword) {
+            $complaint = $order['complaint'] ?? [];
+            $haystack = strtolower(implode(' ', [
+                (string)($order['id'] ?? ''),
+                (string)($order['payment_trade_no'] ?? ''),
+                (string)($order['product_title'] ?? ''),
+                (string)($order['buyer_name'] ?? ''),
+                (string)($order['seller_name'] ?? ''),
+                (string)($order['buyer_id_email'] ?? ''),
+                (string)($order['seller_id_email'] ?? ''),
+                (string)($complaint['reason'] ?? ''),
+                (string)($complaint['content'] ?? ''),
+            ]));
+            return strpos($haystack, $keyword) !== false;
+        }));
+    }
+    return $complaints;
+}
+
+function adminComplaintSummary(array $complaints) {
+    $open = 0;
+    foreach ($complaints as $order) {
+        $status = $order['complaint']['status'] ?? '';
+        if (in_array($status, ['open', 'processing'], true)) {
+            $open++;
+        }
+    }
+    return ['all' => count($complaints), 'open' => $open];
+}
+
+function adminDashboardData() {
+    global $db;
+    $todayStart = strtotime('today');
+    $users = array_map('adminSafeUser', $db->getTable('users'));
+    $products = array_values(array_filter(array_map('adminSafeProduct', $db->getTable('products'))));
+    $paymentOrders = $db->getPaymentOrders();
+    $todayReceipt = 0.0;
+    foreach ($paymentOrders as $order) {
+        if (($order['status'] ?? '') !== 'paid') {
+            continue;
+        }
+        $paidAt = intval($order['paid_at'] ?? 0);
+        if ($paidAt >= $todayStart) {
+            $todayReceipt += floatval($order['actual_amount'] ?? $order['amount'] ?? 0);
+        }
+    }
+    $complaints = adminComplaintOrders();
+    $complaintSummary = adminComplaintSummary($complaints);
+    $pendingRequests = array_values(array_filter(adminFinanceRequests(), fn($request) => ($request['status'] ?? '') === 'pending'));
+    $pendingSubdomains = 0;
+    $subPage = 1;
+    do {
+        $subResult = $db->listSellerSubdomains($subPage, 200, '', '');
+        foreach ($subResult['items'] as $subdomain) {
+            $status = $subdomain['status'] ?? '';
+            if ($status === 'pending' || ($status === 'approved' && intval($subdomain['pending_months'] ?? 0) > 0)) {
+                $pendingSubdomains++;
+            }
+        }
+        $subPage++;
+    } while (($subPage - 1) * 200 < intval($subResult['total'] ?? 0));
+
+    usort($users, fn($a, $b) => intval($b['created_at'] ?? 0) - intval($a['created_at'] ?? 0));
+    return [
+        'stats' => [
+            'user_count' => count($users),
+            'product_count' => count($products),
+            'pay_order_count' => count($paymentOrders),
+            'open_complaints' => $complaintSummary['open'],
+            'pending_requests' => count($pendingRequests),
+            'today_receipt' => round($todayReceipt, 2),
+            'today_profit' => 0,
+            'pending_subdomains' => $pendingSubdomains,
+        ],
+        'recent_users' => array_slice($users, 0, 8),
+        'pending_requests' => array_slice($pendingRequests, 0, 8),
+    ];
+}
+
 function adminBalanceLedgerLabel($type, $amount = 0) {
     $map = [
         'recharge' => '在线充值',
@@ -965,15 +1128,37 @@ function adminTestEmailPayload() {
 adminRequireAdmin();
 
 switch ($action) {
+    case 'dashboard':
+        adminJsonResponse(['success' => true, 'dashboard' => adminDashboardData()]);
+
     case 'users':
+        $params = adminListParams();
         $users = array_map('adminSafeUser', $db->getTable('users'));
-        usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-        adminJsonResponse(['success' => true, 'users' => array_values($users)]);
+        usort($users, fn($a, $b) => intval($b['created_at'] ?? 0) - intval($a['created_at'] ?? 0));
+        $users = adminFilterUsers($users, $params);
+        $result = adminPaginateArray($users, $params['page'], $params['pageSize']);
+        adminJsonResponse([
+            'success' => true,
+            'users' => $result['items'],
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+            'levels' => $db->getMembershipLevels(),
+        ]);
 
     case 'products':
-        $products = array_filter(array_map('adminSafeProduct', $db->getTable('products')));
-        usort($products, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-        adminJsonResponse(['success' => true, 'products' => array_values($products)]);
+        $params = adminListParams();
+        $products = array_values(array_filter(array_map('adminSafeProduct', $db->getTable('products'))));
+        usort($products, fn($a, $b) => intval($b['created_at'] ?? 0) - intval($a['created_at'] ?? 0));
+        $products = adminFilterProducts($products, $params);
+        $result = adminPaginateArray($products, $params['page'], $params['pageSize']);
+        adminJsonResponse([
+            'success' => true,
+            'products' => $result['items'],
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
 
     case 'finance_requests':
         adminJsonResponse(['success' => true, 'requests' => adminFinanceRequests()]);
@@ -1162,7 +1347,9 @@ switch ($action) {
         if (!$subdomain) {
             adminJsonResponse(['success' => false, 'message' => '二级域名记录不存在'], 404);
         }
-        if (($subdomain['status'] ?? '') !== 'pending') {
+        $isNewPending = ($subdomain['status'] ?? '') === 'pending';
+        $isRenewalPending = SubdomainHelper::hasRenewalPending($subdomain);
+        if (!$isNewPending && !$isRenewalPending) {
             adminJsonResponse(['success' => false, 'message' => '该记录不在待审核状态'], 400);
         }
         if ($decision === 'approve') {
@@ -1173,6 +1360,8 @@ switch ($action) {
             $subdomain['pending_months'] = 0;
             $subdomain['approved_at'] = time();
             $subdomain['disabled'] = false;
+        } elseif ($isRenewalPending) {
+            $subdomain['pending_months'] = 0;
         } else {
             $subdomain['status'] = 'rejected';
             $subdomain['pending_months'] = 0;
@@ -1182,7 +1371,14 @@ switch ($action) {
         if (!$db->saveSellerSubdomain($subdomain)) {
             adminJsonResponse(['success' => false, 'message' => '审核处理失败'], 500);
         }
-        adminJsonResponse(['success' => true, 'message' => $decision === 'approve' ? '已通过二级域名审核' : '已拒绝二级域名申请']);
+        if ($decision === 'approve') {
+            $message = $isRenewalPending ? '已通过二级域名续费审核' : '已通过二级域名审核';
+        } elseif ($isRenewalPending) {
+            $message = '已拒绝二级域名续费申请';
+        } else {
+            $message = '已拒绝二级域名申请';
+        }
+        adminJsonResponse(['success' => true, 'message' => $message]);
 
     case 'update_subdomain':
         $admin = adminRequireAdmin();
@@ -1348,7 +1544,16 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'message' => '已删除 ' . $deleted . ' 个商品', 'deleted' => $deleted, 'missing' => $missing]);
 
     case 'comments':
-        adminJsonResponse(['success' => true, 'comments' => adminCommentItems()]);
+        $params = adminListParams();
+        $comments = adminFilterComments(adminCommentItems(), $params);
+        $result = adminPaginateArray($comments, $params['page'], $params['pageSize']);
+        adminJsonResponse([
+            'success' => true,
+            'comments' => $result['items'],
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
 
     case 'delete_comment':
         $id = trim($_POST['id'] ?? '');
@@ -1371,7 +1576,19 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'message' => '评价已删除']);
 
     case 'complaints':
-        adminJsonResponse(['success' => true, 'complaints' => adminComplaintOrders()]);
+        $params = adminListParams();
+        $allComplaints = adminComplaintOrders();
+        $summary = adminComplaintSummary($allComplaints);
+        $complaints = adminFilterComplaints($allComplaints, $params);
+        $result = adminPaginateArray($complaints, $params['page'], $params['pageSize']);
+        adminJsonResponse([
+            'success' => true,
+            'complaints' => $result['items'],
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+            'summary' => $summary,
+        ]);
 
     case 'get_complaint':
         $id = trim($_GET['order_id'] ?? $_POST['order_id'] ?? '');

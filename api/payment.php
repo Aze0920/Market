@@ -1053,11 +1053,49 @@ switch ($action) {
 
     case 'get_orders':
         requireAdmin();
+        $page = max(1, intval($_GET['page'] ?? $_POST['page'] ?? 1));
+        $pageSize = max(10, min(200, intval($_GET['page_size'] ?? $_POST['page_size'] ?? 20)));
+        $keyword = strtolower(trim((string)($_GET['keyword'] ?? $_POST['keyword'] ?? '')));
+        $lite = filter_var($_GET['lite'] ?? $_POST['lite'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        if (!empty($_GET['expire']) || !empty($_GET['expire_pending'])) {
+            expirePendingPaymentOrders();
+        }
         $orders = expirePendingPaymentOrders($db->getPaymentOrders());
-        usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-        $orders = attachPaymentOrderEmails($orders);
-        $orders = attachPaymentOrderPurchaseDetails($orders);
-        jsonResponse(['success' => true, 'orders' => $orders]);
+        usort($orders, fn($a, $b) => intval($b['created_at'] ?? 0) - intval($a['created_at'] ?? 0));
+        if ($keyword !== '') {
+            $orders = array_values(array_filter($orders, function($order) use ($keyword, $db) {
+                $email = '';
+                if (!empty($order['user_id'])) {
+                    $user = $db->getUserById($order['user_id']);
+                    $email = strtolower((string)($user['email'] ?? ''));
+                }
+                $haystack = strtolower(implode(' ', [
+                    (string)($order['trade_no'] ?? ''),
+                    (string)($order['id'] ?? ''),
+                    (string)($order['title'] ?? ''),
+                    (string)($order['description'] ?? ''),
+                    (string)($order['status'] ?? ''),
+                    (string)($order['type'] ?? ''),
+                    (string)($order['pay_type'] ?? ''),
+                    $email,
+                ]));
+                return strpos($haystack, $keyword) !== false;
+            }));
+        }
+        $total = count($orders);
+        $offset = max(0, ($page - 1) * $pageSize);
+        $pageOrders = array_slice($orders, $offset, $pageSize);
+        $pageOrders = attachPaymentOrderEmails($pageOrders);
+        if (!$lite) {
+            $pageOrders = attachPaymentOrderPurchaseDetails($pageOrders);
+        }
+        jsonResponse([
+            'success' => true,
+            'orders' => array_values($pageOrders),
+            'total' => $total,
+            'page' => $page,
+            'page_size' => $pageSize,
+        ]);
 
     case 'update_order_status':
         requireAdmin();

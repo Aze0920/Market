@@ -163,9 +163,9 @@ switch ($action) {
         $config = $db->getSystemConfig();
         $prefix = strtolower(trim((string)($_POST['prefix'] ?? '')));
         $months = max(1, min(36, intval($_POST['months'] ?? 1)));
-        $baseDomain = trim((string)($_POST['base_domain'] ?? ''));
+        $baseDomain = SubdomainHelper::resolveBaseDomainChoice($config, trim((string)($_POST['base_domain'] ?? '')));
 
-        $monthlyPrice = max(0.01, floatval($config['subdomain_monthly_price'] ?? 10));
+        $monthlyPrice = SubdomainHelper::monthlyPriceForDomain($config, $baseDomain);
         $totalPrice = round($monthlyPrice * $months, 2);
         if (floatval($user['balance'] ?? 0) < $totalPrice) {
             jsonResponse(['success' => false, 'message' => '余额不足'], 400);
@@ -198,6 +198,54 @@ switch ($action) {
         jsonResponse([
             'success' => true,
             'message' => '购买成功，请等待管理员审核通过后生效',
+        ]);
+
+    case 'renew':
+        $userId = requireAuth();
+        $user = getCurrentUser();
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+
+        $config = $db->getSystemConfig();
+        $months = max(1, min(36, intval($_POST['months'] ?? 1)));
+        $existing = $db->getSellerSubdomainByUserId($userId);
+        $baseDomain = $existing['base_domain'] ?? trim((string)($_POST['base_domain'] ?? ''));
+        $monthlyPrice = SubdomainHelper::monthlyPriceForDomain($config, $baseDomain);
+        $totalPrice = round($monthlyPrice * $months, 2);
+        if (floatval($user['balance'] ?? 0) < $totalPrice) {
+            jsonResponse(['success' => false, 'message' => '余额不足'], 400);
+        }
+
+        $result = SubdomainHelper::submitRenewal($db, $userId, $months, [
+            'base_domain' => $baseDomain,
+            'price_paid' => $totalPrice,
+        ]);
+        if (empty($result['success'])) {
+            jsonResponse(['success' => false, 'message' => $result['message'] ?? '续费失败'], 400);
+        }
+
+        $subdomain = $result['subdomain'] ?? $existing;
+        $prefix = $subdomain['prefix'] ?? '';
+        $db->updateUser($userId, ['balance' => floatval($user['balance']) - $totalPrice]);
+        $db->createPaymentOrder([
+            'trade_no' => 'SUBR' . date('YmdHis') . rand(1000, 9999),
+            'user_id' => $userId,
+            'payment_config_id' => 'balance',
+            'pay_type' => 'balance',
+            'amount' => -$totalPrice,
+            'actual_amount' => -$totalPrice,
+            'fee' => 0,
+            'status' => 'paid',
+            'type' => 'subdomain_renew',
+            'title' => '二级域名续费',
+            'description' => '续费二级域名 ' . $prefix . ' × ' . $months . ' 个月（待审核）',
+            'paid_at' => time(),
+        ]);
+
+        jsonResponse([
+            'success' => true,
+            'message' => $result['message'] ?? '续费申请已提交，请等待管理员审核',
         ]);
 
     default:

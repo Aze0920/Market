@@ -533,7 +533,18 @@ switch ($action) {
         if (isset($_POST['subdomain_monthly_price'])) {
             $config['subdomain_monthly_price'] = max(0.01, floatval($_POST['subdomain_monthly_price']));
         }
-        if (isset($_POST['subdomain_base_domains'])) {
+        if (isset($_POST['subdomain_domain_plans'])) {
+            require_once __DIR__ . '/../core/SubdomainHelper.php';
+            $plans = SubdomainHelper::parseDomainPlansInput($_POST['subdomain_domain_plans']);
+            if (empty($plans)) {
+                jsonResponse(['success' => false, 'message' => '请至少配置一个主域名'], 400);
+            }
+            $config['subdomain_domain_plans'] = $plans;
+            $domains = array_map(fn($plan) => $plan['domain'], $plans);
+            $config['subdomain_base_domains'] = $domains;
+            $config['subdomain_base_domain'] = $domains[0] ?? '';
+            $config['subdomain_monthly_price'] = floatval($plans[0]['monthly_price'] ?? ($config['subdomain_monthly_price'] ?? 10));
+        } elseif (isset($_POST['subdomain_base_domains'])) {
             require_once __DIR__ . '/../core/SubdomainHelper.php';
             $domains = SubdomainHelper::parseBaseDomainsInput($_POST['subdomain_base_domains']);
             $config['subdomain_base_domains'] = $domains;

@@ -26,7 +26,62 @@ class SubdomainHelper {
         return $domains;
     }
 
-    public static function getBaseDomains(array $config) {
+    public static function getDomainPlans(array $config) {
+        $plans = [];
+        $seen = [];
+        if (!empty($config['subdomain_domain_plans']) && is_array($config['subdomain_domain_plans'])) {
+            foreach ($config['subdomain_domain_plans'] as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $domain = self::normalizeBaseDomain($item['domain'] ?? '');
+                if ($domain === '' || isset($seen[$domain])) {
+                    continue;
+                }
+                $seen[$domain] = true;
+                $plans[] = [
+                    'domain' => $domain,
+                    'monthly_price' => max(0.01, floatval($item['monthly_price'] ?? ($config['subdomain_monthly_price'] ?? 10))),
+                    'description' => trim((string)($item['description'] ?? '')),
+                ];
+            }
+        }
+        if (!empty($plans)) {
+            return $plans;
+        }
+        foreach (self::getLegacyBaseDomains($config) as $domain) {
+            if (isset($seen[$domain])) {
+                continue;
+            }
+            $seen[$domain] = true;
+            $plans[] = [
+                'domain' => $domain,
+                'monthly_price' => max(0.01, floatval($config['subdomain_monthly_price'] ?? 10)),
+                'description' => '',
+            ];
+        }
+        return $plans;
+    }
+
+    public static function getDomainPlan(array $config, $domain) {
+        $domain = self::normalizeBaseDomain($domain);
+        foreach (self::getDomainPlans($config) as $plan) {
+            if (($plan['domain'] ?? '') === $domain) {
+                return $plan;
+            }
+        }
+        return null;
+    }
+
+    public static function monthlyPriceForDomain(array $config, $domain) {
+        $plan = self::getDomainPlan($config, $domain);
+        if ($plan) {
+            return floatval($plan['monthly_price']);
+        }
+        return max(0.01, floatval($config['subdomain_monthly_price'] ?? 10));
+    }
+
+    private static function getLegacyBaseDomains(array $config) {
         $domains = [];
         if (!empty($config['subdomain_base_domains']) && is_array($config['subdomain_base_domains'])) {
             foreach ($config['subdomain_base_domains'] as $domain) {
@@ -41,6 +96,39 @@ class SubdomainHelper {
             array_unshift($domains, $legacy);
         }
         return array_values($domains);
+    }
+
+    public static function getBaseDomains(array $config) {
+        $plans = self::getDomainPlans($config);
+        if (!empty($plans)) {
+            return array_values(array_map(fn($plan) => $plan['domain'], $plans));
+        }
+        return self::getLegacyBaseDomains($config);
+    }
+
+    public static function parseDomainPlansInput($json) {
+        $items = is_array($json) ? $json : json_decode((string)$json, true);
+        if (!is_array($items)) {
+            return [];
+        }
+        $plans = [];
+        $seen = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $domain = self::normalizeBaseDomain($item['domain'] ?? '');
+            if ($domain === '' || isset($seen[$domain])) {
+                continue;
+            }
+            $seen[$domain] = true;
+            $plans[] = [
+                'domain' => $domain,
+                'monthly_price' => max(0.01, floatval($item['monthly_price'] ?? 10)),
+                'description' => trim((string)($item['description'] ?? '')),
+            ];
+        }
+        return $plans;
     }
 
     public static function resolveBaseDomainChoice(array $config, $requested = '') {
@@ -142,15 +230,32 @@ class SubdomainHelper {
     }
 
     public static function subdomainPublicConfig(array $config) {
-        $domains = self::getBaseDomains($config);
+        $plans = self::getDomainPlans($config);
+        $domains = array_map(fn($plan) => $plan['domain'], $plans);
         $primary = $domains[0] ?? '';
+        $primaryPlan = $plans[0] ?? null;
         return [
             'enabled' => self::configEnabled($config),
+            'domain_plans' => $plans,
             'base_domains' => $domains,
             'base_domain' => $primary,
             'wildcard_domain' => $primary !== '' ? '*.' . $primary : '',
-            'monthly_price' => max(0.01, floatval($config['subdomain_monthly_price'] ?? 10)),
+            'monthly_price' => floatval($primaryPlan['monthly_price'] ?? ($config['subdomain_monthly_price'] ?? 10)),
         ];
+    }
+
+    public static function hasRenewalPending(array $subdomain) {
+        return ($subdomain['status'] ?? '') === 'approved' && intval($subdomain['pending_months'] ?? 0) > 0;
+    }
+
+    public static function canRenew(array $subdomain) {
+        if (empty($subdomain)) {
+            return false;
+        }
+        if (($subdomain['status'] ?? '') !== 'approved' || !empty($subdomain['disabled'])) {
+            return false;
+        }
+        return intval($subdomain['pending_months'] ?? 0) <= 0;
     }
 
     public static function decorateSubdomainRecord(array $subdomain, $baseDomain = '') {
@@ -159,6 +264,8 @@ class SubdomainHelper {
         $subdomain['full_domain'] = $baseDomain !== '' ? self::fullHost($subdomain['prefix'] ?? '', $baseDomain) : '';
         $subdomain['is_expired'] = self::isExpired($subdomain);
         $subdomain['is_active'] = self::isActive($subdomain);
+        $subdomain['renewal_pending'] = self::hasRenewalPending($subdomain);
+        $subdomain['can_renew'] = self::canRenew($subdomain);
         return $subdomain;
     }
 
@@ -223,6 +330,47 @@ class SubdomainHelper {
             'success' => true,
             'message' => '已提交二级域名申请，请等待管理员审核通过后生效',
             'subdomain' => $subdomain,
+        ];
+    }
+
+    public static function submitRenewal($db, $userId, $months, array $options = []) {
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            return ['success' => false, 'message' => '用户不存在'];
+        }
+        $config = $db->getSystemConfig();
+        if (!self::configEnabled($config)) {
+            return ['success' => false, 'message' => '二级域名功能未开启'];
+        }
+        if (($user['merchant_status'] ?? 'none') !== 'approved') {
+            return ['success' => false, 'message' => '请先完成商家认证'];
+        }
+
+        $existing = $db->getSellerSubdomainByUserId($userId);
+        if (!$existing || !self::canRenew($existing)) {
+            if ($existing && intval($existing['pending_months'] ?? 0) > 0) {
+                return ['success' => false, 'message' => '您已有待审核的续费/开通申请，请等待管理员处理'];
+            }
+            return ['success' => false, 'message' => '当前状态不可续费'];
+        }
+
+        $months = max(1, min(36, intval($months)));
+        $baseDomain = self::normalizeBaseDomain($existing['base_domain'] ?? self::resolveBaseDomainChoice($config, $options['base_domain'] ?? ''));
+        $existing['base_domain'] = $baseDomain;
+        if (($existing['status'] ?? '') !== 'approved') {
+            return ['success' => false, 'message' => '当前状态不可续费'];
+        }
+        $existing['pending_months'] = $months;
+        $existing['last_price_paid'] = floatval($existing['last_price_paid'] ?? 0) + max(0, floatval($options['price_paid'] ?? 0));
+
+        if (!$db->saveSellerSubdomain($existing)) {
+            return ['success' => false, 'message' => '续费提交失败，请稍后重试'];
+        }
+
+        return [
+            'success' => true,
+            'message' => '续费申请已提交，请等待管理员审核通过后延长到期时间',
+            'subdomain' => $existing,
         ];
     }
 }

@@ -405,6 +405,10 @@ const API = {
         return this.request('subdomain.php?action=purchase', 'POST', { prefix, months, base_domain: baseDomain });
     },
 
+    renewSubdomain(months = 1, baseDomain = '') {
+        return this.request('subdomain.php?action=renew', 'POST', { months, base_domain: baseDomain });
+    },
+
     getCards(onlyUnused = false) {
         const param = onlyUnused ? '?only_unused=1' : '';
         return this.request('card.php?action=list' + param);

@@ -2191,9 +2191,47 @@ function handlePaymentQrImageError(img, label = '收款码') {
 }
 
 function getSubdomainBaseDomains(config = {}) {
+    const plans = Array.isArray(config.domain_plans) ? config.domain_plans : [];
+    if (plans.length) return plans.map(plan => plan.domain).filter(Boolean);
     const domains = Array.isArray(config.base_domains) ? config.base_domains.filter(Boolean) : [];
     if (domains.length) return domains;
     return config.base_domain ? [config.base_domain] : [];
+}
+
+function getSubdomainPlanForDomain(config = {}, domain = '') {
+    const plans = Array.isArray(config.domain_plans) ? config.domain_plans : [];
+    const normalized = String(domain || '').replace(/^\*\./, '');
+    const plan = plans.find(item => String(item.domain || '').replace(/^\*\./, '') === normalized);
+    if (plan) return plan;
+    return {
+        domain: normalized,
+        monthly_price: config.monthly_price || 10,
+        description: ''
+    };
+}
+
+function getSubdomainMonthlyPrice(config = {}, domain = '') {
+    return Number(getSubdomainPlanForDomain(config, domain).monthly_price || config.monthly_price || 10);
+}
+
+function updateSubdomainPricingHints(config = {}) {
+    const purchaseDomain = document.getElementById('subdomainBaseDomainInput')?.value
+        || document.querySelector('.subdomain-base-select')?.value
+        || getSubdomainBaseDomains(config)[0]
+        || '';
+    const purchasePlan = getSubdomainPlanForDomain(config, purchaseDomain);
+    const purchasePrice = Number(purchasePlan.monthly_price || 10).toFixed(2);
+    const purchaseHint = document.getElementById('subdomainPurchaseHint');
+    if (purchaseHint) {
+        purchaseHint.innerHTML = `价格：<strong>¥${purchasePrice}</strong> / 月，购买后需等待管理员审核。${purchasePlan.description ? `<div class="mt-1">${Security.escapeHtml(purchasePlan.description)}</div>` : ''}`;
+    }
+    const renewDomain = document.getElementById('subdomainRenewBaseDomain')?.value || purchaseDomain;
+    const renewPlan = getSubdomainPlanForDomain(config, renewDomain);
+    const renewPrice = Number(renewPlan.monthly_price || 10).toFixed(2);
+    const renewHint = document.getElementById('subdomainRenewPriceHint');
+    if (renewHint) {
+        renewHint.innerHTML = `续费价格：<strong>¥${renewPrice}</strong> / 月，提交后需等待管理员审核。${renewPlan.description ? `<div class="mt-1">${Security.escapeHtml(renewPlan.description)}</div>` : ''}`;
+    }
 }
 
 function renderSubdomainBaseDomainField(config, selected = '', inputId = 'subdomainBaseDomainInput', suffixClass = 'subdomain-base-suffix') {
@@ -2212,6 +2250,9 @@ function updateSubdomainBaseSuffix(selectEl) {
     document.querySelectorAll('.' + suffixClass).forEach(el => {
         el.textContent = baseDomain ? '.' + baseDomain : '';
     });
+    if (window.__subdomainTabConfig) {
+        updateSubdomainPricingHints(window.__subdomainTabConfig);
+    }
 }
 
 async function loadSubdomainTab(area) {
@@ -2221,17 +2262,23 @@ async function loadSubdomainTab(area) {
         return;
     }
     const config = result.config || {};
+    window.__subdomainTabConfig = config;
     const subdomain = result.subdomain;
     const merchantApproved = (result.merchant_status || 'none') === 'approved';
-    const monthlyPrice = Number(config.monthly_price || 10).toFixed(2);
     const baseDomains = getSubdomainBaseDomains(config);
     const selectedBaseDomain = subdomain?.base_domain || baseDomains[0] || '';
+    const selectedPlan = getSubdomainPlanForDomain(config, selectedBaseDomain);
+    const monthlyPrice = Number(selectedPlan.monthly_price || config.monthly_price || 10).toFixed(2);
+    const canPurchase = !subdomain || subdomain.status === 'rejected';
+    const canRenew = !!subdomain?.can_renew;
+    const renewalPending = !!subdomain?.renewal_pending;
     const wildcard = Security.escapeHtml(baseDomains.length ? baseDomains.map(d => '*.' + d).join(' / ') : (config.wildcard_domain || config.base_domain || '未配置'));
     const baseDomainField = renderSubdomainBaseDomainField(config, selectedBaseDomain);
     const baseDomainSuffix = baseDomains.length <= 1 ? '' : `<span class="input-group-text subdomain-base-suffix">.${Security.escapeHtml(selectedBaseDomain)}</span>`;
     let statusHtml = '<span class="badge bg-secondary">未开通</span>';
     if (subdomain) {
-        if (subdomain.status === 'pending') statusHtml = '<span class="badge bg-warning text-dark">待审核</span>';
+        if (renewalPending) statusHtml = '<span class="badge bg-warning text-dark">续费待审核</span>';
+        else if (subdomain.status === 'pending') statusHtml = '<span class="badge bg-warning text-dark">待审核</span>';
         else if (subdomain.is_active) statusHtml = '<span class="badge bg-success">生效中</span>';
         else if (subdomain.is_expired) statusHtml = '<span class="badge bg-danger">已过期</span>';
         else if (subdomain.status === 'rejected') statusHtml = '<span class="badge bg-danger">已拒绝</span>';
@@ -2253,10 +2300,23 @@ async function loadSubdomainTab(area) {
                         <div class="fw-bold mb-3"><code>${Security.escapeHtml(subdomain.full_domain || subdomain.prefix || '-')}</code></div>
                         <div class="small text-muted mb-1">到期时间</div>
                         <div class="mb-0">${subdomain.expires_at ? new Date(subdomain.expires_at * 1000).toLocaleString() : '审核通过后生效'}</div>
+                        ${canRenew ? `
+                            <div class="mt-4 pt-3 border-top">
+                                <div class="small text-muted mb-2">续费月数</div>
+                                <input type="hidden" id="subdomainRenewBaseDomain" value="${Security.escapeAttr(selectedBaseDomain)}">
+                                <div class="input-group mb-2">
+                                    <input id="subdomainRenewMonthsInput" class="form-control" type="number" min="1" max="36" value="1">
+                                    <button class="btn btn-primary" onclick="renewSellerSubdomain()" ${!config.enabled || !merchantApproved ? 'disabled' : ''}>续费</button>
+                                </div>
+                                <div class="small text-muted" id="subdomainRenewPriceHint">续费价格：¥${monthlyPrice} / 月，提交后需等待管理员审核。</div>
+                            </div>
+                        ` : ''}
+                        ${renewalPending ? '<div class="small text-warning mt-3">续费申请审核中，通过后自动延长到期时间，店铺可继续访问。</div>' : ''}
                     ` : '<div class="text-muted small">购买或兑换后，访问您的二级域名将只展示您的全部商品。</div>'}
                 </div>
             </div>
             <div class="col-lg-7">
+                ${canPurchase ? `
                 <div class="profile-card-soft border p-4 mb-4">
                     <h6 class="fw-bold mb-3">余额购买</h6>
                     ${!merchantApproved ? '<div class="alert alert-warning small">请先完成商家认证后再申请二级域名。</div>' : ''}
@@ -2264,7 +2324,7 @@ async function loadSubdomainTab(area) {
                         <div class="col-md-6">
                             <label class="form-label">域名前缀</label>
                             <div class="input-group">
-                                <input id="subdomainPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}" ${subdomain?.status === 'pending' ? 'readonly' : ''}>
+                                <input id="subdomainPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}">
                                 ${baseDomains.length > 1 ? baseDomainField + baseDomainSuffix : baseDomainField}
                             </div>
                             <div id="subdomainPrefixHint" class="form-text"></div>
@@ -2274,11 +2334,13 @@ async function loadSubdomainTab(area) {
                             <input id="subdomainMonthsInput" class="form-control" type="number" min="1" max="36" value="1">
                         </div>
                         <div class="col-12">
-                            <div class="small text-muted mb-2">价格：¥${monthlyPrice} / 月，购买后需等待管理员审核。</div>
+                            <div class="small text-muted mb-2" id="subdomainPurchaseHint">价格：¥${monthlyPrice} / 月，购买后需等待管理员审核。${selectedPlan.description ? `<div class="mt-1">${Security.escapeHtml(selectedPlan.description)}</div>` : ''}</div>
                             <button class="btn btn-primary" onclick="purchaseSellerSubdomain()" ${!config.enabled || !merchantApproved ? 'disabled' : ''}>立即购买</button>
                         </div>
                     </div>
                 </div>
+                ` : ''}
+                ${canPurchase ? `
                 <div class="profile-card-soft border p-4">
                     <h6 class="fw-bold mb-3">卡密兑换</h6>
                     <div class="row g-3">
@@ -2298,8 +2360,15 @@ async function loadSubdomainTab(area) {
                         </div>
                     </div>
                 </div>
+                ` : `
+                <div class="profile-card-soft border p-4">
+                    <h6 class="fw-bold mb-3">店铺说明</h6>
+                    <div class="text-muted small mb-0">${selectedPlan.description ? Security.escapeHtml(selectedPlan.description) : '您已开通二级域名店铺。如需延长使用期限，请在左侧使用续费功能。'}</div>
+                </div>
+                `}
             </div>
         </div>`;
+    updateSubdomainPricingHints(config);
     const prefixInput = document.getElementById('subdomainPrefixInput');
     if (prefixInput && !prefixInput.readOnly) {
         prefixInput.addEventListener('input', () => {
@@ -2324,6 +2393,16 @@ async function purchaseSellerSubdomain() {
     const result = await API.purchaseSubdomain(prefix, months, baseDomain);
     if (!result.success) return Toast.error(result.message || '购买失败');
     Toast.success(result.message || '购买成功');
+    await refreshUserData();
+    renderDashboardTab('subdomain');
+}
+
+async function renewSellerSubdomain() {
+    const months = document.getElementById('subdomainRenewMonthsInput')?.value || '1';
+    const baseDomain = document.getElementById('subdomainRenewBaseDomain')?.value || '';
+    const result = await API.renewSubdomain(months, baseDomain);
+    if (!result.success) return Toast.error(result.message || '续费失败');
+    Toast.success(result.message || '续费申请已提交');
     await refreshUserData();
     renderDashboardTab('subdomain');
 }

@@ -767,10 +767,14 @@ async function loadAdminData() {
     return loadAdminPageData(Admin.page, { force: true });
 }
 function switchAdminPage(page, settingsTab = null) {
+    const prevPage = Admin.page;
     Admin.page = page;
     if (settingsTab) Admin.settingsTab = settingsTab;
     saveAdminState();
     updateAdminNavActive(settingsTab);
+    if ((prevPage === 'merchant_review') !== (page === 'merchant_review') && (prevPage === 'users' || page === 'users' || prevPage === 'merchant_review' || page === 'merchant_review')) {
+        Admin.dataLoaded.users = false;
+    }
     const keys = adminPageDataKeys(page);
     if (!keys.length) {
         renderPage();
@@ -1142,7 +1146,7 @@ async function deleteSelectedUsersAdmin() {
 }
 function renderMerchantReview() {
     setTitle('商家审核');
-    const users = Admin.cache.users || [];
+    const users = (Admin.cache.users || []).filter(u => (u.merchant_status || 'none') === 'pending');
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
@@ -1181,6 +1185,8 @@ async function reviewMerchant(id, decision) {
 
 function subdomainStatusBadge(item) {
     const status = item.status || 'none';
+    const pendingMonths = Number(item.pending_months || 0);
+    if (status === 'approved' && pendingMonths > 0) return '<span class="badge bg-warning text-dark">续费待审核</span>';
     if (item.is_expired) return '<span class="badge bg-warning text-dark">已过期</span>';
     if (status === 'pending') return '<span class="badge bg-warning text-dark">待审核</span>';
     if (status === 'approved' && item.is_active) return '<span class="badge bg-success">生效中</span>';
@@ -1242,9 +1248,10 @@ function subdomainReviewRow(item) {
     const cfg = Admin.cache.sysConfig || {};
     const baseDomain = (item.base_domain || (Array.isArray(cfg.subdomain_base_domains) ? cfg.subdomain_base_domains[0] : '') || cfg.subdomain_base_domain || 'az0.cn').replace(/^\*\./, '');
     const actions = [];
-    if ((item.status || '') === 'pending') {
-        actions.push(`<button class="btn btn-sm btn-success me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','approve')">通过</button>`);
-        actions.push(`<button class="btn btn-sm btn-outline-danger me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','reject')">拒绝</button>`);
+    if ((item.status || '') === 'pending' || ((item.status || '') === 'approved' && pendingMonths > 0)) {
+        const isRenewal = (item.status || '') === 'approved' && pendingMonths > 0;
+        actions.push(`<button class="btn btn-sm btn-success me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','approve')">${isRenewal ? '通过续费' : '通过'}</button>`);
+        actions.push(`<button class="btn btn-sm btn-outline-danger me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','reject')">${isRenewal ? '拒绝续费' : '拒绝'}</button>`);
     }
     actions.push(`<button class="btn btn-sm btn-outline-primary me-1" onclick="saveSubdomainPrefix('${escapeHtml(item.id)}')">保存前缀</button>`);
     actions.push(`<button class="btn btn-sm btn-outline-primary me-1" onclick="saveSubdomainExpiry('${escapeHtml(item.id)}')">保存到期</button>`);
@@ -3157,22 +3164,67 @@ function renderBasicSettings(targetId = 'settingsContent') {
             </div>
         </div>`;
 }
+function getSubdomainPlansAdmin() {
+    const c = Admin.cache.sysConfig || {};
+    if (Array.isArray(c.subdomain_domain_plans) && c.subdomain_domain_plans.length) {
+        return c.subdomain_domain_plans.map(plan => ({
+            domain: String(plan.domain || '').replace(/^\*\./, ''),
+            monthly_price: plan.monthly_price ?? c.subdomain_monthly_price ?? 10,
+            description: plan.description || ''
+        }));
+    }
+    const domains = Array.isArray(c.subdomain_base_domains) && c.subdomain_base_domains.length
+        ? c.subdomain_base_domains
+        : (c.subdomain_base_domain ? [c.subdomain_base_domain] : ['az0.cn']);
+    return domains.map(domain => ({
+        domain: String(domain || '').replace(/^\*\./, ''),
+        monthly_price: c.subdomain_monthly_price ?? 10,
+        description: ''
+    }));
+}
+function renderSubdomainPlanRow(plan = {}, index = 0) {
+    return `<tr data-plan-index="${index}">
+        <td><input class="form-control form-control-sm subdomain-plan-domain" value="${escapeHtml(plan.domain || '')}" placeholder="例如 az0.cn"></td>
+        <td><input class="form-control form-control-sm subdomain-plan-price" type="number" min="0.01" step="0.01" value="${escapeHtml(plan.monthly_price ?? 10)}"></td>
+        <td><textarea class="form-control form-control-sm subdomain-plan-desc" rows="2" placeholder="展示给卖家的说明，例如审核规则、使用须知">${escapeHtml(plan.description || '')}</textarea></td>
+        <td class="text-nowrap"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSubdomainPlanRow(this)">删除</button></td>
+    </tr>`;
+}
+function addSubdomainPlanRow() {
+    const tbody = document.getElementById('subdomainPlansBody');
+    if (!tbody) return;
+    const index = tbody.querySelectorAll('tr').length;
+    tbody.insertAdjacentHTML('beforeend', renderSubdomainPlanRow({ domain: '', monthly_price: 10, description: '' }, index));
+}
+function removeSubdomainPlanRow(button) {
+    const tbody = document.getElementById('subdomainPlansBody');
+    const row = button?.closest('tr');
+    if (!tbody || !row) return;
+    if (tbody.querySelectorAll('tr').length <= 1) return showToast('至少保留一个主域名', 'error');
+    row.remove();
+}
+function collectSubdomainPlansFromForm() {
+    const rows = Array.from(document.querySelectorAll('#subdomainPlansBody tr'));
+    return rows.map(row => ({
+        domain: row.querySelector('.subdomain-plan-domain')?.value?.trim() || '',
+        monthly_price: row.querySelector('.subdomain-plan-price')?.value || '10',
+        description: row.querySelector('.subdomain-plan-desc')?.value?.trim() || ''
+    })).filter(plan => plan.domain !== '');
+}
 function renderSubdomainSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     const enabled = c.subdomain_enabled === true || c.subdomain_enabled === '1' || c.subdomain_enabled === 1;
-    const domainLines = Array.isArray(c.subdomain_base_domains) && c.subdomain_base_domains.length
-        ? c.subdomain_base_domains.join('\n')
-        : (c.subdomain_base_domain || '');
+    const plans = getSubdomainPlansAdmin();
     document.getElementById(targetId).innerHTML = `
         <div class="panel settings-basic-panel">
             <div class="panel-title">
                 <div>
                     <h5 class="mb-1">二级域名</h5>
-                    <div class="text-muted small">配置卖家独立店铺域名。DNS 需已配置泛解析，可填写多个主域名，每行一个，例如 <code>*.az0.cn</code>。</div>
+                    <div class="text-muted small">为每个主域名单独设置月价与说明。DNS 需已配置泛解析，域名填写 <code>az0.cn</code> 或 <code>*.az0.cn</code> 均可。</div>
                 </div>
             </div>
             <div class="row g-3">
-                <div class="col-lg-6">
+                <div class="col-lg-5">
                     <label class="admin-setting-card ${enabled ? 'is-on' : 'is-off'} h-100" for="setSubdomainEnabled">
                         <span class="admin-setting-icon"><i class="bi bi-globe2"></i></span>
                         <span class="admin-setting-copy">
@@ -3185,14 +3237,25 @@ function renderSubdomainSettings(targetId = 'settingsContent') {
                         </span>
                     </label>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">主域名（每行一个）</label>
-                    <textarea id="setSubdomainBaseDomains" class="form-control" rows="4" placeholder="例如：&#10;*.az0.cn&#10;*.example.com">${escapeHtml(domainLines)}</textarea>
-                    <div class="form-text">卖家填写前缀后访问形如 <code>前缀.az0.cn</code>，支持配置多个主域名。</div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">每月价格（元）</label>
-                    <input id="setSubdomainMonthlyPrice" class="form-control" type="number" min="0.01" step="0.01" value="${escapeHtml(c.subdomain_monthly_price ?? 10)}">
+                <div class="col-lg-7">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0">主域名配置</label>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addSubdomainPlanRow()"><i class="bi bi-plus-lg me-1"></i>添加域名</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="width:28%">主域名</th>
+                                    <th style="width:18%">月价（元）</th>
+                                    <th>说明（前台展示）</th>
+                                    <th style="width:72px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="subdomainPlansBody">${plans.map((plan, index) => renderSubdomainPlanRow(plan, index)).join('')}</tbody>
+                        </table>
+                    </div>
+                    <div class="form-text mt-2">卖家填写前缀后访问形如 <code>前缀.az0.cn</code>，不同主域名可设置不同价格与说明。</div>
                 </div>
                 <div class="col-12">
                     <button class="btn btn-primary" onclick="saveSubdomainSettings()"><i class="bi bi-check2-circle me-1"></i>保存二级域名设置</button>
@@ -3201,10 +3264,11 @@ function renderSubdomainSettings(targetId = 'settingsContent') {
         </div>`;
 }
 async function saveSubdomainSettings() {
+    const plans = collectSubdomainPlansFromForm();
+    if (!plans.length) return showToast('请至少配置一个主域名', 'error');
     await saveSystemConfigFields({
         subdomain_enabled: document.getElementById('setSubdomainEnabled')?.checked ? '1' : '0',
-        subdomain_base_domains: document.getElementById('setSubdomainBaseDomains')?.value || '',
-        subdomain_monthly_price: document.getElementById('setSubdomainMonthlyPrice')?.value || '10'
+        subdomain_domain_plans: JSON.stringify(plans)
     }, '二级域名设置已保存');
 }
 async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0', enable_membership_card_activation: document.getElementById('setEnableMembershipCardActivation')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
