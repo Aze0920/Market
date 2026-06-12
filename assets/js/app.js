@@ -293,9 +293,8 @@ window.SellerStore = {
 async function initSellerStoreContext() {
     const res = await API.resolveSubdomain(window.location.hostname);
     if (!res.success) return;
-    const hasStore = !!(res.active || res.expired || res.pending || res.disabled);
-    if (!hasStore) {
-        window.SellerStore = { active: false, sellerId: null, sellerName: '', prefix: '', fullDomain: '', expired: false, pending: false, disabled: false, message: '' };
+    if (!res.seller_id && !res.prefix) {
+        window.SellerStore = { active: false, sellerId: null, sellerName: '', prefix: '', fullDomain: '', expired: false, pending: false, disabled: false, message: '', reason: res.reason || '' };
         return;
     }
     window.SellerStore = {
@@ -307,7 +306,9 @@ async function initSellerStoreContext() {
         expired: !!res.expired,
         pending: !!res.pending,
         disabled: !!res.disabled,
-        message: res.message || ''
+        message: res.message || '',
+        reason: res.reason || '',
+        status: res.status || ''
     };
     updateSellerStoreBanner();
 }
@@ -328,7 +329,14 @@ function updateSellerStoreBanner() {
         return;
     }
     banner.className = 'alert alert-warning py-2 px-3 mb-3';
-    banner.innerHTML = Security.escapeHtml(store.message || '当前二级域名暂不可用');
+    const fallback = store.reason === 'feature_disabled'
+        ? '二级域名功能未开启，请先在后台系统设置中开启'
+        : (store.reason === 'base_domain_missing'
+            ? '后台尚未配置二级域名主域名'
+            : (store.reason === 'not_found'
+                ? '该二级域名尚未开通或未通过审核'
+                : '当前二级域名暂不可用'));
+    banner.innerHTML = Security.escapeHtml(store.message || fallback);
 }
 
 function goMarketHome() {

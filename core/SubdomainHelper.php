@@ -1,20 +1,37 @@
 <?php
 
 class SubdomainHelper {
+    public static function configEnabled($config) {
+        $value = $config['subdomain_enabled'] ?? false;
+        return $value === true || $value === 1 || $value === '1';
+    }
+
     public static function normalizeBaseDomain($configValue) {
         $value = strtolower(trim((string)$configValue));
+        $value = preg_replace('#^https?://#', '', $value);
+        $value = preg_replace('#/.*$#', '', $value);
         $value = preg_replace('/^\*\./', '', $value);
+        $value = preg_replace('/^www\./', '', $value);
         return trim($value, '.');
+    }
+
+    private static function endsWith($haystack, $needle) {
+        if ($needle === '') {
+            return true;
+        }
+        $len = strlen($needle);
+        return substr($haystack, -$len) === $needle;
     }
 
     public static function extractPrefixFromHost($host, $baseDomain) {
         $host = strtolower(trim((string)$host));
+        $host = preg_replace('/:\d+$/', '', $host);
         $baseDomain = self::normalizeBaseDomain($baseDomain);
         if ($baseDomain === '' || $host === '' || $host === $baseDomain || $host === 'www.' . $baseDomain) {
             return null;
         }
         $suffix = '.' . $baseDomain;
-        if (!str_ends_with($host, $suffix)) {
+        if (!self::endsWith($host, $suffix)) {
             return null;
         }
         $prefix = substr($host, 0, -strlen($suffix));
@@ -44,18 +61,24 @@ class SubdomainHelper {
     }
 
     public static function isExpired(array $subdomain) {
+        if (($subdomain['status'] ?? '') !== 'approved') {
+            return false;
+        }
         $expiresAt = intval($subdomain['expires_at'] ?? 0);
-        return ($subdomain['status'] ?? '') === 'approved' && $expiresAt > 0 && $expiresAt <= time();
+        return $expiresAt > 0 && $expiresAt <= time();
     }
 
     public static function isActive(array $subdomain) {
         if (($subdomain['status'] ?? '') !== 'approved') {
             return false;
         }
-        if (($subdomain['disabled'] ?? false) || !empty($subdomain['disabled_at'])) {
+        if (!empty($subdomain['disabled']) || ($subdomain['status'] ?? '') === 'disabled') {
             return false;
         }
         $expiresAt = intval($subdomain['expires_at'] ?? 0);
+        if ($expiresAt === 0) {
+            return true;
+        }
         return $expiresAt > time();
     }
 

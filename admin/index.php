@@ -1205,6 +1205,15 @@ function renderSubdomainReview() {
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
+            <div class="panel mb-3" style="background:#f8fafc;">
+                <div class="small text-muted mb-2">手动为卖家开通二级域名（填写用户ID与前缀，创建后立即生效）</div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4"><label class="form-label">用户ID</label><input id="createSubdomainUserId" class="form-control" placeholder="用户ID"></div>
+                    <div class="col-md-3"><label class="form-label">前缀</label><input id="createSubdomainPrefix" class="form-control" placeholder="例如 roxy"></div>
+                    <div class="col-md-2"><label class="form-label">月数</label><input id="createSubdomainMonths" class="form-control" type="number" min="1" max="36" value="1"></div>
+                    <div class="col-md-3"><button class="btn btn-primary w-100" onclick="createSubdomainAdmin()">手动开通</button></div>
+                </div>
+            </div>
             <div class="row g-2 mb-3 align-items-center">
                 <div class="col-md-5">
                     <div class="input-group">
@@ -1283,6 +1292,17 @@ async function toggleSubdomainDisabled(id, disabled) {
     const res = await request('admin.php?action=update_subdomain', 'POST', { id, disabled: disabled ? '1' : '0' });
     if (!res.success) return showToast(res.message || '操作失败', 'error');
     showToast(disabled ? '已禁用该二级域名' : '已启用该二级域名', 'success');
+    await loadAdminData();
+    renderSubdomainReview();
+}
+async function createSubdomainAdmin() {
+    const user_id = document.getElementById('createSubdomainUserId')?.value?.trim() || '';
+    const prefix = document.getElementById('createSubdomainPrefix')?.value?.trim() || '';
+    const months = document.getElementById('createSubdomainMonths')?.value || '1';
+    if (!user_id || !prefix) return showToast('请填写用户ID和前缀', 'error');
+    const res = await request('admin.php?action=create_subdomain', 'POST', { user_id, prefix, months, auto_approve: '1' });
+    if (!res.success) return showToast(res.message || '创建失败', 'error');
+    showToast(res.message || '创建成功', 'success');
     await loadAdminData();
     renderSubdomainReview();
 }
@@ -3094,7 +3114,7 @@ function renderSubdomainSettings(targetId = 'settingsContent') {
             <div class="panel-title">
                 <div>
                     <h5 class="mb-1">二级域名</h5>
-                    <div class="text-muted small">配置卖家独立店铺域名。DNS 需已配置泛解析，例如填写 <code>*.az0.cn</code> 或 <code>az0.cn</code>。</div>
+                    <div class="text-muted small">配置卖家独立店铺域名。DNS 需已配置泛解析，例如填写 <code>*.az0.cn</code> 或 <code>az0.cn</code>。注意：这里只配置主域名，卖家还需在控制台购买/兑换二级域名，并在「域名审核」中通过审核后才会生效。</div>
                 </div>
             </div>
             <div class="row g-3">

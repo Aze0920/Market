@@ -94,7 +94,7 @@ switch ($action) {
         $cardType = in_array($rawType, ['membership', 'subdomain'], true) ? $rawType : 'balance';
         if ($cardType === 'subdomain') {
             $config = $db->getSystemConfig();
-            if (empty($config['subdomain_enabled'])) {
+            if (!SubdomainHelper::configEnabled($config)) {
                 jsonResponse(['success' => false, 'message' => '二级域名功能未开启'], 400);
             }
             if (($user['merchant_status'] ?? 'none') !== 'approved') {

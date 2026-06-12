@@ -282,10 +282,16 @@ class AdminQuery {
         return $map;
     }
 
-    public function expireStalePendingPaymentOrders() {
+    public function expireStalePendingPaymentOrders($excludeTradeNo = '') {
         $cutoff = time() - 600;
-        $stmt = $this->pdo->prepare("UPDATE kn_payment_orders SET status = 'unpaid', paid_at = NULL, expired_at = ? WHERE status = 'pending' AND created_at > 0 AND created_at <= ?");
         $now = time();
+        $excludeTradeNo = trim((string)$excludeTradeNo);
+        if ($excludeTradeNo !== '') {
+            $stmt = $this->pdo->prepare("UPDATE kn_payment_orders SET status = 'unpaid', paid_at = NULL, expired_at = ? WHERE status = 'pending' AND created_at > 0 AND created_at <= ? AND trade_no <> ?");
+            $stmt->execute([$now, $cutoff, $excludeTradeNo]);
+            return $stmt->rowCount();
+        }
+        $stmt = $this->pdo->prepare("UPDATE kn_payment_orders SET status = 'unpaid', paid_at = NULL, expired_at = ? WHERE status = 'pending' AND created_at > 0 AND created_at <= ?");
         $stmt->execute([$now, $cutoff]);
         return $stmt->rowCount();
     }

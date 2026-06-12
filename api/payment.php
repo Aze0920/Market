@@ -1138,13 +1138,20 @@ switch ($action) {
         ]);
 
     case 'notify':
-        $db->adminQuery()->expireStalePendingPaymentOrders();
         $data = $_GET;
         if (empty($data['out_trade_no']) && !empty($_POST['out_trade_no'])) {
             $data = $_POST;
         }
 
-        $tradeNo = $data['out_trade_no'] ?? '';
+        $tradeNo = trim((string)($data['out_trade_no'] ?? ''));
+        if ($tradeNo === '') {
+            echo 'fail';
+            exit;
+        }
+
+        if (method_exists($db, 'reloadTable')) {
+            $db->reloadTable('payment_orders');
+        }
         $order = $db->getPaymentOrderByTradeNo($tradeNo);
         if (!$order) {
             echo 'fail';
@@ -1163,14 +1170,16 @@ switch ($action) {
             exit;
         }
 
-        if ($order['status'] === 'paid') {
+        if (($order['status'] ?? '') === 'paid') {
             if (($order['type'] ?? '') === 'product_online_purchase' && empty($order['related_id'])) {
                 finalizePaidPaymentOrder($order, $data);
             }
             echo 'success';
             exit;
         }
-        if (($order['status'] ?? '') === 'unpaid') {
+
+        // 允许 pending / unpaid 入账：超时自动标记为 unpaid 后，用户仍可能完成支付
+        if (!in_array($order['status'] ?? '', ['pending', 'unpaid'], true)) {
             echo 'fail';
             exit;
         }
@@ -1187,7 +1196,6 @@ switch ($action) {
         if ($id === '') {
             jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
         }
-        expirePendingPaymentOrders();
         $order = $db->getPaymentOrder($id);
         if (!$order) {
             jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
@@ -1403,7 +1411,8 @@ switch ($action) {
 
     case 'get_my_orders':
         $userId = requireAuth();
-        $orders = expirePendingPaymentOrders($db->getPaymentOrders($userId));
+        $orders = $db->getPaymentOrders($userId);
+        usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
         jsonResponse(['success' => true, 'orders' => array_values($orders)]);
 
     default:

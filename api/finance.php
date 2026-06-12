@@ -473,8 +473,7 @@ switch ($action) {
             'oauth_caihong_api_url',
             'oauth_caihong_app_id',
             'oauth_caihong_key',
-            'oauth_caihong_redirect_uri',
-            'subdomain_base_domain'
+            'oauth_caihong_redirect_uri'
         ];
         foreach ($stringFields as $field) {
             if (isset($_POST[$field])) {
@@ -545,7 +544,8 @@ switch ($action) {
             $config['subdomain_monthly_price'] = max(0.01, min(100000, floatval($_POST['subdomain_monthly_price'])));
         }
         if (isset($_POST['subdomain_base_domain'])) {
-            $config['subdomain_base_domain'] = strtolower(trim(sanitizeString($_POST['subdomain_base_domain'])));
+            require_once __DIR__ . '/../core/SubdomainHelper.php';
+            $config['subdomain_base_domain'] = SubdomainHelper::normalizeBaseDomain($_POST['subdomain_base_domain']);
         }
 
         if (isset($_POST['email_profiles'])) {

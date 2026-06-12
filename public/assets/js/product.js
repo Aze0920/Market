@@ -131,10 +131,12 @@ async function loadProducts(options = {}) {
     }
     const result = await API.getProducts(filters);
 
-    if (window.SellerStore?.sellerId && !window.SellerStore.active) {
+    if (window.SellerStore?.prefix && !window.SellerStore.active) {
         grid.innerHTML = '';
         emptyState.classList.remove('hidden');
-        emptyState.innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle text-warning fs-1"></i><p class="mt-3 mb-0">${Security.escapeHtml(window.SellerStore.message || '当前二级域名暂不可用')}</p></div>`;
+        const hint = window.SellerStore.message
+            || (window.SellerStore.pending ? '该店铺二级域名正在审核中，请等待管理员审核通过' : '当前二级域名暂不可用');
+        emptyState.innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle text-warning fs-1"></i><p class="mt-3 mb-0">${Security.escapeHtml(hint)}</p>${window.SellerStore.pending ? '<p class="text-muted small mt-2">审核通过后，此域名将只展示该卖家的全部商品</p>' : ''}</div>`;
         return;
     }
 

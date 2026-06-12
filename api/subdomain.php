@@ -34,7 +34,7 @@ function getCurrentUser() {
 function subdomainConfigPayload($config) {
     $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
     return [
-        'enabled' => !empty($config['subdomain_enabled']),
+        'enabled' => SubdomainHelper::configEnabled($config),
         'base_domain' => $baseDomain,
         'wildcard_domain' => $baseDomain !== '' ? '*.' . $baseDomain : '',
         'monthly_price' => floatval($config['subdomain_monthly_price'] ?? 10),
@@ -65,38 +65,56 @@ switch ($action) {
     case 'resolve':
         $config = $db->getSystemConfig();
         $settings = subdomainConfigPayload($config);
-        if (!$settings['enabled'] || $settings['base_domain'] === '') {
-            jsonResponse(['success' => true, 'active' => false]);
-        }
         $host = trim((string)($_GET['host'] ?? $_SERVER['HTTP_HOST'] ?? ''));
         $host = strtolower(preg_replace('/:\d+$/', '', $host));
-        $prefix = SubdomainHelper::extractPrefixFromHost($host, $settings['base_domain']);
+        $prefix = $settings['base_domain'] !== '' ? SubdomainHelper::extractPrefixFromHost($host, $settings['base_domain']) : null;
+
+        if (!$settings['enabled']) {
+            jsonResponse(['success' => true, 'active' => false, 'reason' => 'feature_disabled', 'host' => $host, 'prefix' => $prefix]);
+        }
+        if ($settings['base_domain'] === '') {
+            jsonResponse(['success' => true, 'active' => false, 'reason' => 'base_domain_missing', 'host' => $host, 'prefix' => $prefix]);
+        }
         if ($prefix === null) {
-            jsonResponse(['success' => true, 'active' => false]);
+            jsonResponse(['success' => true, 'active' => false, 'reason' => 'not_subdomain_host', 'host' => $host, 'base_domain' => $settings['base_domain']]);
         }
         $subdomain = $db->getSellerSubdomainByPrefix($prefix);
         if (!$subdomain) {
-            jsonResponse(['success' => true, 'active' => false, 'prefix' => $prefix, 'reason' => 'not_found']);
+            jsonResponse(['success' => true, 'active' => false, 'prefix' => $prefix, 'reason' => 'not_found', 'host' => $host, 'message' => '该二级域名尚未开通']);
         }
         $seller = $db->getUserById($subdomain['user_id'] ?? '');
         if (!$seller) {
-            jsonResponse(['success' => true, 'active' => false, 'prefix' => $prefix, 'reason' => 'seller_missing']);
+            jsonResponse(['success' => true, 'active' => false, 'prefix' => $prefix, 'reason' => 'seller_missing', 'host' => $host]);
         }
         $expired = SubdomainHelper::isExpired($subdomain);
-        $active = SubdomainHelper::isActive($subdomain);
+        $active = $settings['enabled'] && SubdomainHelper::isActive($subdomain);
+        $pending = ($subdomain['status'] ?? '') === 'pending';
+        $disabled = !empty($subdomain['disabled']) || ($subdomain['status'] ?? '') === 'disabled';
+        $message = '';
+        if ($expired) {
+            $message = '当前二级域名已过期请联系客服进行处理';
+        } elseif ($pending) {
+            $message = '该店铺二级域名正在审核中，请等待管理员审核通过';
+        } elseif ($disabled) {
+            $message = '该二级域名已被禁用，请联系客服处理';
+        } elseif (($subdomain['status'] ?? '') === 'rejected') {
+            $message = '该二级域名申请未通过审核';
+        }
         jsonResponse([
             'success' => true,
             'active' => $active,
             'expired' => $expired,
-            'pending' => ($subdomain['status'] ?? '') === 'pending',
-            'disabled' => !empty($subdomain['disabled']) || ($subdomain['status'] ?? '') === 'disabled',
+            'pending' => $pending,
+            'disabled' => $disabled,
             'prefix' => $prefix,
             'full_domain' => SubdomainHelper::fullHost($prefix, $settings['base_domain']),
             'seller_id' => $seller['id'],
             'seller_name' => $seller['username'] ?? '',
             'expires_at' => intval($subdomain['expires_at'] ?? 0),
             'status' => $subdomain['status'] ?? 'none',
-            'message' => $expired ? '当前二级域名已过期请联系客服进行处理' : (($subdomain['status'] ?? '') === 'pending' ? '该店铺二级域名正在审核中' : ''),
+            'host' => $host,
+            'base_domain' => $settings['base_domain'],
+            'message' => $message,
         ]);
 
     case 'my':

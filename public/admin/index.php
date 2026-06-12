@@ -1205,6 +1205,15 @@ function renderSubdomainReview() {
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
+            <div class="panel mb-3" style="background:#f8fafc;">
+                <div class="small text-muted mb-2">手动为卖家开通二级域名（填写用户ID与前缀，创建后立即生效）</div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4"><label class="form-label">用户ID</label><input id="createSubdomainUserId" class="form-control" placeholder="用户ID"></div>
+                    <div class="col-md-3"><label class="form-label">前缀</label><input id="createSubdomainPrefix" class="form-control" placeholder="例如 roxy"></div>
+                    <div class="col-md-2"><label class="form-label">月数</label><input id="createSubdomainMonths" class="form-control" type="number" min="1" max="36" value="1"></div>
+                    <div class="col-md-3"><button class="btn btn-primary w-100" onclick="createSubdomainAdmin()">手动开通</button></div>
+                </div>
+            </div>
             <div class="row g-2 mb-3 align-items-center">
                 <div class="col-md-5">
                     <div class="input-group">

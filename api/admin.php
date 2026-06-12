@@ -1149,6 +1149,46 @@ switch ($action) {
         }
         adminJsonResponse(['success' => true, 'message' => $decision === 'approve' ? '已通过商家重新开通申请' : '已拒绝商家重新开通申请']);
 
+    case 'create_subdomain':
+        $admin = adminRequireAdmin();
+        $userId = trim($_POST['user_id'] ?? '');
+        $prefix = strtolower(trim($_POST['prefix'] ?? ''));
+        $months = max(1, min(36, intval($_POST['months'] ?? 1)));
+        $autoApprove = !isset($_POST['auto_approve']) || filter_var($_POST['auto_approve'], FILTER_VALIDATE_BOOLEAN);
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            adminJsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        $error = SubdomainHelper::validatePrefix($prefix);
+        if ($error) {
+            adminJsonResponse(['success' => false, 'message' => $error], 400);
+        }
+        if ($db->getSellerSubdomainByPrefix($prefix)) {
+            adminJsonResponse(['success' => false, 'message' => '该前缀已被占用'], 400);
+        }
+        $existing = $db->getSellerSubdomainByUserId($userId);
+        if ($existing) {
+            adminJsonResponse(['success' => false, 'message' => '该用户已有二级域名记录，请在列表中维护'], 400);
+        }
+        $now = time();
+        $subdomain = [
+            'user_id' => $userId,
+            'prefix' => $prefix,
+            'status' => $autoApprove ? 'approved' : 'pending',
+            'pending_months' => $autoApprove ? 0 : $months,
+            'expires_at' => $autoApprove ? ($now + SubdomainHelper::monthSeconds($months)) : 0,
+            'approved_at' => $autoApprove ? $now : 0,
+            'reviewed_at' => $autoApprove ? $now : 0,
+            'reviewed_by' => $autoApprove ? ($admin['id'] ?? '') : '',
+            'last_price_paid' => 0,
+            'disabled' => false,
+            'created_at' => $now,
+        ];
+        if (!$db->saveSellerSubdomain($subdomain)) {
+            adminJsonResponse(['success' => false, 'message' => '创建失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => $autoApprove ? '二级域名已创建并生效' : '二级域名已创建，待审核']);
+
     case 'subdomains':
         adminRequireAdmin();
         $params = adminListParams();
@@ -1220,6 +1260,19 @@ switch ($action) {
         }
         if (isset($_POST['expires_at'])) {
             $subdomain['expires_at'] = max(0, intval($_POST['expires_at']));
+            if ($subdomain['expires_at'] > 0 && ($subdomain['status'] ?? '') === 'pending') {
+                $subdomain['status'] = 'approved';
+                $subdomain['pending_months'] = 0;
+                $subdomain['approved_at'] = time();
+                $subdomain['disabled'] = false;
+            }
+        }
+        if (isset($_POST['status']) && trim((string)$_POST['status']) === 'approved' && intval($subdomain['expires_at'] ?? 0) === 0) {
+            $months = max(1, intval($subdomain['pending_months'] ?? 1));
+            $subdomain['expires_at'] = time() + SubdomainHelper::monthSeconds($months);
+            $subdomain['pending_months'] = 0;
+            $subdomain['approved_at'] = time();
+            $subdomain['disabled'] = false;
         }
         if (isset($_POST['disabled'])) {
             $subdomain['disabled'] = filter_var($_POST['disabled'], FILTER_VALIDATE_BOOLEAN);
