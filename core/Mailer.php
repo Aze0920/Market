@@ -11,6 +11,7 @@ class KeyNestMailer {
                 if (($profile['id'] ?? '') === $profileId) {
                     $result = self::sendWithProfile($to, $subject, $html, $config, $profile);
                     if (!empty($result['success'])) {
+                        self::recordProfileSendSuccess($profile);
                         $result['used_profile'] = self::profileLabel($profile);
                     }
                     return $result;
@@ -18,19 +19,49 @@ class KeyNestMailer {
             }
             return ['success' => false, 'message' => '指定的发信配置不存在'];
         }
+        $ordered = self::orderProfilesForLoadBalance($profiles);
+        if (empty($ordered)) {
+            return ['success' => false, 'message' => '没有可用的发信配置'];
+        }
         $errors = [];
-        foreach ($profiles as $profile) {
-            if (($profile['enabled'] ?? true) === false) {
-                continue;
-            }
+        foreach ($ordered as $profile) {
             $result = self::sendWithProfile($to, $subject, $html, $config, $profile);
             if (!empty($result['success'])) {
+                self::recordProfileSendSuccess($profile);
                 $result['used_profile'] = self::profileLabel($profile);
                 return $result;
             }
             $errors[] = self::profileLabel($profile) . '：' . ($result['message'] ?? '发送失败');
         }
         return ['success' => false, 'message' => $errors ? implode('；', $errors) : '没有可用的发信配置'];
+    }
+
+    private static function orderProfilesForLoadBalance(array $profiles) {
+        $enabled = [];
+        foreach ($profiles as $index => $profile) {
+            if (!is_array($profile) || ($profile['enabled'] ?? true) === false) {
+                continue;
+            }
+            $profile['_order'] = $index;
+            $enabled[] = $profile;
+        }
+        usort($enabled, function ($a, $b) {
+            $countCompare = intval($a['send_count'] ?? 0) <=> intval($b['send_count'] ?? 0);
+            if ($countCompare !== 0) {
+                return $countCompare;
+            }
+            return intval($a['_order'] ?? 0) <=> intval($b['_order'] ?? 0);
+        });
+        return $enabled;
+    }
+
+    private static function recordProfileSendSuccess(array $profile) {
+        $profileId = trim((string)($profile['id'] ?? ''));
+        if ($profileId === '') {
+            return;
+        }
+        require_once __DIR__ . '/Database.php';
+        Database::getInstance()->incrementEmailProfileSendCount($profileId);
     }
 
     private static function getProfiles($config) {

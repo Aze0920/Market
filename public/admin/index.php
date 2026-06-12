@@ -3433,7 +3433,8 @@ function normalizeAdminEmailProfiles(config = {}) {
                 smtp_port: config.smtp_port || 465,
                 smtp_username: config.smtp_username || '',
                 smtp_password: '',
-                smtp_secure: config.smtp_secure || 'ssl'
+                smtp_secure: config.smtp_secure || 'ssl',
+                send_count: 0
             }];
         } else {
             profiles = [{
@@ -3448,7 +3449,8 @@ function normalizeAdminEmailProfiles(config = {}) {
                 smtp_port: 465,
                 smtp_username: '',
                 smtp_password: '',
-                smtp_secure: 'ssl'
+                smtp_secure: 'ssl',
+                send_count: 0
             }];
         }
     }
@@ -3457,7 +3459,8 @@ function normalizeAdminEmailProfiles(config = {}) {
 function emailProfileSummary(profile = {}) {
     const name = profile.name || profile.resend_from_email || profile.smtp_username || '未命名发信';
     const provider = profile.provider === 'resend' ? 'Resend' : 'SMTP';
-    return `${name} · ${provider}`;
+    const sendCount = Number(profile.send_count || 0);
+    return `${name} · ${provider} · 已发送 ${sendCount} 次`;
 }
 const EMAIL_PROFILE_COLLAPSE_KEY = 'keynest_admin_email_profile_collapsed';
 const EMAIL_PROFILE_TEST_TO_KEY = 'keynest_admin_email_test_to';
@@ -3563,7 +3566,8 @@ function addEmailProfileRow() {
         smtp_port: 465,
         smtp_username: '',
         smtp_password: '',
-        smtp_secure: 'ssl'
+        smtp_secure: 'ssl',
+        send_count: 0
     };
     list.insertAdjacentHTML('beforeend', emailProfileCardHtml(profile, count - 1, false));
     setEmailProfileCollapsed(profile.id, false);
@@ -3624,7 +3628,7 @@ function renderReservedEmailSettings(targetId = 'settingsContent') {
     document.getElementById(targetId).innerHTML = `
         <div class="panel">
             <div class="panel-title"><h5>邮箱验证</h5><button class="btn btn-sm btn-primary" onclick="saveEmailSettings()">保存邮箱设置</button></div>
-            <div class="config-help mb-3">可配置多个发信邮箱，系统会按顺序轮番发送；某个邮箱失败会自动切换下一个，并在下方显示报错提示。每个配置可折叠管理。</div>
+            <div class="config-help mb-3">可配置多个发信邮箱，系统会按负载均衡发信：优先使用发送次数最少的邮箱；某个邮箱失败会自动切换下一个，并在下方显示报错提示。</div>
             ${lastError ? `<div class="alert alert-danger py-2 small mb-3"><strong>最近发信异常：</strong>${escapeHtml(lastError)}${lastErrorAt ? `<div class="mt-1 text-muted">时间：${escapeHtml(lastErrorAt)}</div>` : ''}</div>` : ''}
             <div class="row g-3 mb-3">
                 <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="emailVerifyEnabled" ${c.register_email_verify_enabled ? 'checked' : ''}><label class="form-check-label" for="emailVerifyEnabled">注册时启用邮箱验证码</label></div></div>

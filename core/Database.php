@@ -498,6 +498,36 @@ class Database {
         return $this->saveSystemConfig();
     }
 
+    public function incrementEmailProfileSendCount($profileId) {
+        $profileId = trim((string)$profileId);
+        if ($profileId === '') {
+            return false;
+        }
+        $config = $this->getSystemConfig();
+        $profiles = $config['email_profiles'] ?? [];
+        if (is_string($profiles)) {
+            $decoded = json_decode($profiles, true);
+            $profiles = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($profiles) || empty($profiles)) {
+            return false;
+        }
+        $updated = false;
+        foreach ($profiles as &$profile) {
+            if (!is_array($profile) || ($profile['id'] ?? '') !== $profileId) {
+                continue;
+            }
+            $profile['send_count'] = max(0, intval($profile['send_count'] ?? 0)) + 1;
+            $updated = true;
+            break;
+        }
+        unset($profile);
+        if (!$updated) {
+            return false;
+        }
+        return $this->updateSystemConfig(['email_profiles' => $profiles]);
+    }
+
     public function getPaymentConfigs() {
         $this->ensureTableLoaded('payment_configs');
         $configs = $this->data['payment_configs'];

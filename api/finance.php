@@ -133,6 +133,7 @@ function parseEmailProfilesInput($rawProfiles, array $currentConfig) {
             'smtp_secure' => $secure,
             'resend_api_key' => '',
             'smtp_password' => '',
+            'send_count' => max(0, intval(is_array($old) ? ($old['send_count'] ?? 0) : 0)),
         ];
         $newApiKey = trim((string)($profile['resend_api_key'] ?? ''));
         if ($newApiKey !== '') {
