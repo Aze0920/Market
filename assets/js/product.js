@@ -59,7 +59,7 @@ function deliveryInfoHtml(d) {
     return `
         <textarea class="form-control delivery-plain" readonly rows="${Math.min(Math.max(rows, 6), 16)}" style="resize:vertical;white-space:pre;word-break:normal;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${Security.escapeHtml(text)}</textarea>
         <div class="d-flex flex-wrap gap-2 mt-3">
-            <button class="btn btn-sm btn-outline-primary" data-copy="${Security.escapeAttr(text)}"><i class="bi bi-clipboard me-1"></i>复制全部卡密</button>
+            <button class="btn btn-sm btn-outline-primary" onclick="Utils.copyText('${Security.escapeAttr(text)}')"><i class="bi bi-clipboard me-1"></i>复制全部卡密</button>
         </div>
     `;
 }
@@ -125,27 +125,11 @@ async function loadProducts(options = {}) {
     grid.innerHTML = '<div class="col-12"><div class="loading"><div class="spinner"></div></div></div>';
     emptyState.classList.add('hidden');
 
-    const filters = { search, category };
-    if (window.SellerStore?.active && window.SellerStore.sellerId) {
-        filters.seller_id = window.SellerStore.sellerId;
-    }
-    const result = await API.getProducts(filters);
-
-    if (window.SellerStore?.prefix && !window.SellerStore.active) {
-        grid.innerHTML = '';
-        emptyState.classList.remove('hidden');
-        const hint = window.SellerStore.message
-            || (window.SellerStore.pending ? '该店铺二级域名正在审核中，请等待管理员审核通过' : '当前二级域名暂不可用');
-        emptyState.innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle text-warning fs-1"></i><p class="mt-3 mb-0">${Security.escapeHtml(hint)}</p>${window.SellerStore.pending ? '<p class="text-muted small mt-2">审核通过后，此域名将只展示该卖家的全部商品</p>' : ''}</div>`;
-        return;
-    }
+    const result = await API.getProducts({ search, category });
 
     if (!result.success || result.products.length === 0) {
         grid.innerHTML = '';
         emptyState.classList.remove('hidden');
-        if (window.SellerStore?.active) {
-            emptyState.innerHTML = '<div class="text-center py-5"><p class="mb-0">该卖家暂无在售商品</p></div>';
-        }
         return;
     }
 

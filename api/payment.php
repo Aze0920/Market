@@ -68,175 +68,15 @@ function getPayMethodsFromRequest() {
 
 function attachPaymentOrderEmails($orders) {
     global $db;
-    $userMap = [];
-    foreach ($db->getTable('users') as $user) {
-        if (!empty($user['id'])) {
-            $userMap[$user['id']] = $user;
-        }
-    }
-    return array_map(function($order) use ($userMap) {
-        $order['user_exists'] = false;
-        $order['user_username'] = '';
-        $order['user_id_email'] = '';
-        if (!empty($order['guest_order']) && !empty($order['guest_email'])) {
-            $order['user_id_email'] = (string)$order['guest_email'];
-            $order['user_username'] = '游客';
-            return $order;
-        }
+    return array_map(function($order) use ($db) {
         if (!empty($order['user_id'])) {
-            $user = $userMap[$order['user_id']] ?? null;
-            if ($user) {
-                $order['user_exists'] = true;
-                $order['user_username'] = $user['username'] ?? '';
-                if (!empty($user['email'])) {
-                    $order['user_id_email'] = $user['email'];
-                }
-            } elseif (strpos((string)$order['user_id'], 'guest_') === 0) {
-                $order['user_username'] = '游客';
+            $user = $db->getUserById($order['user_id']);
+            if ($user && !empty($user['email'])) {
+                $order['user_id_email'] = $user['email'];
             }
         }
-        if (empty($order['user_id_email']) && !empty($order['guest_email'])) {
-            $order['user_id_email'] = (string)$order['guest_email'];
-        }
         return $order;
     }, $orders);
-}
-
-function attachPaymentOrderDeliveryFlags($orders) {
-    global $db;
-    $relatedIds = [];
-    foreach ($orders as $order) {
-        $relatedId = trim((string)($order['related_id'] ?? ''));
-        if ($relatedId !== '') {
-            $relatedIds[$relatedId] = true;
-        }
-    }
-    if (!$relatedIds) {
-        return array_map(function($order) {
-            $order['has_purchase_delivery'] = false;
-            return $order;
-        }, $orders);
-    }
-    $deliveryMap = [];
-    foreach ($db->getOrders() as $purchaseOrder) {
-        $id = (string)($purchaseOrder['id'] ?? '');
-        if ($id === '' || empty($relatedIds[$id])) {
-            continue;
-        }
-        $items = $purchaseOrder['delivery_info']['items'] ?? [];
-        $deliveryMap[$id] = is_array($items) && count($items) > 0;
-    }
-    return array_map(function($order) use ($deliveryMap) {
-        $relatedId = trim((string)($order['related_id'] ?? ''));
-        $order['has_purchase_delivery'] = !empty($deliveryMap[$relatedId]);
-        return $order;
-    }, $orders);
-}
-
-function paymentOrderCreditAmount($order) {
-    $type = (string)($order['type'] ?? $order['order_type'] ?? 'recharge');
-    if ($type === 'membership_upgrade' || $type === 'product_online_purchase') {
-        return 0.0;
-    }
-    return floatval($order['amount'] ?? 0);
-}
-
-function paymentOrderShouldCreditBalance($order) {
-    $type = (string)($order['type'] ?? $order['order_type'] ?? 'recharge');
-    return in_array($type, ['recharge', 'card_recharge'], true);
-}
-
-function paymentOrderCreditStatus($order) {
-    if (($order['status'] ?? '') !== 'paid') {
-        return ['status' => 'not_paid', 'label' => '未支付', 'can_reapply' => false];
-    }
-    if (!paymentOrderShouldCreditBalance($order)) {
-        return ['status' => 'not_needed', 'label' => '无需入账', 'can_reapply' => false];
-    }
-    if (!empty($order['balance_applied'])) {
-        return ['status' => 'applied', 'label' => '已入账', 'can_reapply' => false];
-    }
-    if (empty($order['user_exists'])) {
-        return [
-            'status' => 'failed',
-            'label' => '用户不存在',
-            'can_reapply' => false,
-            'message' => (string)($order['delivery_error'] ?? '支付成功但未找到关联用户，余额未入账')
-        ];
-    }
-    return ['status' => 'pending', 'label' => '待入账', 'can_reapply' => true];
-}
-
-function applyPaymentOrderBalanceCredit($order) {
-    global $db;
-    if (($order['status'] ?? '') !== 'paid' || !paymentOrderShouldCreditBalance($order)) {
-        return ['success' => false, 'message' => '该订单不需要补入账'];
-    }
-    if (!empty($order['balance_applied'])) {
-        return ['success' => true, 'message' => '该订单已入账', 'already_applied' => true];
-    }
-    $user = $db->getUserById($order['user_id'] ?? '');
-    if (!$user) {
-        return ['success' => false, 'message' => '关联用户不存在，无法入账。请先在订单详情里核对 user_id 是否正确。'];
-    }
-    $amount = paymentOrderCreditAmount($order);
-    if ($amount <= 0) {
-        return ['success' => false, 'message' => '订单金额无效，无法入账'];
-    }
-    $db->updateUser($user['id'], [
-        'balance' => floatval($user['balance'] ?? 0) + $amount
-    ]);
-    $db->updatePaymentOrder($order['id'], ['balance_applied' => true, 'delivery_status' => 'delivered', 'delivery_error' => '']);
-    return [
-        'success' => true,
-        'message' => '已补入账 ¥' . number_format($amount, 2, '.', ''),
-        'amount' => $amount,
-        'user' => $user
-    ];
-}
-
-function buildPaymentOrderDetail($order) {
-    global $db;
-    $orders = attachPaymentOrderPurchaseDetails(attachPaymentOrderEmails([$order]));
-    $order = $orders[0] ?? $order;
-    $credit = paymentOrderCreditStatus($order);
-    $linkedUser = null;
-    if (!empty($order['user_id'])) {
-        $user = $db->getUserById($order['user_id']);
-        if ($user) {
-            $linkedUser = [
-                'id' => $user['id'],
-                'username' => $user['username'] ?? '',
-                'email' => $user['email'] ?? '',
-                'balance' => floatval($user['balance'] ?? 0),
-                'frozen_balance' => floatval($user['frozen_balance'] ?? 0),
-            ];
-        }
-    }
-    $candidateUsers = [];
-    $seenIds = [];
-    foreach (array_filter([(string)($order['guest_email'] ?? ''), (string)($order['user_id_email'] ?? '')]) as $email) {
-        $candidate = $db->getUserByEmail($email);
-        if (!$candidate || isset($seenIds[$candidate['id']])) {
-            continue;
-        }
-        $seenIds[$candidate['id']] = true;
-        if (($candidate['id'] ?? '') === ($order['user_id'] ?? '')) {
-            continue;
-        }
-        $candidateUsers[] = [
-            'id' => $candidate['id'],
-            'username' => $candidate['username'] ?? '',
-            'email' => $candidate['email'] ?? '',
-            'reason' => '邮箱匹配：' . $email,
-        ];
-    }
-    return [
-        'order' => $order,
-        'credit' => $credit,
-        'linked_user' => $linkedUser,
-        'candidate_users' => $candidateUsers,
-    ];
 }
 
 function attachPaymentOrderPurchaseDetails($orders) {
@@ -570,7 +410,6 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
 
     $productOrder = [
         'id' => 'id_' . time() . '_' . bin2hex(random_bytes(6)),
-        'payment_trade_no' => trim((string)($order['trade_no'] ?? '')),
         'buyer_id' => $buyer['id'],
         'buyer_name' => sanitizeString($buyer['username']),
         'guest_order' => $isGuestOrder,
@@ -650,7 +489,7 @@ function finalizePaidPaymentOrder($order, $notifyData = null) {
 
     $user = $db->getUserById($order['user_id']);
     $isGuestOrder = !empty($order['guest_order']);
-    $orderType = (string)($order['type'] ?? $order['order_type'] ?? 'recharge');
+    $orderType = $order['type'] ?? 'recharge';
 
     if ($orderType === 'product_online_purchase') {
         if (!$user && !$isGuestOrder) {
@@ -668,12 +507,6 @@ function finalizePaidPaymentOrder($order, $notifyData = null) {
     }
 
     if (!$user) {
-        if (paymentOrderShouldCreditBalance($order)) {
-            $db->updatePaymentOrder($order['id'], [
-                'delivery_status' => 'failed',
-                'delivery_error' => '支付成功但未找到关联用户，余额未入账。用户ID：' . ($order['user_id'] ?? '-')
-            ]);
-        }
         return null;
     }
 
@@ -691,14 +524,11 @@ function finalizePaidPaymentOrder($order, $notifyData = null) {
         return null;
     }
 
-    if (paymentOrderShouldCreditBalance($order) && empty($order['balance_applied'])) {
-        $creditAmount = paymentOrderCreditAmount($order);
-        if ($creditAmount > 0) {
-            $db->updateUser($order['user_id'], [
-                'balance' => floatval($user['balance'] ?? 0) + $creditAmount
-            ]);
-            $db->updatePaymentOrder($order['id'], ['balance_applied' => true, 'delivery_status' => 'delivered', 'delivery_error' => '']);
-        }
+    if (empty($order['balance_applied'])) {
+        $db->updateUser($order['user_id'], [
+            'balance' => floatval($user['balance'] ?? 0) + floatval($order['amount'] ?? 0)
+        ]);
+        $db->updatePaymentOrder($order['id'], ['balance_applied' => true]);
     }
     return null;
 }
@@ -1143,15 +973,7 @@ switch ($action) {
             $data = $_POST;
         }
 
-        $tradeNo = trim((string)($data['out_trade_no'] ?? ''));
-        if ($tradeNo === '') {
-            echo 'fail';
-            exit;
-        }
-
-        if (method_exists($db, 'reloadTable')) {
-            $db->reloadTable('payment_orders');
-        }
+        $tradeNo = $data['out_trade_no'] ?? '';
         $order = $db->getPaymentOrderByTradeNo($tradeNo);
         if (!$order) {
             echo 'fail';
@@ -1170,16 +992,14 @@ switch ($action) {
             exit;
         }
 
-        if (($order['status'] ?? '') === 'paid') {
+        if ($order['status'] === 'paid') {
             if (($order['type'] ?? '') === 'product_online_purchase' && empty($order['related_id'])) {
                 finalizePaidPaymentOrder($order, $data);
             }
             echo 'success';
             exit;
         }
-
-        // 允许 pending / unpaid 入账：超时自动标记为 unpaid 后，用户仍可能完成支付
-        if (!in_array($order['status'] ?? '', ['pending', 'unpaid'], true)) {
+        if (($order['status'] ?? '') === 'unpaid') {
             echo 'fail';
             exit;
         }
@@ -1196,6 +1016,7 @@ switch ($action) {
         if ($id === '') {
             jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
         }
+        expirePendingPaymentOrders();
         $order = $db->getPaymentOrder($id);
         if (!$order) {
             jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
@@ -1232,132 +1053,11 @@ switch ($action) {
 
     case 'get_orders':
         requireAdmin();
-        $lite = !isset($_GET['lite']) || (string)$_GET['lite'] !== '0';
-        $loadAll = !empty($_GET['all']) || !empty($_POST['all']);
-        if (!empty($_GET['expire']) || !empty($_POST['expire'])) {
-            $db->adminQuery()->expireStalePendingPaymentOrders();
-            if (method_exists($db, 'reloadTable')) {
-                $db->reloadTable('payment_orders');
-            }
-        }
-        if ($loadAll) {
-            $orders = expirePendingPaymentOrders($db->getPaymentOrders());
-            usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-            $orders = attachPaymentOrderEmails($orders);
-            if ($lite) {
-                $orders = attachPaymentOrderDeliveryFlags($orders);
-            } else {
-                $orders = attachPaymentOrderPurchaseDetails($orders);
-                $orders = array_map(function($order) {
-                    $order['credit'] = paymentOrderCreditStatus($order);
-                    return $order;
-                }, $orders);
-            }
-            jsonResponse(['success' => true, 'orders' => $orders]);
-        }
-        $page = max(1, intval($_GET['page'] ?? $_POST['page'] ?? 1));
-        $pageSize = max(10, min(200, intval($_GET['page_size'] ?? $_POST['page_size'] ?? 20)));
-        $keyword = trim((string)($_GET['keyword'] ?? $_POST['keyword'] ?? ''));
-        $result = $db->adminQuery()->paymentOrdersPage($page, $pageSize, $keyword);
-        $orders = attachPaymentOrderEmails($result['orders']);
-        if ($lite) {
-            $relatedIds = array_map(fn($order) => (string)($order['related_id'] ?? ''), $orders);
-            $deliveryMap = $db->adminQuery()->deliveryFlagsForRelatedIds($relatedIds);
-            $orders = array_map(function($order) use ($deliveryMap) {
-                $relatedId = trim((string)($order['related_id'] ?? ''));
-                $order['has_purchase_delivery'] = !empty($deliveryMap[$relatedId]);
-                return $order;
-            }, $orders);
-        } else {
-            $orders = attachPaymentOrderPurchaseDetails($orders);
-            $orders = array_map(function($order) {
-                $order['credit'] = paymentOrderCreditStatus($order);
-                return $order;
-            }, $orders);
-        }
-        jsonResponse([
-            'success' => true,
-            'orders' => $orders,
-            'total' => $result['total'],
-            'page' => $result['page'],
-            'page_size' => $result['pageSize'],
-        ]);
-
-    case 'get_order_detail':
-        requireAdmin();
-        $id = trim((string)($_GET['id'] ?? $_POST['id'] ?? ''));
-        if ($id === '') {
-            jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
-        }
-        $order = $db->getPaymentOrder($id);
-        if (!$order) {
-            jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
-        }
-        jsonResponse(['success' => true, 'detail' => buildPaymentOrderDetail($order)]);
-
-    case 'reapply_order_balance':
-        requireAdmin();
-        $id = trim((string)($_POST['id'] ?? ''));
-        if ($id === '') {
-            jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
-        }
-        $order = $db->getPaymentOrder($id);
-        if (!$order) {
-            jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
-        }
-        $result = applyPaymentOrderBalanceCredit($order);
-        if (!$result['success']) {
-            jsonResponse(['success' => false, 'message' => $result['message']], 400);
-        }
-        jsonResponse([
-            'success' => true,
-            'message' => $result['message'],
-            'detail' => buildPaymentOrderDetail($db->getPaymentOrder($id) ?: $order)
-        ]);
-
-    case 'reassign_order_user':
-        requireAdmin();
-        $id = trim((string)($_POST['id'] ?? ''));
-        $newUserId = trim((string)($_POST['user_id'] ?? ''));
-        $username = trim((string)($_POST['username'] ?? ''));
-        $reapply = !empty($_POST['reapply']);
-        if ($id === '') {
-            jsonResponse(['success' => false, 'message' => '缺少订单ID'], 400);
-        }
-        $order = $db->getPaymentOrder($id);
-        if (!$order) {
-            jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
-        }
-        if ($newUserId === '' && $username !== '') {
-            $candidate = $db->getUserByUsername($username);
-            if (!$candidate) {
-                jsonResponse(['success' => false, 'message' => '用户名不存在：' . $username], 404);
-            }
-            $newUserId = $candidate['id'];
-        }
-        if ($newUserId === '') {
-            jsonResponse(['success' => false, 'message' => '请填写要绑定的用户ID或用户名'], 400);
-        }
-        if (!$db->getUserById($newUserId)) {
-            jsonResponse(['success' => false, 'message' => '目标用户不存在'], 404);
-        }
-        $db->updatePaymentOrder($id, [
-            'user_id' => $newUserId,
-            'delivery_status' => '',
-            'delivery_error' => ''
-        ]);
-        $order = $db->getPaymentOrder($id) ?: $order;
-        $creditResult = null;
-        if ($reapply) {
-            $creditResult = applyPaymentOrderBalanceCredit($order);
-            $order = $db->getPaymentOrder($id) ?: $order;
-        }
-        jsonResponse([
-            'success' => true,
-            'message' => $creditResult ? ($creditResult['message'] ?? '用户已重新绑定') : '订单已绑定到新用户',
-            'credit' => $creditResult,
-            'detail' => buildPaymentOrderDetail($order)
-        ]);
+        $orders = expirePendingPaymentOrders($db->getPaymentOrders());
+        usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        $orders = attachPaymentOrderEmails($orders);
+        $orders = attachPaymentOrderPurchaseDetails($orders);
+        jsonResponse(['success' => true, 'orders' => $orders]);
 
     case 'update_order_status':
         requireAdmin();
@@ -1411,8 +1111,7 @@ switch ($action) {
 
     case 'get_my_orders':
         $userId = requireAuth();
-        $orders = $db->getPaymentOrders($userId);
-        usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        $orders = expirePendingPaymentOrders($db->getPaymentOrders($userId));
         jsonResponse(['success' => true, 'orders' => array_values($orders)]);
 
     default:

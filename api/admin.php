@@ -5,8 +5,6 @@
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
 require_once __DIR__ . '/../core/Mailer.php';
-require_once __DIR__ . '/../core/OrderTradeNo.php';
-require_once __DIR__ . '/../core/NotifyMail.php';
 require_once __DIR__ . '/../core/SubdomainHelper.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -623,53 +621,17 @@ function adminSafeComplaintOrder($order) {
     return $order;
 }
 
-function adminListParams() {
-    return [
-        'page' => intval($_GET['page'] ?? $_POST['page'] ?? 1),
-        'page_size' => intval($_GET['page_size'] ?? $_POST['page_size'] ?? 20),
-        'keyword' => trim((string)($_GET['keyword'] ?? $_POST['keyword'] ?? '')),
-        'status' => trim((string)($_GET['status'] ?? $_POST['status'] ?? 'all')),
-        'merchant_status' => trim((string)($_GET['merchant_status'] ?? $_POST['merchant_status'] ?? '')),
-    ];
-}
-
-function adminPaginatedResponse($payload) {
-    adminJsonResponse(array_merge(['success' => true], $payload));
-}
-
-function adminComplaintOrdersPage(array $params) {
+function adminComplaintOrders() {
     global $db;
-    $result = $db->adminQuery()->complaintOrdersPage(
-        $params['page'],
-        $params['page_size'],
-        $params['keyword'],
-        $params['status']
-    );
+    $orders = $db->getOrders();
     $items = [];
-    foreach ($result['orders'] as $order) {
+    foreach ($orders as $order) {
         if (!empty($order['complaint']) && is_array($order['complaint'])) {
             $items[] = adminSafeComplaintOrder($order);
         }
     }
-    OrderTradeNo::attachToOrders($items, $db, false);
-    return [
-        'complaints' => array_values($items),
-        'total' => $result['total'],
-        'page' => $result['page'],
-        'page_size' => $result['pageSize'],
-        'summary' => $result['summary'],
-    ];
-}
-
-function adminDashboardPayload() {
-    global $db;
-    $requests = adminFinanceRequests();
-    $pendingRequests = array_values(array_filter($requests, fn($r) => ($r['status'] ?? '') === 'pending'));
-    return [
-        'stats' => $db->adminQuery()->dashboardStats(),
-        'recent_users' => array_map('adminSafeUser', $db->adminQuery()->recentUsers(6)),
-        'pending_requests' => array_slice($pendingRequests, 0, 6),
-    ];
+    usort($items, fn($a, $b) => (($b['complaint']['updated_at'] ?? $b['complaint']['created_at'] ?? 0) - ($a['complaint']['updated_at'] ?? $a['complaint']['created_at'] ?? 0)));
+    return array_values($items);
 }
 
 function adminCommentItems() {
@@ -741,7 +703,7 @@ function adminUserBalanceDetails($userId) {
     $balanceTypes = ['recharge', 'card_recharge', 'membership_upgrade_balance', 'product_purchase', 'product_purchase_refund', 'product_sale_income', 'publish_fee', 'publish_fee_refund', 'admin_balance_adjust'];
     $paymentOrders = $db->getPaymentOrders($userId);
     foreach ($paymentOrders as $order) {
-        $type = (string)($order['type'] ?? $order['order_type'] ?? '');
+        $type = (string)($order['type'] ?? '');
         $payType = (string)($order['pay_type'] ?? '');
         $amount = floatval($order['amount'] ?? 0);
         if (($order['status'] ?? '') === 'paid' && abs($amount) >= 0.01 && (in_array($type, $balanceTypes, true) || strpos($payType, 'balance') !== false || $payType === 'admin_adjust' || $payType === 'card_code')) {
@@ -1003,40 +965,15 @@ function adminTestEmailPayload() {
 adminRequireAdmin();
 
 switch ($action) {
-    case 'dashboard':
-        adminJsonResponse(['success' => true, 'dashboard' => adminDashboardPayload()]);
-
     case 'users':
-        $params = adminListParams();
-        if (!empty($_GET['all']) || !empty($_POST['all'])) {
-            $users = array_map('adminSafeUser', $db->getTable('users'));
-            usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-            adminJsonResponse(['success' => true, 'users' => array_values($users)]);
-        }
-        $result = $db->adminQuery()->usersPage($params['page'], $params['page_size'], $params['keyword'], $params['merchant_status']);
-        $levels = $db->getMembershipLevels();
-        adminPaginatedResponse([
-            'users' => array_map('adminSafeUser', $result['users']),
-            'levels' => $levels,
-            'total' => $result['total'],
-            'page' => $result['page'],
-            'page_size' => $result['pageSize'],
-        ]);
+        $users = array_map('adminSafeUser', $db->getTable('users'));
+        usort($users, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        adminJsonResponse(['success' => true, 'users' => array_values($users)]);
 
     case 'products':
-        $params = adminListParams();
-        if (!empty($_GET['all']) || !empty($_POST['all'])) {
-            $products = array_filter(array_map('adminSafeProduct', $db->getTable('products')));
-            usort($products, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
-            adminJsonResponse(['success' => true, 'products' => array_values($products)]);
-        }
-        $result = $db->adminQuery()->productsPage($params['page'], $params['page_size'], $params['keyword']);
-        adminPaginatedResponse([
-            'products' => array_values(array_filter(array_map('adminSafeProduct', $result['products']))),
-            'total' => $result['total'],
-            'page' => $result['page'],
-            'page_size' => $result['pageSize'],
-        ]);
+        $products = array_filter(array_map('adminSafeProduct', $db->getTable('products')));
+        usort($products, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        adminJsonResponse(['success' => true, 'products' => array_values($products)]);
 
     case 'finance_requests':
         adminJsonResponse(['success' => true, 'requests' => adminFinanceRequests()]);
@@ -1149,6 +1086,32 @@ switch ($action) {
         }
         adminJsonResponse(['success' => true, 'message' => $decision === 'approve' ? '已通过商家重新开通申请' : '已拒绝商家重新开通申请']);
 
+    case 'subdomains':
+        adminRequireAdmin();
+        $page = max(1, intval($_GET['page'] ?? $_POST['page'] ?? 1));
+        $pageSize = max(10, min(200, intval($_GET['page_size'] ?? $_POST['page_size'] ?? 20)));
+        $keyword = trim((string)($_GET['keyword'] ?? $_POST['keyword'] ?? ''));
+        $status = trim((string)($_GET['status'] ?? $_POST['status'] ?? ''));
+        if ($status === 'all') {
+            $status = '';
+        }
+        $result = $db->listSellerSubdomains($page, $pageSize, $keyword, $status);
+        $config = $db->getSystemConfig();
+        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
+        $items = array_map(function($item) use ($baseDomain) {
+            $item['full_domain'] = $baseDomain !== '' ? SubdomainHelper::fullHost($item['prefix'] ?? '', $baseDomain) : '';
+            $item['is_expired'] = SubdomainHelper::isExpired($item);
+            $item['is_active'] = SubdomainHelper::isActive($item);
+            return $item;
+        }, $result['items']);
+        adminJsonResponse([
+            'success' => true,
+            'subdomains' => $items,
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
+
     case 'create_subdomain':
         $admin = adminRequireAdmin();
         $userId = trim($_POST['user_id'] ?? '');
@@ -1166,9 +1129,8 @@ switch ($action) {
         if ($db->getSellerSubdomainByPrefix($prefix)) {
             adminJsonResponse(['success' => false, 'message' => '该前缀已被占用'], 400);
         }
-        $existing = $db->getSellerSubdomainByUserId($userId);
-        if ($existing) {
-            adminJsonResponse(['success' => false, 'message' => '该用户已有二级域名记录，请在列表中维护'], 400);
+        if ($db->getSellerSubdomainByUserId($userId)) {
+            adminJsonResponse(['success' => false, 'message' => '该用户已有二级域名记录'], 400);
         }
         $now = time();
         $subdomain = [
@@ -1188,26 +1150,6 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => '创建失败'], 500);
         }
         adminJsonResponse(['success' => true, 'message' => $autoApprove ? '二级域名已创建并生效' : '二级域名已创建，待审核']);
-
-    case 'subdomains':
-        adminRequireAdmin();
-        $params = adminListParams();
-        $status = $params['status'] === 'all' ? '' : $params['status'];
-        $result = $db->adminQuery()->subdomainsPage($params['page'], $params['page_size'], $params['keyword'], $status);
-        $config = $db->getSystemConfig();
-        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
-        $items = array_map(function($item) use ($baseDomain) {
-            $item['full_domain'] = $baseDomain !== '' ? SubdomainHelper::fullHost($item['prefix'] ?? '', $baseDomain) : '';
-            $item['is_expired'] = SubdomainHelper::isExpired($item);
-            $item['is_active'] = SubdomainHelper::isActive($item);
-            return $item;
-        }, $result['items']);
-        adminPaginatedResponse([
-            'subdomains' => $items,
-            'total' => $result['total'],
-            'page' => $result['page'],
-            'page_size' => $result['pageSize'],
-        ]);
 
     case 'review_subdomain':
         $admin = adminRequireAdmin();
@@ -1267,13 +1209,6 @@ switch ($action) {
                 $subdomain['disabled'] = false;
             }
         }
-        if (isset($_POST['status']) && trim((string)$_POST['status']) === 'approved' && intval($subdomain['expires_at'] ?? 0) === 0) {
-            $months = max(1, intval($subdomain['pending_months'] ?? 1));
-            $subdomain['expires_at'] = time() + SubdomainHelper::monthSeconds($months);
-            $subdomain['pending_months'] = 0;
-            $subdomain['approved_at'] = time();
-            $subdomain['disabled'] = false;
-        }
         if (isset($_POST['disabled'])) {
             $subdomain['disabled'] = filter_var($_POST['disabled'], FILTER_VALIDATE_BOOLEAN);
             if ($subdomain['disabled']) {
@@ -1295,6 +1230,18 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => '更新失败'], 500);
         }
         adminJsonResponse(['success' => true, 'message' => '二级域名信息已更新']);
+
+    case 'delete_subdomain':
+        adminRequireAdmin();
+        $id = trim($_POST['id'] ?? '');
+        $subdomain = $db->getSellerSubdomainById($id);
+        if (!$subdomain) {
+            adminJsonResponse(['success' => false, 'message' => '二级域名记录不存在'], 404);
+        }
+        if (!$db->deleteSellerSubdomain($id)) {
+            adminJsonResponse(['success' => false, 'message' => '删除失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => '二级域名已删除']);
 
     case 'product_stock':
         $id = trim($_GET['id'] ?? $_POST['id'] ?? '');
@@ -1398,22 +1345,7 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'message' => '已删除 ' . $deleted . ' 个商品', 'deleted' => $deleted, 'missing' => $missing]);
 
     case 'comments':
-        $params = adminListParams();
-        if (!empty($_GET['all']) || !empty($_POST['all'])) {
-            adminJsonResponse(['success' => true, 'comments' => adminCommentItems()]);
-        }
-        $result = $db->adminQuery()->commentsPage($params['page'], $params['page_size'], $params['keyword']);
-        $comments = [];
-        foreach ($result['comments'] as $comment) {
-            $comments[] = adminAttachUserEmails($comment);
-            $comments[count($comments) - 1]['seller_id_email'] = adminEmailForUserId($comment['seller_id'] ?? '');
-        }
-        adminPaginatedResponse([
-            'comments' => $comments,
-            'total' => $result['total'],
-            'page' => $result['page'],
-            'page_size' => $result['pageSize'],
-        ]);
+        adminJsonResponse(['success' => true, 'comments' => adminCommentItems()]);
 
     case 'delete_comment':
         $id = trim($_POST['id'] ?? '');
@@ -1436,7 +1368,7 @@ switch ($action) {
         adminJsonResponse(['success' => true, 'message' => '评价已删除']);
 
     case 'complaints':
-        adminPaginatedResponse(adminComplaintOrdersPage(adminListParams()));
+        adminJsonResponse(['success' => true, 'complaints' => adminComplaintOrders()]);
 
     case 'get_complaint':
         $id = trim($_GET['order_id'] ?? $_POST['order_id'] ?? '');
@@ -1481,19 +1413,7 @@ switch ($action) {
         $order['complaint']['admin_replied_at'] = $replyItem['created_at'];
         $order['complaint']['updated_at'] = time();
         $db->updateOrder($order);
-        $config = $db->getSystemConfig();
-        $notifyOrder = OrderTradeNo::attachToOrder($order, $db, false);
-        $adminName = $adminUser['username'] ?? 'admin';
-        $buyerMail = NotifyMail::buyerAdminComplaintReply($notifyOrder, $safeReply, $adminName, $config);
-        $sellerMail = NotifyMail::sellerAdminComplaintReply($notifyOrder, $safeReply, $adminName, $config);
-        $messages = ['管理员回复已保存'];
-        if (empty($buyerMail['success'])) {
-            $messages[] = '买家通知未发送：' . ($buyerMail['message'] ?? '请检查邮箱配置');
-        }
-        if (empty($sellerMail['success'])) {
-            $messages[] = '卖家通知未发送：' . ($sellerMail['message'] ?? '请检查邮箱配置');
-        }
-        adminJsonResponse(['success' => true, 'message' => implode('；', $messages)]);
+        adminJsonResponse(['success' => true, 'message' => '管理员回复已保存']);
 
     case 'update_complaint_status':
         $id = trim($_POST['order_id'] ?? '');
@@ -1609,15 +1529,9 @@ switch ($action) {
             'footer' => '这是一封后台测试邮件，不会用于真实注册验证。',
             'time' => date('Y-m-d H:i:s')
         ]);
-        $profileId = trim((string)($_POST['profile_id'] ?? ''));
-        $result = $profileId !== ''
-            ? KeyNestMailer::sendWithProfileId($to, $subject, $html, $config, $profileId)
-            : KeyNestMailer::send($to, $subject, $html, $config);
+        $result = KeyNestMailer::send($to, $subject, $html, $config);
         if (!empty($result['success'])) {
             $result['message'] = ($result['message'] ?? '测试邮件已发送') . '；测试验证码：' . $code;
-            if (!empty($result['used_profile'])) {
-                $result['message'] .= '；使用发信：' . $result['used_profile'];
-            }
             $result['test_code'] = $code;
         }
         adminJsonResponse($result);

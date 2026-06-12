@@ -5,8 +5,6 @@
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
 require_once __DIR__ . '/../core/Mailer.php';
-require_once __DIR__ . '/../core/OrderTradeNo.php';
-require_once __DIR__ . '/../core/NotifyMail.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -151,16 +149,6 @@ function freezeSellerOrderBalance(&$order) {
     return true;
 }
 
-function attachPaymentTradeNoToOrder($order) {
-    global $db;
-    return OrderTradeNo::attachToOrder($order, $db, true);
-}
-
-function attachPaymentTradeNoToOrders(array $orders) {
-    global $db;
-    return OrderTradeNo::attachToOrders($orders, $db);
-}
-
 function releaseSellerOrderBalance(&$order) {
     global $db;
     if (empty($order['balance_frozen'])) return true;
@@ -178,73 +166,19 @@ function releaseSellerOrderBalance(&$order) {
     return true;
 }
 
-function resolveComplaintRefundToBuyer(&$order, $operatorUsername = '') {
-    global $db;
-    if (empty($order['complaint']) || !is_array($order['complaint'])) {
-        return [false, '该订单没有投诉记录'];
-    }
-    if (!empty($order['complaint']['funds_settled'])) {
-        return [false, '该投诉资金已处理，不能重复退款'];
-    }
-    $amount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? 0));
-    $buyer = $db->getUserById($order['buyer_id'] ?? '');
-    if (!$buyer) {
-        return [false, '买家账号不存在，无法退款到余额，请联系管理员处理'];
-    }
-    $seller = $db->getUserById($order['seller_id'] ?? '');
-    if (!$seller) {
-        return [false, '卖家不存在'];
-    }
-    if ($amount <= 0) {
-        $order['complaint']['funds_settled'] = true;
-        $order['complaint']['funds_settled_at'] = time();
-        $order['complaint']['funds_action'] = 'none';
-        $order['complaint']['funds_amount'] = 0;
-        $order['complaint']['status'] = 'rejected';
-        $order['complaint']['updated_at'] = time();
-        return [true, '投诉已关闭'];
-    }
-    if (empty($order['balance_frozen'])) {
-        return [false, '订单冻结状态异常，请联系管理员处理'];
-    }
-    $sellerFrozen = floatval($seller['frozen_balance'] ?? 0);
-    if ($sellerFrozen + 0.00001 < $amount) {
-        return [false, '冻结余额不足，无法退款'];
-    }
-    $currentAction = (string)($order['complaint']['funds_action'] ?? 'frozen');
-    $db->updateUser($seller['id'], [
-        'frozen_balance' => max(0, $sellerFrozen - $amount)
-    ]);
-    $db->updateUser($buyer['id'], [
-        'balance' => floatval($buyer['balance'] ?? 0) + $amount
-    ]);
-    $order['balance_frozen'] = false;
-    $order['frozen_released_at'] = time();
-    if (!isset($order['complaint']['funds_history']) || !is_array($order['complaint']['funds_history'])) {
-        $order['complaint']['funds_history'] = [];
-    }
-    $order['complaint']['funds_history'][] = [
-        'from' => $currentAction !== '' ? $currentAction : 'frozen',
-        'to' => 'refund_to_buyer',
-        'amount' => $amount,
-        'created_at' => time(),
-        'by' => $operatorUsername
-    ];
-    $order['complaint']['funds_action'] = 'refund_to_buyer';
-    $order['complaint']['funds_settled'] = true;
-    $order['complaint']['funds_settled_at'] = time();
-    $order['complaint']['funds_amount'] = $amount;
-    $order['complaint']['status'] = 'rejected';
-    $order['complaint']['updated_at'] = time();
-    return [true, '已退款 ¥' . number_format($amount, 2, '.', '') . ' 到买家余额'];
-}
-
 switch ($action) {
     case 'my_orders':
         $userId = requireAuth();
         $orders = $db->getOrders($userId, 'buyer');
-        attachPaymentTradeNoToOrders($orders);
+        $paymentTradeNoByOrderId = [];
+        foreach ($db->getPaymentOrders($userId) as $paymentOrder) {
+            $relatedId = trim((string)($paymentOrder['related_id'] ?? ''));
+            if ($relatedId !== '' && empty($paymentTradeNoByOrderId[$relatedId])) {
+                $paymentTradeNoByOrderId[$relatedId] = $paymentOrder['trade_no'] ?? '';
+            }
+        }
         foreach ($orders as &$order) {
+            $order['payment_trade_no'] = $paymentTradeNoByOrderId[$order['id'] ?? ''] ?? '';
             $order['has_comment'] = $db->hasComment($userId, $order['product_id'] ?? '', $order['id'] ?? '');
             if (!empty($order['delivery_info']['pickup_password_enabled'])) {
                 $order['delivery_info'] = maskDeliveryInfo($order['delivery_info']);
@@ -258,7 +192,6 @@ switch ($action) {
     case 'my_sales':
         $userId = requireAuth();
         $orders = $db->getOrders($userId, 'seller');
-        attachPaymentTradeNoToOrders($orders);
         foreach ($orders as &$order) {
             $order = anonymizeGuestBuyerForSeller(safeOrderForResponse($order));
         }
@@ -303,10 +236,6 @@ switch ($action) {
         if (($order['seller_id'] ?? '') === $sessionUserId && !empty($order['guest_order'])) {
             $order = anonymizeGuestBuyerForSeller($order);
         }
-
-        $wrapped = [$order];
-        attachPaymentTradeNoToOrders($wrapped);
-        $order = $wrapped[0];
 
         jsonResponse(['success' => true, 'order' => $guestAllowed ? safeGuestOrderForResponse($order) : safeOrderForResponse($order)]);
 
@@ -365,6 +294,15 @@ switch ($action) {
 
         $password = genComplaintPassword();
         $config = $db->getSystemConfig();
+        $mailResult = KeyNestMailer::send(
+            $email,
+            'KeyNest 订单投诉撤诉密码',
+            '<p>您正在投诉订单：<strong>' . htmlspecialchars($order['product_title'] ?? $id, ENT_QUOTES, 'UTF-8') . '</strong></p><p>撤诉密码为：</p><h2 style="letter-spacing:4px;">' . $password . '</h2><p>请妥善保存，撤诉时需要输入该密码。</p>',
+            $config
+        );
+        if (empty($mailResult['success'])) {
+            jsonResponse(['success' => false, 'message' => '投诉密码邮件发送失败：' . ($mailResult['message'] ?? '请检查邮箱配置')], 400);
+        }
 
         freezeSellerOrderBalance($order);
         $order['complaint'] = [
@@ -389,15 +327,6 @@ switch ($action) {
             'created_at' => time(),
             'updated_at' => time()
         ];
-
-        $order = attachPaymentTradeNoToOrder($order);
-        $mailResult = NotifyMail::buyerComplaintEmail($order, $password, $config);
-        if (empty($mailResult['success'])) {
-            releaseSellerOrderBalance($order);
-            unset($order['complaint']);
-            jsonResponse(['success' => false, 'message' => '投诉密码邮件发送失败：' . ($mailResult['message'] ?? '请检查邮箱配置')], 400);
-        }
-        NotifyMail::sellerComplaintReceived($order, $user, $config);
         $db->updateOrder($order);
         jsonResponse(['success' => true, 'message' => '投诉已提交，撤诉密码已发送到邮箱，订单金额已冻结']);
 
@@ -429,11 +358,7 @@ switch ($action) {
         $order['complaint']['funds_settled'] = true;
         $order['complaint']['funds_settled_at'] = time();
         $order['complaint_withdrawn_at'] = time();
-        $config = $db->getSystemConfig();
         $db->updateOrder($order);
-        $notifyOrder = attachPaymentTradeNoToOrder($order);
-        NotifyMail::sellerComplaintWithdrawn($notifyOrder, $config);
-        NotifyMail::buyerComplaintWithdrawn($notifyOrder, $config);
         jsonResponse(['success' => true, 'message' => '已撤诉，冻结金额已解冻，投诉记录已保留']);
 
     case 'reply_complaint':
@@ -493,63 +418,8 @@ switch ($action) {
             $order['complaint']['seller_replied_at'] = time();
         }
         $order['complaint']['updated_at'] = time();
-        $config = $db->getSystemConfig();
         $db->updateOrder($order);
-        $notifyOrder = attachPaymentTradeNoToOrder($order);
-        if ($isSeller) {
-            NotifyMail::buyerSellerReply($notifyOrder, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
-        } elseif ($isBuyer) {
-            NotifyMail::sellerBuyerReply($notifyOrder, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
-        }
         jsonResponse(['success' => true, 'message' => '回复已提交']);
-
-    case 'seller_refund_complaint':
-        $userId = requireAuth();
-        $user = getCurrentUser();
-        $id = $_POST['order_id'] ?? '';
-        $note = trim((string)($_POST['note'] ?? ''));
-        if (!validateId($id)) {
-            jsonResponse(['success' => false, 'message' => '无效的订单ID'], 400);
-        }
-        if ($note !== '' && mb_strlen($note) > 500) {
-            jsonResponse(['success' => false, 'message' => '退款说明最多500字'], 400);
-        }
-        $order = $db->getOrderById($id);
-        if (!$order) {
-            jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
-        }
-        if (($order['seller_id'] ?? '') !== $userId) {
-            jsonResponse(['success' => false, 'message' => '只有卖家可以操作退款'], 403);
-        }
-        if (empty($order['complaint']) || in_array(($order['complaint']['status'] ?? ''), ['resolved', 'rejected', 'withdrawn'], true)) {
-            jsonResponse(['success' => false, 'message' => '该投诉已结束，无法退款'], 400);
-        }
-        [$ok, $message] = resolveComplaintRefundToBuyer($order, $user['username'] ?? 'seller');
-        if (!$ok) {
-            jsonResponse(['success' => false, 'message' => $message], 400);
-        }
-        $refundNote = $note !== '' ? htmlspecialchars($note, ENT_QUOTES, 'UTF-8') : '卖家同意退款，冻结金额已退还给买家';
-        if (!isset($order['complaint']['messages']) || !is_array($order['complaint']['messages'])) {
-            $order['complaint']['messages'] = [];
-        }
-        $order['complaint']['messages'][] = [
-            'role' => 'seller',
-            'user_id' => $userId,
-            'username' => $user['username'] ?? '卖家',
-            'content' => $refundNote,
-            'created_at' => time()
-        ];
-        $order['complaint']['seller_reply'] = $refundNote;
-        $order['complaint']['seller_replied_at'] = time();
-        $order['complaint']['seller_refunded_at'] = time();
-        $order['complaint']['seller_refunded_by'] = $user['username'] ?? 'seller';
-        $refundAmount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? 0));
-        $config = $db->getSystemConfig();
-        $db->updateOrder($order);
-        $notifyOrder = attachPaymentTradeNoToOrder($order);
-        NotifyMail::buyerSellerRefund($notifyOrder, $refundAmount, $refundNote, $config);
-        NotifyMail::sellerComplaintRefundDone($notifyOrder, $refundAmount, $refundNote, $config);
-        jsonResponse(['success' => true, 'message' => $message]);
 
     case 'overview':
         $userId = requireAuth();

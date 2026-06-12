@@ -1239,16 +1239,25 @@ function renderSubdomainReview() {
 function subdomainReviewRow(item) {
     const expiresValue = item.expires_at ? new Date(item.expires_at * 1000).toISOString().slice(0, 16) : '';
     const pendingMonths = Number(item.pending_months || 0);
+    const baseDomain = ((Admin.cache.sysConfig || {}).subdomain_base_domain || 'az0.cn').replace(/^\*\./, '');
     const actions = [];
     if ((item.status || '') === 'pending') {
         actions.push(`<button class="btn btn-sm btn-success me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','approve')">通过</button>`);
         actions.push(`<button class="btn btn-sm btn-outline-danger me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','reject')">拒绝</button>`);
     }
+    actions.push(`<button class="btn btn-sm btn-outline-primary me-1" onclick="saveSubdomainPrefix('${escapeHtml(item.id)}')">保存前缀</button>`);
     actions.push(`<button class="btn btn-sm btn-outline-primary me-1" onclick="saveSubdomainExpiry('${escapeHtml(item.id)}')">保存到期</button>`);
-    actions.push(`<button class="btn btn-sm btn-outline-secondary" onclick="toggleSubdomainDisabled('${escapeHtml(item.id)}', ${item.disabled || item.status === 'disabled' ? 'false' : 'true'})">${item.disabled || item.status === 'disabled' ? '启用' : '禁用'}</button>`);
+    actions.push(`<button class="btn btn-sm btn-outline-secondary me-1" onclick="toggleSubdomainDisabled('${escapeHtml(item.id)}', ${item.disabled || item.status === 'disabled' ? 'false' : 'true'})">${item.disabled || item.status === 'disabled' ? '启用' : '禁用'}</button>`);
+    actions.push(`<button class="btn btn-sm btn-outline-danger" onclick="deleteSubdomainAdmin('${escapeHtml(item.id)}')">删除</button>`);
     return `<tr>
         <td><strong>${escapeHtml(item.username || '-')}</strong><div class="small text-muted">${escapeHtml(item.email || item.user_id || '-')}</div></td>
-        <td><div><code>${escapeHtml(item.full_domain || item.prefix || '-')}</code></div><div class="small text-muted">前缀：${escapeHtml(item.prefix || '-')}</div></td>
+        <td>
+            <div class="input-group input-group-sm">
+                <input id="subdomain-prefix-${escapeHtml(item.id)}" class="form-control" value="${escapeHtml(item.prefix || '')}" placeholder="前缀">
+                <span class="input-group-text">.${escapeHtml(baseDomain)}</span>
+            </div>
+            <div class="small text-muted mt-1">当前访问：<code>${escapeHtml(item.full_domain || ((item.prefix || '') + '.' + baseDomain))}</code></div>
+        </td>
         <td>${subdomainStatusBadge(item)}</td>
         <td><input id="subdomain-expiry-${escapeHtml(item.id)}" class="form-control form-control-sm" type="datetime-local" value="${escapeHtml(expiresValue)}"></td>
         <td>${pendingMonths > 0 ? pendingMonths + ' 个月' : '-'}</td>
@@ -1277,6 +1286,24 @@ async function reviewSubdomain(id, decision) {
     await loadAdminData();
     renderSubdomainReview();
 }
+async function saveSubdomainPrefix(id) {
+    const input = document.getElementById('subdomain-prefix-' + id);
+    const prefix = input?.value?.trim() || '';
+    if (!prefix) return showToast('请输入二级域名前缀', 'error');
+    const item = (Admin.cache.subdomains || []).find(row => row.id === id);
+    const ok = await adminConfirm({
+        title: '修改二级域名前缀？',
+        message: `确认将卖家“${item?.username || '-'}”的二级域名前缀修改为 “${prefix}” 吗？修改后需使用新域名访问。`,
+        confirmText: '确认修改',
+        cancelText: '取消'
+    });
+    if (!ok) return;
+    const res = await request('admin.php?action=update_subdomain', 'POST', { id, prefix });
+    if (!res.success) return showToast(res.message || '保存失败', 'error');
+    showToast('二级域名前缀已更新', 'success');
+    await loadAdminData();
+    renderSubdomainReview();
+}
 async function saveSubdomainExpiry(id) {
     const input = document.getElementById('subdomain-expiry-' + id);
     if (!input || !input.value) return showToast('请先选择到期时间', 'error');
@@ -1285,6 +1312,34 @@ async function saveSubdomainExpiry(id) {
     const res = await request('admin.php?action=update_subdomain', 'POST', { id, expires_at: expiresAt });
     if (!res.success) return showToast(res.message || '保存失败', 'error');
     showToast('到期时间已更新', 'success');
+    await loadAdminData();
+    renderSubdomainReview();
+}
+async function deleteSubdomainAdmin(id) {
+    const item = (Admin.cache.subdomains || []).find(row => row.id === id);
+    if (!item) return showToast('记录不存在', 'error');
+    const ok = await adminConfirm({
+        title: '删除二级域名？',
+        message: `确认删除卖家“${item.username || '-'}”的二级域名 ${item.full_domain || item.prefix || '-'} 吗？删除后该域名将立即失效，此操作不可恢复。`,
+        confirmText: '确认删除',
+        cancelText: '取消',
+        danger: true
+    });
+    if (!ok) return;
+    const res = await request('admin.php?action=delete_subdomain', 'POST', { id });
+    if (!res.success) return showToast(res.message || '删除失败', 'error');
+    showToast(res.message || '已删除', 'success');
+    await loadAdminData();
+    renderSubdomainReview();
+}
+async function createSubdomainAdmin() {
+    const user_id = document.getElementById('createSubdomainUserId')?.value?.trim() || '';
+    const prefix = document.getElementById('createSubdomainPrefix')?.value?.trim() || '';
+    const months = document.getElementById('createSubdomainMonths')?.value || '1';
+    if (!user_id || !prefix) return showToast('请填写用户ID和前缀', 'error');
+    const res = await request('admin.php?action=create_subdomain', 'POST', { user_id, prefix, months, auto_approve: '1' });
+    if (!res.success) return showToast(res.message || '创建失败', 'error');
+    showToast(res.message || '创建成功', 'success');
     await loadAdminData();
     renderSubdomainReview();
 }

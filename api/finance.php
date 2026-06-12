@@ -4,8 +4,6 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
-require_once __DIR__ . '/../core/Mailer.php';
-require_once __DIR__ . '/../core/NotifyMail.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -242,14 +240,6 @@ switch ($action) {
                 'processed_by' => sanitizeString($admin['username']),
                 'processed_at' => time()
             ]);
-
-            $updatedRequest = $db->getWithdrawRequest($requestId) ?: $withdrawRequest;
-            $updatedRequest['admin_note'] = $adminNote;
-            $targetUser = $db->getUserById($withdrawRequest['user_id']);
-            if ($targetUser) {
-                $config = $db->getSystemConfig();
-                NotifyMail::userWithdrawApproved($updatedRequest, $targetUser, $config, $adminNote);
-            }
             
             jsonResponse(['success' => true, 'message' => '已标记为已支付']);
         }
@@ -433,8 +423,7 @@ switch ($action) {
             'captcha_login_enabled',
             'captcha_register_enabled',
             'announcement_enabled',
-            'announcement_popup_enabled',
-            'subdomain_enabled'
+            'announcement_popup_enabled'
         ];
         foreach ($booleanFields as $field) {
             if (isset($_POST[$field])) {
@@ -507,14 +496,14 @@ switch ($action) {
             }
         }
 
-        if (isset($_POST['smtp_password']) && $_POST['smtp_password'] !== '' && !isset($_POST['email_profiles'])) {
+        if (isset($_POST['smtp_password']) && $_POST['smtp_password'] !== '') {
             $plainPassword = sanitizeString($_POST['smtp_password']);
             $key = getenv('KEYNEST_ENCRYPTION_KEY') ?: 'KeyNestDefaultEncKey2024!';
             $iv = openssl_random_pseudo_bytes(16);
             $encrypted = openssl_encrypt($plainPassword, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
             $config['smtp_password'] = $encrypted !== false ? base64_encode($iv . $encrypted) : $plainPassword;
         }
-        if (isset($_POST['resend_api_key']) && $_POST['resend_api_key'] !== '' && !isset($_POST['email_profiles'])) {
+        if (isset($_POST['resend_api_key']) && $_POST['resend_api_key'] !== '') {
             $config['resend_api_key'] = sanitizeString($_POST['resend_api_key']);
         }
         if (isset($_POST['captcha_secret_key']) && $_POST['captcha_secret_key'] !== '') {
@@ -539,68 +528,6 @@ switch ($action) {
         }
         if (isset($_POST['email_code_ttl'])) {
             $config['email_code_ttl'] = max(1, min(60, intval($_POST['email_code_ttl'])));
-        }
-        if (isset($_POST['subdomain_monthly_price'])) {
-            $config['subdomain_monthly_price'] = max(0.01, min(100000, floatval($_POST['subdomain_monthly_price'])));
-        }
-        if (isset($_POST['subdomain_base_domain'])) {
-            require_once __DIR__ . '/../core/SubdomainHelper.php';
-            $config['subdomain_base_domain'] = SubdomainHelper::normalizeBaseDomain($_POST['subdomain_base_domain']);
-        }
-
-        if (isset($_POST['email_profiles'])) {
-            $raw = $_POST['email_profiles'];
-            $profiles = is_string($raw) ? json_decode($raw, true) : $raw;
-            if (!is_array($profiles)) {
-                jsonResponse(['success' => false, 'message' => '发信配置格式错误'], 400);
-            }
-            $existingProfiles = KeyNestMailer::getEmailProfiles($currentConfig, false);
-            $existingById = [];
-            foreach ($existingProfiles as $item) {
-                if (!empty($item['id'])) {
-                    $existingById[$item['id']] = $item;
-                }
-            }
-            $normalizedProfiles = [];
-            foreach ($profiles as $profile) {
-                if (!is_array($profile)) continue;
-                $id = sanitizeString($profile['id'] ?? ('email_' . time() . '_' . bin2hex(random_bytes(3))));
-                $provider = (($profile['provider'] ?? 'smtp') === 'resend') ? 'resend' : 'smtp';
-                $item = [
-                    'id' => $id,
-                    'name' => sanitizeString($profile['name'] ?? ''),
-                    'enabled' => filter_var($profile['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN),
-                    'provider' => $provider,
-                    'resend_from_email' => sanitizeString($profile['resend_from_email'] ?? ''),
-                    'resend_from_name' => sanitizeString($profile['resend_from_name'] ?? ($currentConfig['resend_from_name'] ?? 'KeyNest')),
-                    'smtp_host' => sanitizeString($profile['smtp_host'] ?? ''),
-                    'smtp_port' => max(1, min(65535, intval($profile['smtp_port'] ?? 465))),
-                    'smtp_username' => sanitizeString($profile['smtp_username'] ?? ''),
-                    'smtp_secure' => sanitizeString($profile['smtp_secure'] ?? 'ssl'),
-                ];
-                $newApiKey = trim((string)($profile['resend_api_key'] ?? ''));
-                $item['resend_api_key'] = $newApiKey !== ''
-                    ? sanitizeString($newApiKey)
-                    : (string)($existingById[$id]['resend_api_key'] ?? '');
-                $newPassword = trim((string)($profile['smtp_password'] ?? ''));
-                $item['smtp_password'] = $newPassword !== ''
-                    ? KeyNestMailer::encryptSmtpPassword($newPassword)
-                    : (string)($existingById[$id]['smtp_password'] ?? '');
-                $normalizedProfiles[] = $item;
-            }
-            $config['email_profiles'] = $normalizedProfiles;
-            if (!empty($normalizedProfiles[0])) {
-                $first = $normalizedProfiles[0];
-                $config['email_provider'] = $first['provider'];
-                $config['resend_from_email'] = $first['resend_from_email'];
-                $config['resend_from_name'] = $first['resend_from_name'];
-                $config['resend_api_key'] = $first['resend_api_key'];
-                $config['smtp_host'] = $first['smtp_host'];
-                $config['smtp_port'] = $first['smtp_port'];
-                $config['smtp_username'] = $first['smtp_username'];
-                $config['smtp_password'] = $first['smtp_password'];
-                $config['smtp_secure'] = $first['smtp_secure'];
-            }
         }
         
         $db->updateSystemConfig($config);

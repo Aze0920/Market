@@ -517,10 +517,6 @@ switch ($action) {
             'category' => sanitizeString($_GET['category'] ?? 'all'),
             'search' => sanitizeString($_GET['search'] ?? '')
         ];
-        $sellerId = trim((string)($_GET['seller_id'] ?? ''));
-        if ($sellerId !== '' && preg_match('/^[a-zA-Z0-9_]+$/', $sellerId)) {
-            $filters['seller_id'] = $sellerId;
-        }
         $products = $db->getProducts($filters);
         $levels = $db->getMembershipLevels();
         $config = $db->getSystemConfig();
@@ -1017,9 +1013,8 @@ switch ($action) {
         }
         $order = $purchaseResult['order'];
         $fee = $purchaseResult['fee'];
-        $balanceTradeNo = 'BAL' . date('YmdHis') . rand(1000, 9999);
         $db->createPaymentOrder([
-            'trade_no' => $balanceTradeNo,
+            'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
             'user_id' => $userId,
             'payment_config_id' => 'balance',
             'pay_type' => 'balance',
@@ -1035,8 +1030,6 @@ switch ($action) {
             'related_id' => $order['id'],
             'paid_at' => time()
         ]);
-        $db->updateOrder(array_merge($order, ['payment_trade_no' => $balanceTradeNo]));
-        $order['payment_trade_no'] = $balanceTradeNo;
 
         jsonResponse(['success' => true, 'message' => '购买成功', 'order' => $order]);
 

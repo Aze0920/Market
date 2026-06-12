@@ -180,15 +180,6 @@ class Database {
         $this->data['membership_levels'] = [];
     }
 
-    public function adminQuery() {
-        static $query = null;
-        if ($query === null) {
-            require_once __DIR__ . '/AdminQuery.php';
-            $query = new AdminQuery($this->pdo, $this->store);
-        }
-        return $query;
-    }
-
     private function normalizeTableName($name) {
         return preg_replace('/[^a-z0-9_]/', '', strtolower((string)$name));
     }
@@ -471,11 +462,6 @@ class Database {
             'smtp_username' => '',
             'smtp_password' => '',
             'smtp_secure' => 'ssl',
-            'email_template_html' => '',
-            'email_profiles' => [],
-            'email_rotate_index' => 0,
-            'email_last_error' => '',
-            'email_last_error_at' => 0,
             'captcha_enabled' => false,
             'captcha_provider' => 'turnstile',
             'captcha_site_key' => '',
@@ -496,26 +482,7 @@ class Database {
             'admin_badge_icon' => 'bi-shield-fill-check',
             'admin_badge_gradient' => 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
             'admin_badge_text' => '管理员',
-            'subdomain_enabled' => false,
-            'subdomain_base_domain' => '',
-            'subdomain_monthly_price' => 10,
         ];
-    }
-
-    public function getSellerSubdomainById($id) {
-        return $this->store->getSellerSubdomainById($id);
-    }
-
-    public function getSellerSubdomainByUserId($userId) {
-        return $this->store->getSellerSubdomainByUserId($userId);
-    }
-
-    public function getSellerSubdomainByPrefix($prefix) {
-        return $this->store->getSellerSubdomainByPrefix($prefix);
-    }
-
-    public function saveSellerSubdomain(array $subdomain) {
-        return $this->store->saveSellerSubdomain($subdomain);
     }
 
     public function getSystemConfig() {
@@ -591,17 +558,17 @@ class Database {
 
     public function getPaymentOrders($userId = null) {
         $this->ensureTableLoaded('payment_orders');
-        $orders = $userId === null
-            ? $this->data['payment_orders']
-            : array_values(array_filter($this->data['payment_orders'], fn($o) => ($o['user_id'] ?? '') === $userId));
-        return array_map([$this, 'normalizePaymentOrder'], $orders);
+        if ($userId === null) {
+            return $this->data['payment_orders'];
+        }
+        return array_values(array_filter($this->data['payment_orders'], fn($o) => $o['user_id'] === $userId));
     }
 
     public function getPaymentOrder($id) {
         $this->ensureTableLoaded('payment_orders');
         foreach ($this->data['payment_orders'] as $order) {
             if ($order['id'] === $id) {
-                return $this->normalizePaymentOrder($order);
+                return $order;
             }
         }
         return null;
@@ -611,25 +578,13 @@ class Database {
         $this->ensureTableLoaded('payment_orders');
         foreach ($this->data['payment_orders'] as $order) {
             if ($order['trade_no'] === $tradeNo) {
-                return $this->normalizePaymentOrder($order);
+                return $order;
             }
         }
         return null;
     }
 
-    private function normalizePaymentOrder(array $order) {
-        if (!isset($order['type']) && isset($order['order_type'])) {
-            $order['type'] = $order['order_type'];
-        }
-        if (!isset($order['order_type']) && isset($order['type'])) {
-            $order['order_type'] = $order['type'];
-        }
-        $order['balance_applied'] = !empty($order['balance_applied']);
-        return $order;
-    }
-
     public function createPaymentOrder($orderData) {
-        $type = $orderData['type'] ?? 'recharge';
         $order = [
             'id' => 'pay_order_' . time() . '_' . bin2hex(random_bytes(6)),
             'trade_no' => $orderData['trade_no'] ?? 'KN' . date('YmdHis') . rand(1000, 9999),
@@ -640,8 +595,7 @@ class Database {
             'actual_amount' => $orderData['actual_amount'] ?? ($orderData['amount'] ?? 0),
             'fee' => $orderData['fee'] ?? 0,
             'status' => $orderData['status'] ?? 'pending',
-            'type' => $type,
-            'order_type' => $type,
+            'order_type' => $orderData['type'] ?? 'recharge',
             'title' => $orderData['title'] ?? '',
             'description' => $orderData['description'] ?? '',
             'target_level' => $orderData['target_level'] ?? '',
@@ -654,13 +608,12 @@ class Database {
             'guest_query_code' => $orderData['guest_query_code'] ?? '',
             'buyer_name' => $orderData['buyer_name'] ?? '',
             'related_id' => $orderData['related_id'] ?? '',
-            'balance_applied' => !empty($orderData['balance_applied']),
             'created_at' => time(),
             'paid_at' => $orderData['paid_at'] ?? null
         ];
         $this->data['payment_orders'][] = $order;
         $this->saveRecord('payment_orders', $order);
-        return $this->normalizePaymentOrder($order);
+        return $order;
     }
 
     public function updatePaymentOrder($id, $update) {
@@ -668,13 +621,6 @@ class Database {
         foreach ($this->data['payment_orders'] as &$order) {
             if ($order['id'] === $id) {
                 $order = array_merge($order, $update);
-                if (isset($order['order_type']) && !isset($update['type']) && !array_key_exists('type', $update)) {
-                    $order['type'] = $order['order_type'];
-                }
-                if (isset($order['type']) && !isset($update['order_type']) && !array_key_exists('order_type', $update)) {
-                    $order['order_type'] = $order['type'];
-                }
-                $order = $this->normalizePaymentOrder($order);
                 return $this->saveRecord('payment_orders', $order);
             }
         }
@@ -1338,5 +1284,29 @@ class Database {
             }
         }
         return false;
+    }
+
+    public function getSellerSubdomainById($id) {
+        return $this->store->getSellerSubdomainById($id);
+    }
+
+    public function getSellerSubdomainByUserId($userId) {
+        return $this->store->getSellerSubdomainByUserId($userId);
+    }
+
+    public function getSellerSubdomainByPrefix($prefix) {
+        return $this->store->getSellerSubdomainByPrefix($prefix);
+    }
+
+    public function listSellerSubdomains($page = 1, $pageSize = 20, $keyword = '', $status = '') {
+        return $this->store->listSellerSubdomains($page, $pageSize, $keyword, $status);
+    }
+
+    public function saveSellerSubdomain(array $subdomain) {
+        return $this->store->saveSellerSubdomain($subdomain);
+    }
+
+    public function deleteSellerSubdomain($id) {
+        return $this->store->deleteSellerSubdomain($id);
     }
 }

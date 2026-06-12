@@ -325,10 +325,6 @@ const API = {
         return this.request('order.php?action=reply_complaint', 'POST', { order_id: orderId, reply });
     },
 
-    sellerRefundComplaint(orderId, note = '') {
-        return this.request('order.php?action=seller_refund_complaint', 'POST', { order_id: orderId, note });
-    },
-
     getOverview() {
         return this.request('order.php?action=overview');
     },
@@ -384,27 +380,9 @@ const API = {
         return this.request('finance.php?action=reject', 'POST', { id, admin_note: adminNote });
     },
 
-    // 二级域名
-    resolveSubdomain(host = '') {
-        const params = host ? ('&host=' + encodeURIComponent(host)) : '';
-        return this.request('subdomain.php?action=resolve' + params);
-    },
-
-    getMySubdomain() {
-        return this.request('subdomain.php?action=my');
-    },
-
-    checkSubdomainPrefix(prefix) {
-        return this.request('subdomain.php?action=check_prefix&prefix=' + encodeURIComponent(prefix));
-    },
-
-    purchaseSubdomain(prefix, months = 1) {
-        return this.request('subdomain.php?action=purchase', 'POST', { prefix, months });
-    },
-
     // 卡密
-    useCard(code, extra = {}) {
-        return this.request('card.php?action=use', 'POST', { code, ...extra });
+    useCard(code) {
+        return this.request('card.php?action=use', 'POST', { code });
     },
 
     getCards(onlyUnused = false) {
@@ -484,7 +462,7 @@ const API = {
     },
 
     getPaymentOrders() {
-        return this.request('payment.php?action=get_orders&all=1');
+        return this.request('payment.php?action=get_orders');
     },
 
     getMyPaymentOrders() {

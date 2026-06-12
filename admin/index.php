@@ -319,7 +319,6 @@ if (isset($_SESSION['user_id'])) {
         <button class="side-link" data-page="complaints" onclick="switchAdminPage('complaints')"><i class="bi bi-exclamation-octagon-fill"></i>投诉管理</button>
         <button class="side-link" data-page="finance" onclick="switchAdminPage('finance')"><i class="bi bi-wallet2"></i>充值提现</button>
         <button class="side-link" data-page="merchant_review" onclick="switchAdminPage('merchant_review')"><i class="bi bi-shop-window"></i>商家审核</button>
-        <button class="side-link" data-page="subdomain_review" onclick="switchAdminPage('subdomain_review')"><i class="bi bi-globe2"></i>域名审核</button>
         <button class="side-link" data-page="cards" onclick="switchAdminPage('cards')"><i class="bi bi-credit-card-2-front-fill"></i>卡密管理</button>
         <button class="side-link" data-page="membership" onclick="switchAdminPage('membership')"><i class="bi bi-gem"></i>会员等级</button>
         <button class="side-link" data-page="settings" onclick="switchAdminPage('settings')"><i class="bi bi-gear-fill"></i>系统设置</button>
@@ -350,65 +349,7 @@ if (isset($_SESSION['user_id'])) {
 <?php endif; ?>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, dataLoaded: {}, cacheLoadedAt: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, orders: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, complaints: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, comments: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, products: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, subdomains: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' } } };
-const ADMIN_CACHE_TTL_MS = 45000;
-const adminSearchTimers = {};
-function adminListQuery(key) {
-    const defaults = { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' };
-    if (!Admin.listState[key]) Admin.listState[key] = { ...defaults };
-    return Admin.listState[key];
-}
-function adminListUrl(action, key, extra = {}) {
-    const q = adminListQuery(key);
-    const params = new URLSearchParams({
-        page: String(q.page || 1),
-        page_size: String(q.pageSize || 20),
-        keyword: q.keyword || ''
-    });
-    Object.entries(extra).forEach(([name, value]) => {
-        if (value !== undefined && value !== null && value !== '') params.set(name, String(value));
-    });
-    if (q.status && q.status !== 'all' && !params.has('status')) params.set('status', q.status);
-    if (q.merchant_status && !params.has('merchant_status')) params.set('merchant_status', q.merchant_status);
-    return `${action}${action.includes('?') ? '&' : '?'}${params.toString()}`;
-}
-const ADMIN_DATA_LOADERS = {
-    dashboard: () => request('admin.php?action=dashboard'),
-    users: () => {
-        const extra = Admin.page === 'merchant_review'
-            ? { merchant_status: 'pending', page_size: '100' }
-            : {};
-        return request(adminListUrl('admin.php?action=users', 'users', extra));
-    },
-    products: () => request(adminListUrl('admin.php?action=products', 'products')),
-    payOrders: () => request(adminListUrl('payment.php?action=get_orders&lite=1', 'orders')),
-    requests: () => request('admin.php?action=finance_requests'),
-    cards: () => request('admin.php?action=cards'),
-    payConfigs: () => request('admin.php?action=payment_configs'),
-    sysConfig: () => request('admin.php?action=system_config'),
-    complaints: () => request(adminListUrl('admin.php?action=complaints', 'complaints')),
-    membershipLevels: () => request('admin.php?action=membership_levels'),
-    comments: () => request(adminListUrl('admin.php?action=comments', 'comments')),
-    subdomains: () => request(adminListUrl('admin.php?action=subdomains', 'subdomains'))
-};
-const ADMIN_PAGE_KEYS = {
-    overview: ['dashboard'],
-    users: ['users'],
-    products: ['products'],
-    comments: ['comments'],
-    orders: ['payOrders'],
-    complaints: ['complaints'],
-    finance: ['requests'],
-    merchant_review: ['users'],
-    subdomain_review: ['subdomains'],
-    cards: ['cards', 'membershipLevels'],
-    payments: ['payConfigs'],
-    settings: ['sysConfig'],
-    membership: ['membershipLevels', 'sysConfig'],
-    updates: [],
-    logs: []
-};
-const ADMIN_LIST_KEY_MAP = { users: 'users', orders: 'payOrders', complaints: 'complaints', comments: 'comments', products: 'products', subdomains: 'subdomains' };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 10 }, orders: { page: 1, pageSize: 10 }, complaints: { page: 1, pageSize: 10 }, comments: { page: 1, pageSize: 10 } } };
 const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
 const apiBase = <?php echo json_encode($apiBasePath, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 
@@ -483,14 +424,11 @@ async function bootstrapAdmin() {
     Admin.user = result.user;
     restoreAdminState();
     showAdmin();
-    renderPageLoading();
-    await loadAdminPageData(Admin.page);
+    await loadAdminData();
 }
 function handleAdminAuthFailure(message = '需要管理员权限，请重新登录。') {
     Admin.user = null;
     Admin.cache = {};
-    Admin.dataLoaded = {};
-    Admin.cacheLoadedAt = {};
     Admin.csrfToken = null;
     const content = document.getElementById('adminContent');
     if (content) content.innerHTML = '';
@@ -520,8 +458,8 @@ function refreshAdminProfileUI() {
     renderAdminProfileDropdown();
 }
 function restoreAdminState() {
-    const validPages = ['overview', 'users', 'products', 'orders', 'complaints', 'finance', 'merchant_review', 'subdomain_review', 'cards', 'settings', 'membership', 'updates', 'logs'];
-    const validSettingsTabs = ['basic', 'payment', 'login', 'agreements', 'email', 'captcha', 'announcement', 'subdomain'];
+    const validPages = ['overview', 'users', 'products', 'orders', 'complaints', 'finance', 'cards', 'settings', 'membership', 'updates', 'logs'];
+    const validSettingsTabs = ['basic', 'payment', 'login', 'agreements', 'email', 'captcha', 'announcement'];
     const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
     const storedPage = localStorage.getItem('keynest_admin_page');
     const storedTab = localStorage.getItem('keynest_admin_settings_tab');
@@ -662,172 +600,110 @@ document.addEventListener('click', e => {
     const wrap = document.querySelector('.admin-profile-wrap');
     if (wrap && !wrap.contains(e.target)) closeAdminProfileDropdown();
 });
-function applyAdminCacheKey(key, res) {
-    switch (key) {
-        case 'dashboard':
-            Admin.cache.dashboard = res.dashboard || {};
-            break;
-        case 'users':
-            Admin.cache.users = res.users || [];
-            Admin.cache.usersMeta = { total: Number(res.total ?? Admin.cache.users.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
-            if (res.levels) Admin.cache.membershipLevels = res.levels;
-            break;
-        case 'products':
-            Admin.cache.products = res.products || [];
-            Admin.cache.productsMeta = { total: Number(res.total ?? Admin.cache.products.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
-            break;
-        case 'payOrders':
-            Admin.cache.payOrders = res.orders || [];
-            Admin.cache.payOrdersMeta = { total: Number(res.total ?? Admin.cache.payOrders.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
-            break;
-        case 'requests':
-            Admin.cache.requests = res.requests || [];
-            break;
-        case 'cards':
-            Admin.cache.cards = res.cards || [];
-            break;
-        case 'payConfigs':
-            Admin.cache.payConfigs = res.configs || [];
-            break;
-        case 'sysConfig':
-            Admin.cache.sysConfig = res.config || {};
-            break;
-        case 'complaints':
-            Admin.cache.complaints = res.complaints || [];
-            Admin.cache.complaintsMeta = { total: Number(res.total ?? Admin.cache.complaints.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
-            Admin.cache.complaintsSummary = res.summary || Admin.cache.complaintsSummary || { all: 0, open: 0 };
-            break;
-        case 'membershipLevels':
-            Admin.cache.membershipLevels = res.levels || {};
-            break;
-        case 'comments':
-            Admin.cache.comments = res.comments || [];
-            Admin.cache.commentsMeta = { total: Number(res.total ?? Admin.cache.comments.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
-            break;
-        case 'subdomains':
-            Admin.cache.subdomains = res.subdomains || [];
-            Admin.cache.subdomainsMeta = { total: Number(res.total ?? Admin.cache.subdomains.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
-            break;
-    }
-}
-function scheduleAdminListReload(listKey, delay = 350) {
-    clearTimeout(adminSearchTimers[listKey]);
-    adminSearchTimers[listKey] = setTimeout(() => reloadAdminListKey(listKey), delay);
-}
-async function reloadAdminListKey(listKey) {
-    const loaderKey = ADMIN_LIST_KEY_MAP[listKey];
-    if (!loaderKey) return;
-    Admin.dataLoaded[loaderKey] = false;
-    const ok = await loadAdminKeys([loaderKey], { force: true });
-    if (ok) renderPage();
-}
-function renderPageLoading() {
-    const area = document.getElementById('adminContent');
-    if (!area) return;
-    area.innerHTML = '<div class="text-center py-5 text-muted"><div class="spinner-border text-primary mb-3" role="status"></div><div>正在加载...</div></div>';
-}
-async function loadAdminKeys(keys, { force = false } = {}) {
-    const uniqueKeys = [...new Set((keys || []).filter(Boolean))];
-    const now = Date.now();
-    const pendingKeys = uniqueKeys.filter(key => force || !Admin.dataLoaded[key] || (now - Number(Admin.cacheLoadedAt[key] || 0) > ADMIN_CACHE_TTL_MS));
-    if (!pendingKeys.length) return true;
-    const results = await Promise.all(pendingKeys.map(async key => ({ key, res: await ADMIN_DATA_LOADERS[key]() })));
-    const failed = results.find(item => !item.res || item.res.success === false);
-    if (failed) {
-        if (failed.res?.status === 401 || failed.res?.status === 403) return false;
-        showToast(failed.res?.message || '后台数据加载失败', 'error');
-        return false;
-    }
-    results.forEach(({ key, res }) => {
-        applyAdminCacheKey(key, res);
-        Admin.dataLoaded[key] = true;
-        Admin.cacheLoadedAt[key] = Date.now();
-    });
-    return true;
-}
-function adminPageDataKeys(page = Admin.page) {
-    const keys = [...(ADMIN_PAGE_KEYS[page] || ['dashboard'])];
-    if (page === 'settings' && Admin.settingsTab === 'payment' && !keys.includes('payConfigs')) {
-        keys.push('payConfigs');
-    }
-    return keys;
-}
-async function loadAdminPageData(page = Admin.page, { force = false, silent = false } = {}) {
-    const keys = adminPageDataKeys(page);
-    const hasCached = keys.length > 0 && keys.every(key => Admin.dataLoaded[key]);
-    if (!silent && !hasCached) renderPageLoading();
-    const ok = await loadAdminKeys(keys, { force });
-    if (ok) renderPage();
-    return ok;
-}
 async function loadAdminData() {
-    if (Admin.page === 'orders') {
-        await request('payment.php?action=get_orders&expire=1&page=1&page_size=1&lite=1');
+    const [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, membershipLevels, comments] = await Promise.all([
+        request('admin.php?action=users'),
+        request('admin.php?action=products'),
+        request('payment.php?action=get_orders'),
+        request('admin.php?action=finance_requests'),
+        request('admin.php?action=cards'),
+        request('admin.php?action=payment_configs'),
+        request('admin.php?action=system_config'),
+        request('admin.php?action=complaints'),
+        request('admin.php?action=membership_levels'),
+        request('admin.php?action=comments')
+    ]);
+    const responses = [users, products, payOrders, requests, cards, payConfigs, sysConfig, complaints, membershipLevels, comments];
+    const failed = responses.find(item => !item || item.success === false);
+    if (failed) {
+        if (failed.status === 401 || failed.status === 403) return;
+        showToast(failed.message || '后台数据加载失败', 'error');
+        return;
     }
-    return loadAdminPageData(Admin.page, { force: true });
+    Admin.cache = {
+        users: users.users || [],
+        products: products.products || [],
+        payOrders: payOrders.orders || [],
+        requests: requests.requests || [],
+        cards: cards.cards || [],
+        payConfigs: payConfigs.configs || [],
+        complaints: complaints.complaints || [],
+        comments: comments.comments || [],
+        membershipLevels: membershipLevels.levels || {},
+        sysConfig: sysConfig.config || {}
+    };
+    renderPage();
 }
 function switchAdminPage(page, settingsTab = null) {
     Admin.page = page;
     if (settingsTab) Admin.settingsTab = settingsTab;
     saveAdminState();
     updateAdminNavActive(settingsTab);
-    const keys = adminPageDataKeys(page);
-    if (!keys.length) {
-        renderPage();
-        return;
-    }
-    if (keys.every(key => Admin.dataLoaded[key])) {
-        renderPage();
-        loadAdminPageData(page, { silent: true });
-        return;
-    }
-    renderPageLoading();
-    loadAdminPageData(page);
+    renderPage();
 }
 function setTitle(title) { document.getElementById('pageTitle').textContent = title; }
 function renderPage() {
-    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, comments: renderComments, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, merchant_review: renderMerchantReview, subdomain_review: renderSubdomainReview, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
+    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, comments: renderComments, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, merchant_review: renderMerchantReview, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
     updateAdminNavActive(Admin.page === 'settings' && Admin.settingsTab === 'payment' ? 'payment' : null);
     (renderers[Admin.page] || renderOverview)();
 }
 function renderOverview() {
     setTitle('后台总览');
-    const dashboard = Admin.cache.dashboard || {};
-    const stats = dashboard.stats || {};
-    const users = dashboard.recent_users || Admin.cache.users || [];
-    const requests = dashboard.pending_requests || Admin.cache.requests || [];
+    const users = Admin.cache.users || [], products = Admin.cache.products || [], orders = Admin.cache.payOrders || [], requests = Admin.cache.requests || [], cards = Admin.cache.cards || [], complaints = Admin.cache.complaints || [];
+    const pending = requests.filter(r => r.status === 'pending').length;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStartTs = Math.floor(todayStart.getTime() / 1000);
+    const todayPaidOrders = orders.filter(o => (o.status || '') === 'paid' && Number(o.paid_at || o.created_at || 0) >= todayStartTs);
+    const todayReceipt = todayPaidOrders.reduce((sum, o) => {
+        const type = o.type || 'recharge';
+        if (['recharge', 'membership_upgrade', 'product_online_purchase'].includes(type)) {
+            return sum + Number(o.actual_amount ?? o.amount ?? 0);
+        }
+        return sum;
+    }, 0);
+    const todayProfit = todayPaidOrders.reduce((sum, o) => {
+        const type = o.type || 'recharge';
+        if (type === 'membership_upgrade') return sum + Number(o.amount || 0);
+        if (type === 'product_online_purchase' || type === 'recharge') return sum + Number(o.fee || 0);
+        if (type === 'publish_fee') return sum + Math.abs(Number(o.amount || 0));
+        return sum;
+    }, 0);
     document.getElementById('adminContent').innerHTML = `
         <div class="row g-3 mb-4">
-            ${stat('bi-people-fill', '#dbeafe', '#1d4ed8', stats.user_count ?? 0, '用户总数')}
-            ${stat('bi-box-seam-fill', '#ede9fe', '#6d28d9', stats.product_count ?? 0, '商品总数')}
-            ${stat('bi-cash-stack', '#dcfce7', '#15803d', stats.pay_order_count ?? 0, '支付订单')}
-            ${stat('bi-exclamation-octagon-fill', '#fee2e2', '#b91c1c', stats.open_complaints ?? 0, '进行中投诉')}
-            ${stat('bi-hourglass-split', '#fef3c7', '#b45309', stats.pending_requests ?? 0, '待处理申请')}
-            ${stat('bi-wallet2', '#e0f2fe', '#0369a1', money(stats.today_receipt ?? 0), '今日收款')}
-            ${stat('bi-graph-up-arrow', '#f0fdf4', '#16a34a', money(stats.today_profit ?? 0), '今日利润')}
-            ${stat('bi-globe2', '#fce7f3', '#be185d', stats.pending_subdomains ?? 0, '域名待审核')}
+            ${stat('bi-people-fill', '#dbeafe', '#1d4ed8', users.length, '用户总数')}
+            ${stat('bi-box-seam-fill', '#ede9fe', '#6d28d9', products.length, '商品总数')}
+            ${stat('bi-cash-stack', '#dcfce7', '#15803d', orders.length, '支付订单')}
+            ${stat('bi-exclamation-octagon-fill', '#fee2e2', '#b91c1c', complaints.filter(o => (o.complaint?.status || '') === 'open').length, '进行中投诉')}
+            ${stat('bi-hourglass-split', '#fef3c7', '#b45309', pending, '待处理申请')}
+            ${stat('bi-wallet2', '#e0f2fe', '#0369a1', money(todayReceipt), '今日收款')}
+            ${stat('bi-graph-up-arrow', '#f0fdf4', '#16a34a', money(todayProfit), '今日利润')}
         </div>
         <div class="row g-4">
-            <div class="col-lg-7"><div class="panel"><div class="panel-title"><h5>最新用户</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('users')">查看全部</button></div>${userTable(users)}</div></div>
-            <div class="col-lg-5"><div class="panel"><div class="panel-title"><h5>待处理申请</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('finance')">处理</button></div>${requestList(requests)}</div></div>
+            <div class="col-lg-7"><div class="panel"><div class="panel-title"><h5>最新用户</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('users')">查看全部</button></div>${userTable(users.slice(-6).reverse())}</div></div>
+            <div class="col-lg-5"><div class="panel"><div class="panel-title"><h5>待处理申请</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('finance')">处理</button></div>${requestList(requests.filter(r => r.status === 'pending').slice(0, 6))}</div></div>
         </div>`;
 }
 function stat(icon, bg, color, value, label) { return `<div class="col-md-6 col-xl-3"><div class="stat-card"><div class="stat-icon" style="background:${bg};color:${color}"><i class="bi ${icon}"></i></div><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div></div>`; }
 function renderUsers() {
     setTitle('用户管理');
-    const state = adminListQuery('users');
-    const meta = Admin.cache.usersMeta || {};
-    const keyword = state.keyword || '';
+    const keyword = (document.getElementById('userSearchInput')?.value || '').trim().toLowerCase();
     const users = Admin.cache.users || [];
-    const total = Number(meta.total ?? users.length);
-    state.pageSize = Math.max(10, Math.min(200, Number(document.getElementById('userPageSizeSelect')?.value || state.pageSize || 20)));
-    state.page = Math.max(1, Number(meta.page || state.page || 1));
+    const state = Admin.listState.users || (Admin.listState.users = { page: 1, pageSize: 10 });
+    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('userPageSizeSelect')?.value || state.pageSize || 10)));
+    const filteredUsers = keyword ? users.filter(u =>
+        String(u.username || '').toLowerCase().includes(keyword) ||
+        String(u.email || '').toLowerCase().includes(keyword)
+    ) : users;
+    const totalPages = Math.max(1, Math.ceil(filteredUsers.length / state.pageSize));
+    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
+    const pageUsers = filteredUsers.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>全部用户</h5>
-                    <div class="small text-muted mt-1">${keyword ? '已筛选，共 ' + total + ' 个用户' : '共 ' + total + ' 个用户'}，当前显示 ${users.length} 个</div>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filteredUsers.length + ' / ' + users.length + ' 个用户' : '共 ' + users.length + ' 个用户'}，当前显示 ${pageUsers.length} 个</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button id="batchDeleteUsersBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedUsersAdmin()" disabled><i class="bi bi-trash3 me-1"></i>删除选中</button>
@@ -838,7 +714,7 @@ function renderUsers() {
                 <div class="col-md-7 col-lg-5">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="userSearchInput" class="form-control" placeholder="搜索用户名或邮箱" value="${escapeHtml(keyword)}" oninput="adminListQuery('users').keyword=this.value.trim();adminListQuery('users').page=1;scheduleAdminListReload('users')" autocomplete="off">
+                        <input id="userSearchInput" class="form-control" placeholder="搜索用户名或邮箱" value="${escapeHtml(keyword)}" oninput="Admin.listState.users.page=1;renderUsers()" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-auto">
@@ -848,8 +724,8 @@ function renderUsers() {
                     ${adminPageSizeSelect('userPageSizeSelect', state.pageSize, 'setUsersPageSize(this.value)')}
                 </div>
             </div>
-            ${userTable(users, true, true)}
-            ${adminPaginationHtml(state.page, state.pageSize, total, 'setUsersPage', '个用户')}
+            ${userTable(pageUsers, true, true)}
+            ${adminPaginationHtml(state.page, state.pageSize, filteredUsers.length, 'setUsersPage', '个用户')}
         </div>`;
     updateUserBatchToolbar();
     if (keyword) {
@@ -859,18 +735,19 @@ function renderUsers() {
     }
 }
 function setUsersPage(page) {
-    adminListQuery('users').page = Number(page) || 1;
-    reloadAdminListKey('users');
+    Admin.listState.users.page = Number(page) || 1;
+    renderUsers();
 }
 function setUsersPageSize(size) {
-    adminListQuery('users').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
-    adminListQuery('users').page = 1;
-    reloadAdminListKey('users');
+    Admin.listState.users.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
+    Admin.listState.users.page = 1;
+    renderUsers();
 }
 function clearUserSearch() {
-    adminListQuery('users').keyword = '';
-    adminListQuery('users').page = 1;
-    reloadAdminListKey('users');
+    const input = document.getElementById('userSearchInput');
+    if (input) input.value = '';
+    Admin.listState.users.page = 1;
+    renderUsers();
 }
 function adminModal({ title = '详情', body = '', footer = '', size = 'lg' } = {}) {
     const modalId = 'adminDynamicModal';
@@ -946,11 +823,12 @@ function adminPaymentOrderTitle(order = {}) {
     return titleMap[type] || (amount >= 0 ? '余额收入' : '余额支出');
 }
 async function openUserBalanceDetails(userId) {
+    const cachedUser = (Admin.cache.users || []).find(u => String(u.id || '') === String(userId || ''));
+    if (!cachedUser) return showToast('用户不存在', 'error');
     const res = await request(`admin.php?action=user_balance_details&id=${encodeURIComponent(userId)}`);
     if (!res.success) return showToast(res.message || '加载余额明细失败', 'error');
     const details = res.details || {};
-    const user = details.user || findAdminUserById(userId);
-    if (!user) return showToast('用户不存在', 'error');
+    const user = details.user || cachedUser;
     const entries = Array.isArray(details.entries) ? details.entries : [];
     const income = Number(details.income || 0);
     const expense = Number(details.expense || 0);
@@ -1142,7 +1020,7 @@ async function deleteSelectedUsersAdmin() {
 }
 function renderMerchantReview() {
     setTitle('商家审核');
-    const users = Admin.cache.users || [];
+    const users = (Admin.cache.users || []).filter(u => u.merchant_status === 'pending');
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
@@ -1179,148 +1057,15 @@ async function reviewMerchant(id, decision) {
     renderMerchantReview();
 }
 
-function subdomainStatusBadge(item) {
-    const status = item.status || 'none';
-    if (item.is_expired) return '<span class="badge bg-warning text-dark">已过期</span>';
-    if (status === 'pending') return '<span class="badge bg-warning text-dark">待审核</span>';
-    if (status === 'approved' && item.is_active) return '<span class="badge bg-success">生效中</span>';
-    if (status === 'approved') return '<span class="badge bg-secondary">已通过</span>';
-    if (status === 'disabled' || item.disabled) return '<span class="badge bg-danger">已禁用</span>';
-    if (status === 'rejected') return '<span class="badge bg-danger">已拒绝</span>';
-    return '<span class="badge bg-secondary">' + escapeHtml(status) + '</span>';
-}
-function renderSubdomainReview() {
-    setTitle('域名审核');
-    const state = adminListQuery('subdomains');
-    const meta = Admin.cache.subdomainsMeta || {};
-    const items = Admin.cache.subdomains || [];
-    const total = Number(meta.total ?? items.length);
-    const status = state.status || 'all';
-    document.getElementById('adminContent').innerHTML = `
-        <div class="panel">
-            <div class="panel-title">
-                <div>
-                    <h5>二级域名管理</h5>
-                    <div class="small text-muted mt-1">审核卖家申请的二级域名，并可维护到期时间与禁用状态。</div>
-                </div>
-                <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
-            </div>
-            <div class="panel mb-3" style="background:#f8fafc;">
-                <div class="small text-muted mb-2">手动为卖家开通二级域名（填写用户ID与前缀，创建后立即生效）</div>
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-4"><label class="form-label">用户ID</label><input id="createSubdomainUserId" class="form-control" placeholder="用户ID"></div>
-                    <div class="col-md-3"><label class="form-label">前缀</label><input id="createSubdomainPrefix" class="form-control" placeholder="例如 roxy"></div>
-                    <div class="col-md-2"><label class="form-label">月数</label><input id="createSubdomainMonths" class="form-control" type="number" min="1" max="36" value="1"></div>
-                    <div class="col-md-3"><button class="btn btn-primary w-100" onclick="createSubdomainAdmin()">手动开通</button></div>
-                </div>
-            </div>
-            <div class="row g-2 mb-3 align-items-center">
-                <div class="col-md-5">
-                    <div class="input-group">
-                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input class="form-control" placeholder="搜索前缀、用户名或邮箱" value="${escapeHtml(state.keyword || '')}" oninput="adminListQuery('subdomains').keyword=this.value.trim();adminListQuery('subdomains').page=1;scheduleAdminListReload('subdomains')">
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <select class="form-select" onchange="adminListQuery('subdomains').status=this.value;adminListQuery('subdomains').page=1;reloadAdminListKey('subdomains')">
-                        <option value="all" ${status === 'all' ? 'selected' : ''}>全部状态</option>
-                        <option value="pending" ${status === 'pending' ? 'selected' : ''}>待审核</option>
-                        <option value="approved" ${status === 'approved' ? 'selected' : ''}>已通过</option>
-                        <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>已拒绝</option>
-                        <option value="disabled" ${status === 'disabled' ? 'selected' : ''}>已禁用</option>
-                    </select>
-                </div>
-                <div class="col-md-auto ms-md-auto text-muted small">共 ${total} 条记录</div>
-            </div>
-            ${items.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>卖家</th><th>二级域名</th><th>状态</th><th>到期时间</th><th>待生效月数</th><th>最近支付</th><th>操作</th></tr></thead><tbody>${items.map(item => subdomainReviewRow(item)).join('')}</tbody></table></div>` : '<div class="text-muted py-4 text-center">暂无二级域名记录</div>'}
-            ${adminPaginationHtml(state.page, state.pageSize, total, 'setSubdomainsPage', '条记录')}
-        </div>`;
-}
-function subdomainReviewRow(item) {
-    const expiresValue = item.expires_at ? new Date(item.expires_at * 1000).toISOString().slice(0, 16) : '';
-    const pendingMonths = Number(item.pending_months || 0);
-    const actions = [];
-    if ((item.status || '') === 'pending') {
-        actions.push(`<button class="btn btn-sm btn-success me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','approve')">通过</button>`);
-        actions.push(`<button class="btn btn-sm btn-outline-danger me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','reject')">拒绝</button>`);
-    }
-    actions.push(`<button class="btn btn-sm btn-outline-primary me-1" onclick="saveSubdomainExpiry('${escapeHtml(item.id)}')">保存到期</button>`);
-    actions.push(`<button class="btn btn-sm btn-outline-secondary" onclick="toggleSubdomainDisabled('${escapeHtml(item.id)}', ${item.disabled || item.status === 'disabled' ? 'false' : 'true'})">${item.disabled || item.status === 'disabled' ? '启用' : '禁用'}</button>`);
-    return `<tr>
-        <td><strong>${escapeHtml(item.username || '-')}</strong><div class="small text-muted">${escapeHtml(item.email || item.user_id || '-')}</div></td>
-        <td><div><code>${escapeHtml(item.full_domain || item.prefix || '-')}</code></div><div class="small text-muted">前缀：${escapeHtml(item.prefix || '-')}</div></td>
-        <td>${subdomainStatusBadge(item)}</td>
-        <td><input id="subdomain-expiry-${escapeHtml(item.id)}" class="form-control form-control-sm" type="datetime-local" value="${escapeHtml(expiresValue)}"></td>
-        <td>${pendingMonths > 0 ? pendingMonths + ' 个月' : '-'}</td>
-        <td>${money(item.last_price_paid || 0)}</td>
-        <td class="text-nowrap">${actions.join('')}</td>
-    </tr>`;
-}
-function setSubdomainsPage(page) {
-    adminListQuery('subdomains').page = Number(page) || 1;
-    reloadAdminListKey('subdomains');
-}
-async function reviewSubdomain(id, decision) {
-    const item = (Admin.cache.subdomains || []).find(row => row.id === id);
-    if (!item) return showToast('记录不存在', 'error');
-    const ok = await adminConfirm({
-        title: decision === 'approve' ? '通过二级域名审核？' : '拒绝二级域名申请？',
-        message: `确认${decision === 'approve' ? '通过' : '拒绝'}卖家“${item.username || '-'}”的二级域名 ${item.full_domain || item.prefix || '-'}？`,
-        confirmText: decision === 'approve' ? '确认通过' : '确认拒绝',
-        cancelText: '取消',
-        danger: decision !== 'approve'
-    });
-    if (!ok) return;
-    const res = await request('admin.php?action=review_subdomain', 'POST', { id, decision });
-    if (!res.success) return showToast(res.message || '处理失败', 'error');
-    showToast(res.message || '已处理', 'success');
-    await loadAdminData();
-    renderSubdomainReview();
-}
-async function saveSubdomainExpiry(id) {
-    const input = document.getElementById('subdomain-expiry-' + id);
-    if (!input || !input.value) return showToast('请先选择到期时间', 'error');
-    const expiresAt = Math.floor(new Date(input.value).getTime() / 1000);
-    if (!Number.isFinite(expiresAt) || expiresAt <= 0) return showToast('到期时间无效', 'error');
-    const res = await request('admin.php?action=update_subdomain', 'POST', { id, expires_at: expiresAt });
-    if (!res.success) return showToast(res.message || '保存失败', 'error');
-    showToast('到期时间已更新', 'success');
-    await loadAdminData();
-    renderSubdomainReview();
-}
-async function toggleSubdomainDisabled(id, disabled) {
-    const res = await request('admin.php?action=update_subdomain', 'POST', { id, disabled: disabled ? '1' : '0' });
-    if (!res.success) return showToast(res.message || '操作失败', 'error');
-    showToast(disabled ? '已禁用该二级域名' : '已启用该二级域名', 'success');
-    await loadAdminData();
-    renderSubdomainReview();
-}
-async function createSubdomainAdmin() {
-    const user_id = document.getElementById('createSubdomainUserId')?.value?.trim() || '';
-    const prefix = document.getElementById('createSubdomainPrefix')?.value?.trim() || '';
-    const months = document.getElementById('createSubdomainMonths')?.value || '1';
-    if (!user_id || !prefix) return showToast('请填写用户ID和前缀', 'error');
-    const res = await request('admin.php?action=create_subdomain', 'POST', { user_id, prefix, months, auto_approve: '1' });
-    if (!res.success) return showToast(res.message || '创建失败', 'error');
-    showToast(res.message || '创建成功', 'success');
-    await loadAdminData();
-    renderSubdomainReview();
-}
-
 function renderProducts() {
     setTitle('商品管理');
     const products = Admin.cache.products || [];
-    const state = adminListQuery('products');
-    const meta = Admin.cache.productsMeta || {};
-    const total = Number(meta.total ?? products.length);
-    state.pageSize = Math.max(10, Math.min(200, Number(state.pageSize || 20)));
-    state.page = Math.max(1, Number(meta.page || state.page || 1));
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>全部商品</h5>
-                    <div class="small text-muted mt-1">共 ${total} 个商品，当前显示 ${products.length} 个。可单独删除，也可勾选多个商品后批量删除。</div>
+                    <div class="small text-muted mt-1">可单独删除，也可勾选多个商品后批量删除。</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button id="batchDeleteProductsBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedProductsAdmin()" disabled>
@@ -1368,34 +1113,26 @@ function renderProducts() {
                     </tbody>
                 </table>
             </div>
-            ${adminPaginationHtml(state.page, state.pageSize, total, 'setProductsPage', '个商品')}
         </div>`;
     updateProductBatchToolbar();
 }
-function setProductsPage(page) {
-    adminListQuery('products').page = Number(page) || 1;
-    reloadAdminListKey('products');
-}
-function setProductsPageSize(size) {
-    adminListQuery('products').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
-    adminListQuery('products').page = 1;
-    reloadAdminListKey('products');
-}
 function renderComments() {
     setTitle('评价管理');
-    const state = adminListQuery('comments');
-    const meta = Admin.cache.commentsMeta || {};
-    const keyword = state.keyword || '';
+    const keyword = (document.getElementById('commentSearchInput')?.value || '').trim().toLowerCase();
     const comments = Admin.cache.comments || [];
-    const total = Number(meta.total ?? comments.length);
-    state.pageSize = Math.max(10, Math.min(200, Number(state.pageSize || 20)));
-    state.page = Math.max(1, Number(meta.page || state.page || 1));
+    const filtered = keyword ? comments.filter(c =>
+        String(c.username || '').toLowerCase().includes(keyword) ||
+        String(c.user_id_email || '').toLowerCase().includes(keyword) ||
+        String(c.product_title || '').toLowerCase().includes(keyword) ||
+        String(c.content || '').toLowerCase().includes(keyword) ||
+        String(c.order_id || '').toLowerCase().includes(keyword)
+    ) : comments;
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>全部评价</h5>
-                    <div class="small text-muted mt-1">${keyword ? '已筛选，共 ' + total + ' 条评价' : '共 ' + total + ' 条评价'}，当前显示 ${comments.length} 条。</div>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + filtered.length + ' / ' + comments.length + ' 条评价' : '共 ' + comments.length + ' 条评价'}，支持查看详情和删除指定评价。</div>
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
@@ -1403,14 +1140,12 @@ function renderComments() {
                 <div class="col-md-7 col-lg-5">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="commentSearchInput" class="form-control" placeholder="搜索用户、商品、订单号或评价内容" value="${escapeHtml(keyword)}" oninput="adminListQuery('comments').keyword=this.value.trim();adminListQuery('comments').page=1;scheduleAdminListReload('comments')" autocomplete="off">
+                        <input id="commentSearchInput" class="form-control" placeholder="搜索用户、商品、订单号或评价内容" value="${escapeHtml(keyword)}" oninput="renderComments()" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-auto"><button class="btn btn-outline-secondary" onclick="clearCommentSearch()" ${keyword ? '' : 'disabled'}>清空</button></div>
-                <div class="col-md-auto ms-md-auto">${adminPageSizeSelect('commentPageSizeSelect', state.pageSize, 'setCommentsPageSize(this.value)')}</div>
             </div>
-            ${commentTable(comments)}
-            ${adminPaginationHtml(state.page, state.pageSize, total, 'setCommentsPage', '条评价')}
+            ${commentTable(filtered)}
         </div>`;
     if (keyword) {
         const input = document.getElementById('commentSearchInput');
@@ -1418,19 +1153,10 @@ function renderComments() {
         input?.setSelectionRange(input.value.length, input.value.length);
     }
 }
-function setCommentsPage(page) {
-    adminListQuery('comments').page = Number(page) || 1;
-    reloadAdminListKey('comments');
-}
-function setCommentsPageSize(size) {
-    adminListQuery('comments').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
-    adminListQuery('comments').page = 1;
-    reloadAdminListKey('comments');
-}
 function clearCommentSearch() {
-    adminListQuery('comments').keyword = '';
-    adminListQuery('comments').page = 1;
-    reloadAdminListKey('comments');
+    const input = document.getElementById('commentSearchInput');
+    if (input) input.value = '';
+    renderComments();
 }
 function commentRatingBadge(rating) {
     const value = Number(rating || 0);
@@ -1653,7 +1379,6 @@ function deliveryItemsForOrder(order) {
     return Array.isArray(deliveryInfo.items) ? deliveryInfo.items : [];
 }
 function hasPurchaseDeliveryData(order) {
-    if (order?.has_purchase_delivery) return true;
     return deliveryItemsForOrder(order).length > 0;
 }
 function deliveryItemDisplayText(item) {
@@ -1698,16 +1423,9 @@ function downloadTextFile(fileName, text) {
 function findPaymentOrderById(id) {
     return (Admin.cache.payOrders || []).find(o => String(o.id || '') === String(id || '')) || null;
 }
-async function openPaymentOrderDataModal(id) {
-    let order = findPaymentOrderById(id);
+function openPaymentOrderDataModal(id) {
+    const order = findPaymentOrderById(id);
     if (!order) return showToast('订单不存在，请刷新后重试', 'error');
-    if (!order.purchase_order && (order.related_id || order.has_purchase_delivery)) {
-        const res = await request(`payment.php?action=get_order_detail&id=${encodeURIComponent(id)}`);
-        if (!res.success) return showToast(res.message || '加载发货数据失败', 'error');
-        order = { ...order, ...(res.detail?.order || {}) };
-        const idx = (Admin.cache.payOrders || []).findIndex(o => String(o.id || '') === String(id || ''));
-        if (idx >= 0) Admin.cache.payOrders[idx] = { ...Admin.cache.payOrders[idx], ...order };
-    }
     const purchaseOrder = order.purchase_order || {};
     const items = deliveryItemsForOrder(order);
     const modalId = 'paymentOrderDataModal';
@@ -1784,67 +1502,7 @@ function userEmailById(id, fallback = '-') {
     return user?.email || fallback || id || '-';
 }
 function recordUserEmail(record, field = 'user_id', fallback = '-') {
-    const emailKey = field + '_email';
-    if (record?.[emailKey]) return record[emailKey];
-    const userId = record?.[field] || '';
-    const user = findAdminUserById(userId);
-    if (user?.email) return user.email;
-    if (record?.user_exists === false && userId) {
-        return `${userId}（用户不存在）`;
-    }
-    if (record?.user_username) return record.user_username;
-    if (user?.username) return user.username;
-    return fallback || userId || '-';
-}
-function orderUserDisplayHtml(record, field = 'user_id') {
-    const username = record?.user_username || findAdminUserById(record?.[field])?.username || '';
-    const email = record?.[field + '_email'] || findAdminUserById(record?.[field])?.email || '';
-    const uid = record?.[field] || '';
-    if (username && email) {
-        return `<div><strong>${escapeHtml(username)}</strong><div class="small text-muted">${escapeHtml(email)}</div></div>`;
-    }
-    if (email) return `<div>${escapeHtml(email)}</div>`;
-    if (username) return `<div><strong>${escapeHtml(username)}</strong></div>`;
-    return `<div>${escapeHtml(recordUserEmail(record, field, uid || '-'))}</div>`;
-}
-async function openPaymentOrderDetail(id) {
-    const res = await request(`payment.php?action=get_order_detail&id=${encodeURIComponent(id)}`);
-    if (!res.success) return showToast(res.message || '加载订单详情失败', 'error');
-    renderPaymentOrderDetailModal(res.detail || {});
-}
-function renderPaymentOrderDetailModal(detail) {
-    const order = detail.order || {};
-    const linkedUser = detail.linked_user || null;
-    adminModal({
-        title: `订单详情 · ${escapeHtml(order.trade_no || order.id || '-')}`,
-        size: 'lg',
-        body: `
-            <div class="row g-3 mb-3">
-                <div class="col-md-6"><div class="small text-muted">交易号</div><code>${escapeHtml(order.trade_no || order.id || '-')}</code></div>
-                <div class="col-md-6"><div class="small text-muted">订单ID</div><code>${escapeHtml(order.id || '-')}</code></div>
-                <div class="col-md-6"><div class="small text-muted">类型</div><strong>${escapeHtml(orderTypeLabel(order.type, order.pay_type))}</strong></div>
-                <div class="col-md-6"><div class="small text-muted">支付方式</div><strong>${escapeHtml(order.pay_type || '-')}</strong></div>
-                <div class="col-md-6"><div class="small text-muted">支付状态</div>${orderStatusDisplay(order)}</div>
-                <div class="col-md-6"><div class="small text-muted">金额</div><strong>${money(order.amount)}</strong></div>
-                <div class="col-md-6"><div class="small text-muted">实付</div><strong>${money(order.actual_amount)}</strong></div>
-                <div class="col-md-6"><div class="small text-muted">手续费</div><strong>${money(order.fee || 0)}</strong></div>
-                <div class="col-md-6"><div class="small text-muted">创建时间</div>${dateText(order.created_at)}</div>
-                <div class="col-md-6"><div class="small text-muted">支付时间</div>${order.paid_at ? dateText(order.paid_at) : '-'}</div>
-                <div class="col-12"><div class="small text-muted">说明</div><div>${escapeHtml(order.title || '-')}<div class="small text-muted">${escapeHtml(order.description || '')}</div></div></div>
-                ${order.delivery_error ? `<div class="col-12"><div class="small text-muted">备注</div><div class="small text-danger">${escapeHtml(order.delivery_error)}</div></div>` : ''}
-            </div>
-            <div class="border rounded-3 p-3 bg-light-subtle">
-                <div class="fw-semibold mb-2">用户账号</div>
-                <div class="row g-2 small">
-                    <div class="col-md-4"><span class="text-muted">用户名</span><div><strong>${escapeHtml(order.user_username || linkedUser?.username || '-')}</strong></div></div>
-                    <div class="col-md-4"><span class="text-muted">邮箱</span><div>${escapeHtml(order.user_id_email || order.guest_email || linkedUser?.email || '-')}</div></div>
-                    <div class="col-md-4"><span class="text-muted">user_id</span><div><code>${escapeHtml(order.user_id || '-')}</code></div></div>
-                    ${linkedUser ? `<div class="col-md-4"><span class="text-muted">当前余额</span><div>${money(linkedUser.balance)}</div></div><div class="col-md-4"><span class="text-muted">冻结余额</span><div>${money(linkedUser.frozen_balance)}</div></div>` : ''}
-                </div>
-            </div>
-        `,
-        footer: '<button class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>'
-    });
+    return record?.[field + '_email'] || userEmailById(record?.[field], fallback || record?.[field] || '-');
 }
 function userEmailByNameOrId(name, id = '') {
     const users = Admin.cache.users || [];
@@ -1864,25 +1522,26 @@ function complaintStatusBadge(status) {
 }
 function renderComplaints() {
     setTitle('投诉管理');
-    const state = adminListQuery('complaints');
-    const meta = Admin.cache.complaintsMeta || {};
-    const summary = Admin.cache.complaintsSummary || {};
-    const status = state.status || document.getElementById('complaintStatusFilter')?.value || 'all';
-    state.status = status;
-    const keyword = state.keyword || '';
-    const complaints = Admin.cache.complaints || [];
-    const allCount = Number(summary.all ?? meta.total ?? complaints.length);
-    const openCount = Number(summary.open ?? 0);
-    const total = Number(meta.total ?? complaints.length);
-    state.pageSize = Math.max(10, Math.min(200, Number(document.getElementById('complaintPageSizeSelect')?.value || state.pageSize || 20)));
-    state.page = Math.max(1, Number(meta.page || state.page || 1));
-    const pageComplaints = complaints;
+    const status = document.getElementById('complaintStatusFilter')?.value || 'all';
+    const keyword = (document.getElementById('complaintSearchInput')?.value || '').trim().toLowerCase();
+    let complaints = Admin.cache.complaints || [];
+    if (status !== 'all') complaints = complaints.filter(o => (o.complaint?.status || '') === status);
+    if (keyword) {
+        complaints = complaints.filter(o => [o.id, o.product_title, o.buyer_name, o.seller_name, o.complaint?.reason].some(v => String(v || '').toLowerCase().includes(keyword)));
+    }
+    const allCount = Admin.cache.complaints?.length || 0;
+    const openCount = (Admin.cache.complaints || []).filter(o => (o.complaint?.status || '') === 'open').length;
+    const state = Admin.listState.complaints || (Admin.listState.complaints = { page: 1, pageSize: 10 });
+    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('complaintPageSizeSelect')?.value || state.pageSize || 10)));
+    const totalPages = Math.max(1, Math.ceil(complaints.length / state.pageSize));
+    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
+    const pageComplaints = complaints.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>投诉管理</h5>
-                    <div class="small text-muted mt-1">${keyword || status !== 'all' ? '已筛选，共 ' + total + ' / ' + allCount + ' 条' : '共 ' + allCount + ' 条'}，进行中 ${openCount} 条，当前显示 ${pageComplaints.length} 条</div>
+                    <div class="small text-muted mt-1">${keyword || status !== 'all' ? '已筛选 ' + complaints.length + ' / ' + allCount + ' 条' : '共 ' + allCount + ' 条'}，进行中 ${openCount} 条，当前显示 ${pageComplaints.length} 条</div>
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
             </div>
@@ -1890,11 +1549,11 @@ function renderComplaints() {
                 <div class="col-md-5 col-lg-4">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="adminListQuery('complaints').keyword=this.value.trim();adminListQuery('complaints').page=1;scheduleAdminListReload('complaints')" autocomplete="off">
+                        <input id="complaintSearchInput" class="form-control" placeholder="搜索订单/商品/买家/卖家/原因" value="${escapeHtml(keyword)}" oninput="Admin.listState.complaints.page=1;renderComplaints()" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <select id="complaintStatusFilter" class="form-select" onchange="adminListQuery('complaints').status=this.value;adminListQuery('complaints').page=1;reloadAdminListKey('complaints')">
+                    <select id="complaintStatusFilter" class="form-select" onchange="Admin.listState.complaints.page=1;renderComplaints()">
                         ${[['all','全部状态'],['open','处理中'],['processing','跟进中'],['resolved','卖家胜'],['rejected','买家胜']].map(([v,t]) => `<option value="${v}" ${status === v ? 'selected' : ''}>${t}</option>`).join('')}
                     </select>
                 </div>
@@ -1913,7 +1572,7 @@ function renderComplaints() {
                     <tbody>${complaintAdminTableRows(pageComplaints)}</tbody>
                 </table>
             </div>
-            ${adminPaginationHtml(state.page, state.pageSize, total, 'setComplaintsPage', '条投诉')}
+            ${adminPaginationHtml(state.page, state.pageSize, complaints.length, 'setComplaintsPage', '条投诉')}
         </div>`;
     if (keyword) {
         const input = document.getElementById('complaintSearchInput');
@@ -1921,18 +1580,14 @@ function renderComplaints() {
         input?.setSelectionRange(input.value.length, input.value.length);
     }
 }
-function adminOrderTradeNo(order) {
-    return order?.payment_trade_no || order?.id || '-';
-}
 function complaintAdminTableRows(orders) {
     if (!orders.length) return '<tr><td colspan="7" class="text-center text-muted py-4">暂无投诉记录</td></tr>';
     return orders.map(order => {
         const complaint = order.complaint || {};
         const id = escapeHtml(order.id || '');
-        const tradeNo = escapeHtml(adminOrderTradeNo(order));
         return `
             <tr class="complaint-row-toggle" data-complaint-id="${id}" onclick="toggleComplaintDetail('${id}')">
-                <td><strong>${escapeHtml(order.product_title || '-')}</strong><div class="small text-muted">交易号 <code>${tradeNo}</code></div></td>
+                <td><strong>${escapeHtml(order.product_title || '-')}</strong><div class="small text-muted"><code>${id}</code></div></td>
                 <td>${escapeHtml(order.buyer_name || '-')}<div class="small text-muted">${escapeHtml(recordUserEmail(order, 'buyer_id', order.buyer_id || ''))}</div></td>
                 <td>${escapeHtml(order.seller_name || '-')}<div class="small text-muted">${escapeHtml(recordUserEmail(order, 'seller_id', order.seller_id || ''))}</div></td>
                 <td>${money(order.price)}<div class="small text-danger">冻结 ${money(order.frozen_amount || 0)}</div></td>
@@ -2009,18 +1664,19 @@ function toggleComplaintDetail(orderId, forceOpen = null) {
     if (shouldOpen && summaryRow) summaryRow.classList.add('expanded');
 }
 function setComplaintsPage(page) {
-    adminListQuery('complaints').page = Number(page) || 1;
-    reloadAdminListKey('complaints');
+    Admin.listState.complaints.page = Number(page) || 1;
+    renderComplaints();
 }
 function setComplaintsPageSize(size) {
-    adminListQuery('complaints').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
-    adminListQuery('complaints').page = 1;
-    reloadAdminListKey('complaints');
+    Admin.listState.complaints.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
+    Admin.listState.complaints.page = 1;
+    renderComplaints();
 }
 function clearComplaintSearch() {
-    adminListQuery('complaints').keyword = '';
-    adminListQuery('complaints').page = 1;
-    reloadAdminListKey('complaints');
+    const input = document.getElementById('complaintSearchInput');
+    if (input) input.value = '';
+    Admin.listState.complaints.page = 1;
+    renderComplaints();
 }
 function complaintStatusText(status) { return ({ open: '处理中', processing: '跟进中', resolved: '卖家胜', rejected: '买家胜' })[status] || status; }
 async function saveAdminComplaintReply(orderId) {
@@ -2056,6 +1712,7 @@ async function updateAdminComplaintStatus(orderId, status) {
 function paymentOrderAdminCard(o) {
     const id = escapeHtml(o.id || '');
     const tradeNo = escapeHtml(o.trade_no || o.id || '-');
+    const userEmail = escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'));
     return `
         <div class="admin-order-card">
             <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
@@ -2072,7 +1729,7 @@ function paymentOrderAdminCard(o) {
             </div>
             <div class="admin-order-desc">${escapeHtml(o.description || '-')} ${orderDeliveryNotice(o)}</div>
             <div class="admin-order-grid">
-                <div><span>用户账号</span>${orderUserDisplayHtml(o, 'user_id')}</div>
+                <div><span>用户邮箱</span><strong>${userEmail}</strong></div>
                 <div><span>类型</span><strong>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</strong></div>
                 <div><span>金额</span><strong class="${Number(o.amount || 0) < 0 ? 'text-danger' : 'text-success'}">${money(o.amount)}</strong></div>
                 <div><span>实付</span><strong>${money(o.actual_amount)}</strong></div>
@@ -2080,7 +1737,6 @@ function paymentOrderAdminCard(o) {
             </div>
             <div id="orderStatusEditorCard-${id}" class="order-status-editor-card hidden">${orderStatusEditor(o)}</div>
             <div class="admin-order-actions">
-                <button class="btn btn-sm btn-outline-secondary" onclick="openPaymentOrderDetail('${id}')">详情</button>
                 ${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success" onclick="openPaymentOrderDataModal('${id}')">查看数据</button>` : ''}
                 <button class="btn btn-sm btn-outline-primary" onclick="toggleOrderStatusEditor('${id}', true)">修改状态</button>
                 <button class="btn btn-sm btn-outline-danger" onclick="deletePaymentOrderAdmin('${id}')">删除</button>
@@ -2091,19 +1747,22 @@ function paymentOrderAdminCard(o) {
 
 function renderOrders() {
     setTitle('订单记录');
-    const state = adminListQuery('orders');
-    const meta = Admin.cache.payOrdersMeta || {};
-    const keyword = state.keyword || '';
-    const pageOrders = Admin.cache.payOrders || [];
-    const total = Number(meta.total ?? pageOrders.length);
-    state.pageSize = Math.max(10, Math.min(200, Number(document.getElementById('orderPageSizeSelect')?.value || state.pageSize || 20)));
-    state.page = Math.max(1, Number(meta.page || state.page || 1));
+    const keyword = (document.getElementById('orderSearchInput')?.value || '').trim().toLowerCase();
+    const allOrders = Admin.cache.payOrders || [];
+    const state = Admin.listState.orders || (Admin.listState.orders = { page: 1, pageSize: 10 });
+    state.pageSize = Math.max(10, Math.min(1000, Number(document.getElementById('orderPageSizeSelect')?.value || state.pageSize || 10)));
+    const orders = keyword ? allOrders.filter(o => [
+        o.id, o.trade_no, o.user_id, recordUserEmail(o, 'user_id', ''), o.pay_type, o.type, orderTypeLabel(o.type, o.pay_type), o.title, o.description, o.status, orderStatusMeta(o.status).label, o.delivery_status, o.delivery_error
+    ].some(v => String(v || '').toLowerCase().includes(keyword))) : allOrders;
+    const totalPages = Math.max(1, Math.ceil(orders.length / state.pageSize));
+    state.page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
+    const pageOrders = orders.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
     document.getElementById('adminContent').innerHTML = `
         <div class="panel">
             <div class="panel-title">
                 <div>
                     <h5>支付订单</h5>
-                    <div class="small text-muted mt-1">${keyword ? '已筛选，共 ' + total + ' 条订单' : '共 ' + total + ' 条订单'}，当前显示 ${pageOrders.length} 条</div>
+                    <div class="small text-muted mt-1">${keyword ? '已筛选 ' + orders.length + ' / ' + allOrders.length + ' 条订单' : '共 ' + allOrders.length + ' 条订单'}，当前显示 ${pageOrders.length} 条</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button id="batchDeleteOrdersBtn" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedPaymentOrdersAdmin()" disabled><i class="bi bi-trash3 me-1"></i>删除选中</button>
@@ -2116,7 +1775,7 @@ function renderOrders() {
                 <div class="col-md-7 col-lg-5">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input id="orderSearchInput" class="form-control" placeholder="搜索交易号、邮箱、类型、说明、状态" value="${escapeHtml(keyword)}" oninput="adminListQuery('orders').keyword=this.value.trim();adminListQuery('orders').page=1;scheduleAdminListReload('orders')" autocomplete="off">
+                        <input id="orderSearchInput" class="form-control" placeholder="搜索交易号、邮箱、类型、说明、状态" value="${escapeHtml(keyword)}" oninput="Admin.listState.orders.page=1;renderOrders()" autocomplete="off">
                     </div>
                 </div>
                 <div class="col-md-auto">
@@ -2132,21 +1791,21 @@ function renderOrders() {
             <div class="table-responsive admin-order-table-wrap">
                 <table class="table">
                     <thead>
-                        <tr><th style="width:44px"><input class="form-check-input" type="checkbox" id="orderSelectAll" onchange="toggleAllOrderSelection(this.checked)" ${pageOrders.length ? '' : 'disabled'}></th><th>交易号</th><th>用户账号</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
+                        <tr><th style="width:44px"><input class="form-check-input" type="checkbox" id="orderSelectAll" onchange="toggleAllOrderSelection(this.checked)" ${pageOrders.length ? '' : 'disabled'}></th><th>交易号</th><th>用户邮箱</th><th>类型</th><th>说明</th><th>金额</th><th>实付</th><th>状态</th><th>创建时间</th><th class="text-end">操作</th></tr>
                     </thead>
                     <tbody>
                         ${pageOrders.map(o => `
                             <tr>
                                 <td><input class="form-check-input order-select" type="checkbox" value="${escapeHtml(o.id)}" onchange="updateOrderBatchToolbar()"></td>
                                 <td><code>${escapeHtml(o.trade_no || o.id)}</code></td>
-                                <td>${orderUserDisplayHtml(o, 'user_id')}</td>
+                                <td>${escapeHtml(recordUserEmail(o, 'user_id', o.user_id || '-'))}</td>
                                 <td>${escapeHtml(orderTypeLabel(o.type, o.pay_type))}</td>
                                 <td><div class="fw-semibold">${escapeHtml(o.title || '-')}</div><div class="small text-muted">${escapeHtml(o.description || '')}</div>${orderDeliveryNotice(o)}</td>
                                 <td>${money(o.amount)}</td>
                                 <td>${money(o.actual_amount)}</td>
                                 <td>${orderStatusDisplay(o)}</td>
                                 <td>${dateText(o.created_at)}</td>
-                                <td class="text-end"><div class="d-inline-flex justify-content-end align-items-center gap-1 flex-nowrap"><button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="openPaymentOrderDetail('${escapeHtml(o.id)}')">详情</button>${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success text-nowrap" onclick="openPaymentOrderDataModal('${escapeHtml(o.id)}')">查看数据</button>` : ''}<button class="btn btn-sm btn-outline-danger text-nowrap" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></div></td>
+                                <td class="text-end"><div class="d-inline-flex justify-content-end align-items-center gap-1 flex-nowrap">${hasPurchaseDeliveryData(o) ? `<button class="btn btn-sm btn-outline-success text-nowrap" onclick="openPaymentOrderDataModal('${escapeHtml(o.id)}')">查看数据</button>` : ''}<button class="btn btn-sm btn-outline-danger text-nowrap" onclick="deletePaymentOrderAdmin('${escapeHtml(o.id)}')">删除</button></div></td>
                             </tr>
                             <tr id="orderStatusEditor-${escapeHtml(o.id)}" class="order-status-editor-row hidden">
                                 <td colspan="10">${orderStatusEditor(o)}</td>
@@ -2155,7 +1814,7 @@ function renderOrders() {
                     </tbody>
                 </table>
             </div>
-            ${adminPaginationHtml(state.page, state.pageSize, total, 'setOrdersPage', '条订单')}
+            ${adminPaginationHtml(state.page, state.pageSize, orders.length, 'setOrdersPage', '条订单')}
         </div>`;
     updateOrderBatchToolbar();
     if (keyword) {
@@ -2165,18 +1824,19 @@ function renderOrders() {
     }
 }
 function setOrdersPage(page) {
-    adminListQuery('orders').page = Number(page) || 1;
-    reloadAdminListKey('orders');
+    Admin.listState.orders.page = Number(page) || 1;
+    renderOrders();
 }
 function setOrdersPageSize(size) {
-    adminListQuery('orders').pageSize = Math.max(10, Math.min(200, Number(size) || 20));
-    adminListQuery('orders').page = 1;
-    reloadAdminListKey('orders');
+    Admin.listState.orders.pageSize = Math.max(10, Math.min(1000, Number(size) || 10));
+    Admin.listState.orders.page = 1;
+    renderOrders();
 }
 function clearOrderSearch() {
-    adminListQuery('orders').keyword = '';
-    adminListQuery('orders').page = 1;
-    reloadAdminListKey('orders');
+    const input = document.getElementById('orderSearchInput');
+    if (input) input.value = '';
+    Admin.listState.orders.page = 1;
+    renderOrders();
 }
 function selectedPaymentOrderIds() {
     return Array.from(document.querySelectorAll('.order-select:checked')).map(input => input.value).filter(Boolean);
@@ -2425,7 +2085,6 @@ function toggleAdminCardCreateType() {
     const type = document.getElementById('cardType')?.value || 'balance';
     document.getElementById('cardAmountWrap')?.classList.toggle('d-none', type !== 'balance');
     document.getElementById('cardMembershipWrap')?.classList.toggle('d-none', type !== 'membership');
-    document.getElementById('cardSubdomainWrap')?.classList.toggle('d-none', type !== 'subdomain');
 }
 function renderCards() {
     setTitle('卡密管理');
@@ -2436,7 +2095,7 @@ function renderCards() {
             <div class="panel-title">
                 <div>
                     <h5>生成卡密</h5>
-                    <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级；二级域名卡用于兑换指定月数的二级域名。</div>
+                    <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级，Free 默认等级不可生成。</div>
                 </div>
             </div>
             <div class="row g-3 align-items-end">
@@ -2445,7 +2104,6 @@ function renderCards() {
                     <select id="cardType" class="form-select" onchange="toggleAdminCardCreateType()">
                         <option value="balance">余额卡</option>
                         <option value="membership">会员卡</option>
-                        <option value="subdomain">二级域名卡</option>
                     </select>
                 </div>
                 <div class="col-md-6 col-lg-3" id="cardAmountWrap">
@@ -2455,10 +2113,6 @@ function renderCards() {
                 <div class="col-md-6 col-lg-4 d-none" id="cardMembershipWrap">
                     <label class="form-label">会员权益</label>
                     <select id="cardTargetLevel" class="form-select" ${hasMembershipLevels ? '' : 'disabled'}>${cardMembershipOptionsAdmin()}</select>
-                </div>
-                <div class="col-md-6 col-lg-4 d-none" id="cardSubdomainWrap">
-                    <label class="form-label">兑换月数</label>
-                    <input id="cardSubdomainMonths" class="form-control" type="number" min="1" max="36" value="1" placeholder="例如：1">
                 </div>
                 <div class="col-md-6 col-lg-2">
                     <label class="form-label">生成数量</label>
@@ -2493,16 +2147,14 @@ function renderCards() {
                     </thead>
                     <tbody>
                         ${cards.map(c => {
-                            const type = ['membership', 'subdomain'].includes(c.card_type || 'balance') ? c.card_type : 'balance';
-                            const typeLabel = type === 'membership' ? '<span class="badge-soft primary">会员卡</span>' : (type === 'subdomain' ? '<span class="badge-soft warning">二级域名卡</span>' : '<span class="badge-soft success">余额卡</span>');
-                            const valueLabel = type === 'membership' ? escapeHtml(c.target_level || '-') : (type === 'subdomain' ? escapeHtml((c.target_level || '1') + ' 个月') : '余额充值');
+                            const type = (c.card_type || 'balance') === 'membership' ? 'membership' : 'balance';
                             return `
                             <tr>
                                 <td><input class="form-check-input card-select" type="checkbox" value="${escapeHtml(c.id)}" onchange="updateCardBatchToolbar()"></td>
                                 <td><code>${escapeHtml(c.code)}</code></td>
-                                <td>${typeLabel}</td>
-                                <td>${type === 'balance' ? money(c.amount) : '-'}</td>
-                                <td>${valueLabel}</td>
+                                <td>${type === 'membership' ? '<span class="badge-soft primary">会员卡</span>' : '<span class="badge-soft success">余额卡</span>'}</td>
+                                <td>${type === 'membership' ? '-' : money(c.amount)}</td>
+                                <td>${type === 'membership' ? escapeHtml(c.target_level || '-') : '余额充值'}</td>
                                 <td>${c.used ? '<span class="badge-soft danger">已使用</span>' : '<span class="badge-soft success">未使用</span>'}</td>
                                 <td><code class="small">${escapeHtml(c.used_user_id || c.used_by || '-')}</code></td>
                                 <td>${escapeHtml(c.used_user_email || '-')}</td>
@@ -2591,10 +2243,9 @@ async function createCards() {
     const cardType = document.getElementById('cardType')?.value || 'balance';
     const amount = document.getElementById('cardAmount')?.value || '';
     const count = document.getElementById('cardCount')?.value || '1';
-    let targetLevel = document.getElementById('cardTargetLevel')?.value || '';
+    const targetLevel = document.getElementById('cardTargetLevel')?.value || '';
     if (cardType === 'balance' && Number(amount) <= 0) return showToast('请输入大于 0 的充值金额', 'error');
     if (cardType === 'membership' && !targetLevel) return showToast('请选择要生成的会员权益', 'error');
-    if (cardType === 'subdomain') targetLevel = document.getElementById('cardSubdomainMonths')?.value || '1';
     const res = await request('card.php?action=create', 'POST', { amount, count, card_type: cardType, target_level: targetLevel });
     if (!res.success) return showToast(res.message || '生成失败', 'error');
     showToast(res.message || '生成成功', 'success');
@@ -3022,8 +2673,7 @@ function renderSettings() {
         ['agreements', '协议管理'],
         ['email', '邮箱验证'],
         ['captcha', '人机验证'],
-        ['announcement', '公告设置'],
-        ['subdomain', '二级域名']
+        ['announcement', '公告设置']
     ];
     document.getElementById('adminContent').innerHTML = `
         <div class="settings-tabs">
@@ -3033,16 +2683,9 @@ function renderSettings() {
     `;
     renderSettingsContent();
 }
-async function switchSettingsTab(tab) {
-    Admin.settingsTab = tab;
-    saveAdminState();
-    if (tab === 'payment' && !Admin.dataLoaded.payConfigs) {
-        await loadAdminKeys(['payConfigs']);
-    }
-    renderSettings();
-}
+function switchSettingsTab(tab) { Admin.settingsTab = tab; saveAdminState(); renderSettings(); }
 function renderSettingsContent() {
-    const map = { basic: renderBasicSettings, payment: renderPaymentSettingsOnly, login: renderReservedLoginSettings, agreements: renderAgreementSettings, email: renderReservedEmailSettings, captcha: renderReservedCaptchaSettings, announcement: renderReservedAnnouncementSettings, subdomain: renderSubdomainSettings };
+    const map = { basic: renderBasicSettings, payment: renderPaymentSettingsOnly, login: renderReservedLoginSettings, agreements: renderAgreementSettings, email: renderReservedEmailSettings, captcha: renderReservedCaptchaSettings, announcement: renderReservedAnnouncementSettings };
     (map[Admin.settingsTab] || renderBasicSettings)('settingsContent');
 }
 function renderBasicSettings(targetId = 'settingsContent') {
@@ -3105,53 +2748,6 @@ function renderBasicSettings(targetId = 'settingsContent') {
                 </div>
             </div>
         </div>`;
-}
-function renderSubdomainSettings(targetId = 'settingsContent') {
-    const c = Admin.cache.sysConfig || {};
-    const enabled = c.subdomain_enabled === true || c.subdomain_enabled === '1' || c.subdomain_enabled === 1;
-    document.getElementById(targetId).innerHTML = `
-        <div class="panel settings-basic-panel">
-            <div class="panel-title">
-                <div>
-                    <h5 class="mb-1">二级域名</h5>
-                    <div class="text-muted small">配置卖家独立店铺域名。DNS 需已配置泛解析，例如填写 <code>*.az0.cn</code> 或 <code>az0.cn</code>。注意：这里只配置主域名，卖家还需在控制台购买/兑换二级域名，并在「域名审核」中通过审核后才会生效。</div>
-                </div>
-            </div>
-            <div class="row g-3">
-                <div class="col-lg-6">
-                    <label class="admin-setting-card ${enabled ? 'is-on' : 'is-off'} h-100" for="setSubdomainEnabled">
-                        <span class="admin-setting-icon"><i class="bi bi-globe2"></i></span>
-                        <span class="admin-setting-copy">
-                            <span class="admin-setting-title">开启二级域名功能</span>
-                            <span class="admin-setting-desc">开启后卖家可在控制台申请独立二级域名店铺。</span>
-                            <span class="admin-setting-state">当前状态：${enabled ? '已开启' : '已关闭'}</span>
-                        </span>
-                        <span class="form-check form-switch admin-setting-switch">
-                            <input class="form-check-input" type="checkbox" id="setSubdomainEnabled" ${enabled ? 'checked' : ''}>
-                        </span>
-                    </label>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">主域名</label>
-                    <input id="setSubdomainBaseDomain" class="form-control" placeholder="例如：*.az0.cn 或 az0.cn" value="${escapeHtml(c.subdomain_base_domain || '')}">
-                    <div class="form-text">卖家填写前缀后访问形如 <code>前缀.az0.cn</code></div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">每月价格（元）</label>
-                    <input id="setSubdomainMonthlyPrice" class="form-control" type="number" min="0.01" step="0.01" value="${escapeHtml(c.subdomain_monthly_price ?? 10)}">
-                </div>
-                <div class="col-12">
-                    <button class="btn btn-primary" onclick="saveSubdomainSettings()"><i class="bi bi-check2-circle me-1"></i>保存二级域名设置</button>
-                </div>
-            </div>
-        </div>`;
-}
-async function saveSubdomainSettings() {
-    await saveSystemConfigFields({
-        subdomain_enabled: document.getElementById('setSubdomainEnabled')?.checked ? '1' : '0',
-        subdomain_base_domain: document.getElementById('setSubdomainBaseDomain')?.value || '',
-        subdomain_monthly_price: document.getElementById('setSubdomainMonthlyPrice')?.value || '10'
-    }, '二级域名设置已保存');
 }
 async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0', enable_membership_card_activation: document.getElementById('setEnableMembershipCardActivation')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
 async function saveSystemConfigFields(data, successMessage = '保存成功') { const res = await request('finance.php?action=update_system_config', 'POST', data); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast(successMessage, 'success'); await loadAdminData(); }
@@ -3242,193 +2838,6 @@ async function saveLoginSettings() {
     if (fieldValue('oauthCaihongKey')) data.oauth_caihong_key = fieldValue('oauthCaihongKey');
     await saveSystemConfigFields(data, '登录设置已保存');
 }
-function normalizeAdminEmailProfiles(config = {}) {
-    let profiles = config.email_profiles;
-    if (typeof profiles === 'string') {
-        try { profiles = JSON.parse(profiles); } catch (e) { profiles = []; }
-    }
-    if (!Array.isArray(profiles) || !profiles.length) {
-        const fromEmail = config.resend_from_email || config.smtp_username || '';
-        const hasLegacy = fromEmail || config.resend_api_key || config.smtp_host;
-        if (hasLegacy) {
-            profiles = [{
-                id: 'legacy',
-                name: '默认发信',
-                enabled: true,
-                provider: config.email_provider || 'smtp',
-                resend_from_email: config.resend_from_email || '',
-                resend_from_name: config.resend_from_name || 'KeyNest',
-                resend_api_key: '',
-                smtp_host: config.smtp_host || '',
-                smtp_port: config.smtp_port || 465,
-                smtp_username: config.smtp_username || '',
-                smtp_password: '',
-                smtp_secure: config.smtp_secure || 'ssl'
-            }];
-        } else {
-            profiles = [{
-                id: 'email_' + Date.now(),
-                name: '发信方式 1',
-                enabled: true,
-                provider: 'smtp',
-                resend_from_email: '',
-                resend_from_name: config.resend_from_name || 'KeyNest',
-                resend_api_key: '',
-                smtp_host: 'smtp.qq.com',
-                smtp_port: 465,
-                smtp_username: '',
-                smtp_password: '',
-                smtp_secure: 'ssl'
-            }];
-        }
-    }
-    return profiles;
-}
-function emailProfileSummary(profile = {}) {
-    const name = profile.name || profile.resend_from_email || profile.smtp_username || '未命名发信';
-    const provider = profile.provider === 'resend' ? 'Resend' : 'SMTP';
-    return `${name} · ${provider}`;
-}
-const EMAIL_PROFILE_COLLAPSE_KEY = 'keynest_admin_email_profile_collapsed';
-const EMAIL_PROFILE_TEST_TO_KEY = 'keynest_admin_email_test_to';
-function getEmailProfileCollapseMap() {
-    try {
-        const raw = localStorage.getItem(EMAIL_PROFILE_COLLAPSE_KEY);
-        const map = raw ? JSON.parse(raw) : {};
-        return map && typeof map === 'object' ? map : {};
-    } catch (e) {
-        return {};
-    }
-}
-function isEmailProfileCollapsed(profileId, index = 0) {
-    const map = getEmailProfileCollapseMap();
-    if (Object.prototype.hasOwnProperty.call(map, profileId)) {
-        return !!map[profileId];
-    }
-    return index > 0;
-}
-function setEmailProfileCollapsed(profileId, collapsed) {
-    const map = getEmailProfileCollapseMap();
-    map[profileId] = !!collapsed;
-    localStorage.setItem(EMAIL_PROFILE_COLLAPSE_KEY, JSON.stringify(map));
-}
-function removeEmailProfileCollapseState(profileId) {
-    const map = getEmailProfileCollapseMap();
-    delete map[profileId];
-    localStorage.setItem(EMAIL_PROFILE_COLLAPSE_KEY, JSON.stringify(map));
-}
-function emailProfileCardHtml(profile, index, collapsed = true) {
-    const id = escapeHtml(profile.id || ('email_' + index));
-    const provider = profile.provider || 'smtp';
-    const savedTestTo = localStorage.getItem(EMAIL_PROFILE_TEST_TO_KEY) || '';
-    return `
-        <div class="email-profile-card border rounded-3 mb-3" data-profile-id="${id}">
-            <div class="email-profile-head d-flex justify-content-between align-items-center gap-2 p-3" onclick="toggleEmailProfileCard('${id}')" style="cursor:pointer">
-                <div class="min-width-0">
-                    <div class="fw-semibold">发信方式 ${index + 1}</div>
-                    <div class="small text-muted text-truncate">${escapeHtml(emailProfileSummary(profile))}</div>
-                </div>
-                <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation()">
-                    <div class="form-check form-switch m-0">
-                        <input class="form-check-input email-profile-enabled" type="checkbox" data-profile-id="${id}" ${profile.enabled !== false ? 'checked' : ''}>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeEmailProfile('${id}')">删除</button>
-                    <i class="bi bi-chevron-${collapsed ? 'down' : 'up'} text-muted"></i>
-                </div>
-            </div>
-            <div id="emailProfileBody-${id}" class="email-profile-body border-top p-3 ${collapsed ? 'hidden' : ''}">
-                <div class="row g-3">
-                    <div class="col-md-4"><label class="form-label">配置名称</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="name" value="${escapeHtml(profile.name || '')}" placeholder="例如：QQ邮箱1"></div>
-                    <div class="col-md-4"><label class="form-label">发信方式</label><select class="form-select email-profile-field email-profile-provider" data-profile-id="${id}" data-field="provider" onchange="toggleEmailProfileProvider('${id}')"><option value="smtp" ${provider === 'smtp' ? 'selected' : ''}>SMTP</option><option value="resend" ${provider === 'resend' ? 'selected' : ''}>Resend</option></select></div>
-                    <div class="col-md-4"><label class="form-label">发件人邮箱 From</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="resend_from_email" value="${escapeHtml(profile.resend_from_email || '')}" placeholder="noreply@example.com"></div>
-                    <div class="col-md-4"><label class="form-label">发件人名称</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="resend_from_name" value="${escapeHtml(profile.resend_from_name || 'KeyNest')}"></div>
-                    <div class="col-md-8 email-profile-resend-${id} ${provider === 'resend' ? '' : 'hidden'}"><label class="form-label">Resend API Key</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="resend_api_key" type="password" placeholder="re_xxxx；留空表示不修改"></div>
-                    <div class="col-md-4 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 主机</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_host" value="${escapeHtml(profile.smtp_host || '')}" placeholder="smtp.qq.com"></div>
-                    <div class="col-md-2 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">端口</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_port" type="number" value="${escapeHtml(profile.smtp_port || 465)}"></div>
-                    <div class="col-md-2 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">加密</label><select class="form-select email-profile-field" data-profile-id="${id}" data-field="smtp_secure"><option value="ssl" ${profile.smtp_secure === 'ssl' ? 'selected' : ''}>SSL</option><option value="tls" ${profile.smtp_secure === 'tls' ? 'selected' : ''}>TLS</option><option value="none" ${profile.smtp_secure === 'none' ? 'selected' : ''}>无</option></select></div>
-                    <div class="col-md-4 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 账号</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_username" value="${escapeHtml(profile.smtp_username || '')}"></div>
-                    <div class="col-md-6 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 密码 / 授权码</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_password" type="password" placeholder="留空表示不修改"></div>
-                    <div class="col-12 mt-1 pt-3 border-top">
-                        <label class="form-label mb-1">测试此发信配置</label>
-                        <div class="input-group">
-                            <input class="form-control email-profile-test-to" data-profile-id="${id}" value="${escapeHtml(savedTestTo)}" placeholder="输入收件邮箱，仅测试当前这一条" oninput="localStorage.setItem(EMAIL_PROFILE_TEST_TO_KEY, this.value)">
-                            <button class="btn btn-outline-primary" type="button" onclick="testEmailProfile('${id}')">测试发送</button>
-                        </div>
-                        <div class="config-help mt-1">只使用本条配置发送测试邮件，不会轮番切换其他邮箱。</div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-}
-function toggleEmailProfileCard(id) {
-    const body = document.getElementById('emailProfileBody-' + id);
-    const card = document.querySelector(`.email-profile-card[data-profile-id="${id}"]`);
-    if (!body || !card) return;
-    body.classList.toggle('hidden');
-    setEmailProfileCollapsed(id, body.classList.contains('hidden'));
-    const icon = card.querySelector('.bi-chevron-down, .bi-chevron-up');
-    if (icon) {
-        icon.classList.toggle('bi-chevron-down', body.classList.contains('hidden'));
-        icon.classList.toggle('bi-chevron-up', !body.classList.contains('hidden'));
-    }
-}
-function toggleEmailProfileProvider(id) {
-    const provider = document.querySelector(`.email-profile-provider[data-profile-id="${id}"]`)?.value || 'smtp';
-    document.querySelectorAll(`.email-profile-smtp-${id}`).forEach(el => el.classList.toggle('hidden', provider !== 'smtp'));
-    document.querySelectorAll(`.email-profile-resend-${id}`).forEach(el => el.classList.toggle('hidden', provider !== 'resend'));
-}
-function addEmailProfileRow() {
-    const list = document.getElementById('emailProfilesList');
-    if (!list) return;
-    const count = list.querySelectorAll('.email-profile-card').length + 1;
-    const profile = {
-        id: 'email_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        name: '发信方式 ' + count,
-        enabled: true,
-        provider: 'smtp',
-        resend_from_email: '',
-        resend_from_name: fieldValue('resendFromNameGlobal') || 'KeyNest',
-        resend_api_key: '',
-        smtp_host: 'smtp.qq.com',
-        smtp_port: 465,
-        smtp_username: '',
-        smtp_password: '',
-        smtp_secure: 'ssl'
-    };
-    list.insertAdjacentHTML('beforeend', emailProfileCardHtml(profile, count - 1, false));
-    setEmailProfileCollapsed(profile.id, false);
-}
-function removeEmailProfile(id) {
-    const card = document.querySelector(`.email-profile-card[data-profile-id="${id}"]`);
-    if (!card) return;
-    const list = document.getElementById('emailProfilesList');
-    if (list && list.querySelectorAll('.email-profile-card').length <= 1) {
-        return showToast('至少保留一个发信配置', 'warning');
-    }
-    removeEmailProfileCollapseState(id);
-    card.remove();
-}
-function collectEmailProfilesFromForm() {
-    const cards = Array.from(document.querySelectorAll('.email-profile-card'));
-    return cards.map(card => {
-        const id = card.dataset.profileId || '';
-        const read = field => card.querySelector(`.email-profile-field[data-profile-id="${id}"][data-field="${field}"]`)?.value ?? '';
-        return {
-            id,
-            name: read('name').trim(),
-            enabled: card.querySelector(`.email-profile-enabled[data-profile-id="${id}"]`)?.checked !== false,
-            provider: read('provider') || 'smtp',
-            resend_from_email: read('resend_from_email').trim(),
-            resend_from_name: read('resend_from_name').trim() || 'KeyNest',
-            resend_api_key: read('resend_api_key').trim(),
-            smtp_host: read('smtp_host').trim(),
-            smtp_port: Number(read('smtp_port') || 465),
-            smtp_username: read('smtp_username').trim(),
-            smtp_password: read('smtp_password'),
-            smtp_secure: read('smtp_secure') || 'ssl'
-        };
-    });
-}
 function defaultEmailTemplateHtml() {
     return `<div style="margin:0;padding:28px;background:#f3f6fb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1f2937"><div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.12);border:1px solid #e5e7eb"><div style="padding:26px 30px;background:linear-gradient(135deg,#6d5dfc,#8b5cf6);color:#fff"><div style="font-size:14px;opacity:.9">{{site_name}}</div><div style="font-size:24px;font-weight:800;margin-top:6px">{{title}}</div></div><div style="padding:30px"><p style="margin:0 0 14px;font-size:15px;line-height:1.8;color:#4b5563">{{message}}</p><div style="margin:22px 0;padding:20px;border-radius:18px;background:#f8fafc;border:1px dashed #c7d2fe;text-align:center"><div style="font-size:13px;color:#64748b;margin-bottom:8px">验证码</div><div style="font-size:34px;letter-spacing:8px;font-weight:900;color:#4f46e5">{{code}}</div></div><p style="margin:0;font-size:13px;line-height:1.8;color:#94a3b8">{{footer}}</p></div></div></div>`;
 }
@@ -3447,65 +2856,15 @@ function resetEmailTemplateHtml() {
 }
 function renderReservedEmailSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
-    const profiles = normalizeAdminEmailProfiles(c);
+    const provider = c.email_provider || 'smtp';
     const template = c.email_template_html || defaultEmailTemplateHtml();
-    const lastError = c.email_last_error || '';
-    const lastErrorAt = c.email_last_error_at ? dateText(c.email_last_error_at) : '';
-    document.getElementById(targetId).innerHTML = `
-        <div class="panel">
-            <div class="panel-title"><h5>邮箱验证</h5><button class="btn btn-sm btn-primary" onclick="saveEmailSettings()">保存邮箱设置</button></div>
-            <div class="config-help mb-3">可配置多个发信邮箱，系统会按顺序轮番发送；某个邮箱失败会自动切换下一个，并在下方显示报错提示。每个配置可折叠管理。</div>
-            ${lastError ? `<div class="alert alert-danger py-2 small mb-3"><strong>最近发信异常：</strong>${escapeHtml(lastError)}${lastErrorAt ? `<div class="mt-1 text-muted">时间：${escapeHtml(lastErrorAt)}</div>` : ''}</div>` : ''}
-            <div class="row g-3 mb-3">
-                <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="emailVerifyEnabled" ${c.register_email_verify_enabled ? 'checked' : ''}><label class="form-check-label" for="emailVerifyEnabled">注册时启用邮箱验证码</label></div></div>
-                <div class="col-md-4"><label class="form-label">验证码有效期（分钟）</label><input id="emailCodeTtl" class="form-control" type="number" min="1" max="60" value="${escapeHtml(c.email_code_ttl || 10)}"></div>
-                <div class="col-md-4"><label class="form-label">默认发件人名称</label><input id="resendFromNameGlobal" class="form-control" value="${escapeHtml(c.resend_from_name || 'KeyNest')}"></div>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="mb-0">发信方式列表</h6>
-                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addEmailProfileRow()"><i class="bi bi-plus-circle me-1"></i>新增发信方式</button>
-            </div>
-            <div id="emailProfilesList">${profiles.map((p, i) => emailProfileCardHtml(p, i, isEmailProfileCollapsed(p.id || ('email_' + i), i))).join('')}</div>
-            <div class="row g-3 align-items-stretch mt-3">
-                <div class="col-lg-6">
-                    <div class="d-flex justify-content-between align-items-center mb-2"><label class="form-label mb-0">验证码邮件卡片 HTML</label><button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetEmailTemplateHtml()">恢复默认卡片</button></div>
-                    <textarea id="emailTemplateHtml" class="form-control" rows="16" oninput="updateEmailTemplatePreview()">${escapeHtml(template)}</textarea>
-                    <div class="config-help mt-2">可用变量：<code>{{site_name}}</code> <code>{{title}}</code> <code>{{message}}</code> <code>{{code}}</code> <code>{{ttl}}</code> <code>{{footer}}</code> <code>{{time}}</code></div>
-                </div>
-                <div class="col-lg-6"><label class="form-label">实时预览</label><div id="emailTemplatePreview" style="background:#eef2f7;border:1px solid #e5e7eb;border-radius:18px;padding:18px;min-height:430px;max-height:520px;overflow:auto"></div></div>
-            </div>
-        </div>`;
+    document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>邮箱验证</h5><button class="btn btn-sm btn-primary" onclick="saveEmailSettings()">保存邮箱设置</button></div><div class="config-help mb-3">支持 Resend 和通用 SMTP。Resend API 模式只需要 API Key 和已验证发件域名，不需要填写用户名；如果使用 QQ/163/Gmail 等 SMTP，请使用邮箱账号和授权码。下面可以直接修改验证码邮件卡片 HTML，并实时预览效果。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="emailVerifyEnabled" ${c.register_email_verify_enabled ? 'checked' : ''}><label class="form-check-label" for="emailVerifyEnabled">注册时启用邮箱验证码</label></div></div><div class="col-md-4"><label class="form-label">发信方式</label><select id="emailProvider" class="form-select" onchange="toggleEmailProviderFields()"><option value="smtp" ${provider === 'smtp' ? 'selected' : ''}>SMTP（QQ/163/Gmail/企业邮箱）</option><option value="resend" ${provider === 'resend' ? 'selected' : ''}>Resend</option></select></div><div class="col-md-4"><label class="form-label">发件人邮箱 From</label><input id="resendFromEmail" class="form-control" value="${escapeHtml(c.resend_from_email || '')}" placeholder="noreply@example.com"></div><div class="col-md-4"><label class="form-label">发件人名称</label><input id="resendFromName" class="form-control" value="${escapeHtml(c.resend_from_name || 'KeyNest')}" placeholder="KeyNest"></div><div class="col-md-4"><label class="form-label">验证码有效期（分钟）</label><input id="emailCodeTtl" class="form-control" type="number" min="1" max="60" value="${escapeHtml(c.email_code_ttl || 10)}"></div><div class="col-md-8 resend-email-field"><label class="form-label">Resend API Key</label><input id="resendApiKey" class="form-control" type="password" placeholder="re_xxxxxxxxx；留空表示不修改"></div><div class="col-md-4 smtp-email-field"><label class="form-label">SMTP 主机</label><input id="smtpHost" class="form-control" value="${escapeHtml(c.smtp_host || '')}" placeholder="smtp.qq.com"></div><div class="col-md-2 smtp-email-field"><label class="form-label">端口</label><input id="smtpPort" class="form-control" type="number" value="${escapeHtml(c.smtp_port || 465)}" placeholder="465"></div><div class="col-md-2 smtp-email-field"><label class="form-label">加密</label><select id="smtpSecure" class="form-select"><option value="ssl" ${c.smtp_secure === 'ssl' ? 'selected' : ''}>SSL</option><option value="tls" ${c.smtp_secure === 'tls' ? 'selected' : ''}>TLS</option><option value="none" ${c.smtp_secure === 'none' ? 'selected' : ''}>无</option></select></div><div class="col-md-4 smtp-email-field"><label class="form-label">SMTP 账号</label><input id="smtpUsername" class="form-control" value="${escapeHtml(c.smtp_username || '')}" placeholder="你的邮箱地址"></div><div class="col-md-6 smtp-email-field"><label class="form-label">SMTP 密码 / 授权码</label><input id="smtpPassword" class="form-control" type="password" placeholder="留空表示不修改；QQ 邮箱填授权码"></div><div class="col-md-6"><label class="form-label">测试收件邮箱</label><div class="input-group"><input id="testEmailTo" class="form-control" placeholder="输入你的邮箱测试发送"><button class="btn btn-outline-primary" type="button" onclick="testEmailSettings()">测试发送</button></div></div><div class="col-12"><div class="row g-3 align-items-stretch"><div class="col-lg-6"><div class="d-flex justify-content-end align-items-center mb-2"><button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetEmailTemplateHtml()">恢复默认卡片</button></div><textarea id="emailTemplateHtml" class="form-control" rows="16" oninput="updateEmailTemplatePreview()">${escapeHtml(template)}</textarea><div class="config-help mt-2">可用变量：<code>{{site_name}}</code> <code>{{title}}</code> <code>{{message}}</code> <code>{{code}}</code> <code>{{ttl}}</code> <code>{{footer}}</code> <code>{{time}}</code></div></div><div class="col-lg-6"><div id="emailTemplatePreview" style="background:#eef2f7;border:1px solid #e5e7eb;border-radius:18px;padding:18px;min-height:430px;max-height:520px;overflow:auto"></div></div></div></div></div></div>`;
+    toggleEmailProviderFields();
     updateEmailTemplatePreview();
 }
-async function saveEmailSettingsData() {
-    return request('finance.php?action=update_system_config', 'POST', {
-        register_email_verify_enabled: checkedValue('emailVerifyEnabled'),
-        email_code_ttl: fieldValue('emailCodeTtl'),
-        resend_from_name: fieldValue('resendFromNameGlobal'),
-        email_template_html: fieldValue('emailTemplateHtml'),
-        email_profiles: JSON.stringify(collectEmailProfilesFromForm())
-    });
-}
-async function saveEmailSettings() {
-    const res = await saveEmailSettingsData();
-    if (!res.success) return showToast(res.message || '保存失败', 'error');
-    showToast('邮箱设置已保存', 'success');
-    await loadAdminData();
-    renderReservedEmailSettings();
-}
-async function testEmailProfile(profileId) {
-    const to = document.querySelector(`.email-profile-test-to[data-profile-id="${profileId}"]`)?.value?.trim() || '';
-    if (!to) return showToast('请输入测试收件邮箱', 'warning');
-    localStorage.setItem(EMAIL_PROFILE_TEST_TO_KEY, to);
-    const saveRes = await saveEmailSettingsData();
-    if (!saveRes.success) return showToast(saveRes.message || '保存邮箱设置失败', 'error');
-    const res = await request('admin.php?action=test_email', 'POST', { email: to, profile_id: profileId });
-    if (!res.success) return showToast(res.message || '测试发送失败', 'error');
-    showToast((res.message || '测试邮件已发送') + (res.used_profile ? `（${res.used_profile}）` : ''), 'success');
-    await loadAdminData();
-    renderReservedEmailSettings();
-}
-function toggleEmailProviderFields() {}
+function toggleEmailProviderFields() { const provider = fieldValue('emailProvider') || 'smtp'; document.querySelectorAll('.resend-email-field').forEach(el => el.style.display = provider === 'resend' ? '' : 'none'); document.querySelectorAll('.smtp-email-field').forEach(el => el.style.display = provider === 'smtp' ? '' : 'none'); }
+async function saveEmailSettings() { await saveSystemConfigFields({ register_email_verify_enabled: checkedValue('emailVerifyEnabled'), email_provider: fieldValue('emailProvider'), resend_api_key: fieldValue('resendApiKey'), resend_from_email: fieldValue('resendFromEmail'), resend_from_name: fieldValue('resendFromName'), email_code_ttl: fieldValue('emailCodeTtl'), email_template_html: fieldValue('emailTemplateHtml'), smtp_host: fieldValue('smtpHost'), smtp_port: fieldValue('smtpPort'), smtp_username: fieldValue('smtpUsername'), smtp_password: fieldValue('smtpPassword'), smtp_secure: fieldValue('smtpSecure') }, '邮箱设置已保存'); await loadAdminData(); }
+async function testEmailSettings() { const email = fieldValue('testEmailTo'); if (!email) return showToast('请输入测试收件邮箱', 'warning'); const saveRes = await request('finance.php?action=update_system_config', 'POST', { register_email_verify_enabled: checkedValue('emailVerifyEnabled'), email_provider: fieldValue('emailProvider'), resend_api_key: fieldValue('resendApiKey'), resend_from_email: fieldValue('resendFromEmail'), resend_from_name: fieldValue('resendFromName'), email_code_ttl: fieldValue('emailCodeTtl'), email_template_html: fieldValue('emailTemplateHtml'), smtp_host: fieldValue('smtpHost'), smtp_port: fieldValue('smtpPort'), smtp_username: fieldValue('smtpUsername'), smtp_password: fieldValue('smtpPassword'), smtp_secure: fieldValue('smtpSecure') }); if (!saveRes.success) return showToast(saveRes.message || '保存邮箱设置失败', 'error'); const res = await request('admin.php?action=test_email', 'POST', { email }); if (!res.success) return showToast(res.message || '测试发送失败', 'error'); showToast(res.message || '测试验证码邮件已发送', 'success'); }
 function renderReservedCaptchaSettings(targetId = 'settingsContent') {
     const c = Admin.cache.sysConfig || {};
     document.getElementById(targetId).innerHTML = `<div class="panel"><div class="panel-title"><h5>人机验证</h5><button class="btn btn-sm btn-primary" onclick="saveCaptchaSettings()">保存验证设置</button></div><div class="config-help mb-3">已接入 Cloudflare Turnstile 和极验行为验证 v3：发送邮箱验证码每次都会强制验证；登录/注册是否验证请到“登录注册”页签分别开启。极验请填写 Captcha ID 到 Site Key，Private Key 到 Secret Key；扩展配置可填 JSON，例如 {&quot;product&quot;:&quot;bind&quot;,&quot;lang&quot;:&quot;zh-cn&quot;}。</div><div class="row g-3"><div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="captchaEnabled" ${c.captcha_enabled ? 'checked' : ''}><label class="form-check-label" for="captchaEnabled">启用全站人机验证能力</label></div></div><div class="col-md-4"><label class="form-label">服务商</label><select id="captchaProvider" class="form-select" onchange="updateCaptchaProviderLink()"><option value="turnstile" ${c.captcha_provider === 'turnstile' ? 'selected' : ''}>Cloudflare Turnstile</option><option value="recaptcha_v3" ${c.captcha_provider === 'recaptcha_v3' ? 'selected' : ''}>Google reCAPTCHA v3（仅保存参数）</option><option value="geetest_v3" ${c.captcha_provider === 'geetest_v3' || c.captcha_provider === 'behavior_v3' ? 'selected' : ''}>极验行为验证 v3</option><option value="aliyun" ${c.captcha_provider === 'aliyun' ? 'selected' : ''}>阿里云验证码（仅保存参数）</option><option value="tencent" ${c.captcha_provider === 'tencent' ? 'selected' : ''}>腾讯验证码（仅保存参数）</option></select></div><div class="col-md-8"><label class="form-label">服务商官网</label><div id="captchaProviderLink" class="config-help py-2"></div></div><div class="col-md-4"><label class="form-label">Site Key / Captcha ID</label><input id="captchaSiteKey" class="form-control" value="${escapeHtml(c.captcha_site_key || '')}" placeholder="前端公开 key"></div><div class="col-md-4"><label class="form-label">Secret Key</label><input id="captchaSecretKey" class="form-control" type="password" placeholder="留空表示不修改"></div><div class="col-12"><label class="form-label">校验接口/额外配置（可选）</label><textarea id="captchaExtraConfig" class="form-control" rows="3" placeholder='例如 {"endpoint":"https://..."}'>${escapeHtml(c.captcha_extra_config || '')}</textarea></div></div></div>`;

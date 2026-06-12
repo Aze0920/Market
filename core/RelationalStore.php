@@ -271,53 +271,15 @@ class RelationalStore {
         }
         $this->ensureColumn('kn_orders', 'guest_email', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
-        $this->ensureColumn('kn_orders', 'payment_trade_no', "varchar(80) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'guest_email', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'refund_applied', "tinyint(1) NOT NULL DEFAULT 0");
         $this->ensureColumn('kn_payment_orders', 'refunded_amount', "decimal(14,2) NOT NULL DEFAULT 0.00");
         $this->ensureColumn('kn_payment_orders', 'refunded_at', "int unsigned DEFAULT NULL");
-        $this->ensureColumn('kn_payment_orders', 'balance_applied', "tinyint(1) NOT NULL DEFAULT 0");
         $this->ensureColumn('kn_card_codes', 'card_type', "varchar(20) NOT NULL DEFAULT 'balance'");
         $this->ensureColumn('kn_card_codes', 'target_level', "varchar(50) NOT NULL DEFAULT ''");
         $this->ensureSignedDecimalColumn('kn_users', 'balance', 'decimal(14,2)', '0.00');
         $this->ensureSignedDecimalColumn('kn_users', 'frozen_balance', 'decimal(14,2)', '0.00');
-        require_once __DIR__ . '/AdminQuery.php';
-        (new AdminQuery($this->pdo, $this))->ensurePerformanceIndexes();
-    }
-
-    public function hydrateUserRow(array $row) {
-        return $this->rowToUser($row);
-    }
-
-    public function hydrateOrderRow(array $row) {
-        return $this->rowToOrder($row);
-    }
-
-    public function hydrateProductSummaryRow(array $row) {
-        return [
-            'id' => $row['id'],
-            'seller_id' => $row['seller_id'] ?? '',
-            'seller_name' => $row['seller_name'] ?? '',
-            'title' => $row['title'] ?? '',
-            'category' => $row['category'] ?? '',
-            'price' => floatval($row['price'] ?? 0),
-            'stock' => intval($row['stock'] ?? 0),
-            'sales' => intval($row['sales'] ?? 0),
-            'description' => $row['description'] ?? '',
-            'image' => $row['image'] ?? '',
-            'pickup_password_enabled' => !empty($row['pickup_password_enabled']),
-            'created_at' => intval($row['created_at'] ?? 0),
-            'updated_at' => intval($row['updated_at'] ?? 0),
-        ];
-    }
-
-    public function hydratePaymentOrderRow(array $row) {
-        return $this->rowToPaymentOrder($row);
-    }
-
-    public function hydrateCommentRow(array $row) {
-        return $this->rowToComment($row);
     }
 
     private function ensureSignedDecimalColumn($table, $column, $type, $default) {
@@ -778,7 +740,6 @@ class RelationalStore {
             'frozen_released_at' => intval($row['frozen_released_at']),
             'complaint_withdrawn_at' => intval($row['complaint_withdrawn_at']),
             'purchase_date' => intval($row['purchase_date']),
-            'payment_trade_no' => $row['payment_trade_no'] ?? '',
             'delivery_info' => $this->decodeJson($row['delivery_info_json'], []),
         ];
         $complaint = $this->decodeJson($row['complaint_json'], []);
@@ -791,9 +752,9 @@ class RelationalStore {
     private function upsertOrder(array $order) {
         $complaint = $order['complaint'] ?? [];
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_orders (id, buyer_id, buyer_name, seller_id, seller_name, product_id, product_title, price, unit_price, quantity, fee, seller_amount, pay_method, guest_order, guest_token, guest_email, guest_query_code, balance_frozen, frozen_amount, frozen_released_at, complaint_withdrawn_at, purchase_date, payment_trade_no, delivery_info_json, complaint_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE buyer_id = VALUES(buyer_id), buyer_name = VALUES(buyer_name), seller_id = VALUES(seller_id), seller_name = VALUES(seller_name), product_id = VALUES(product_id), product_title = VALUES(product_title), price = VALUES(price), unit_price = VALUES(unit_price), quantity = VALUES(quantity), fee = VALUES(fee), seller_amount = VALUES(seller_amount), pay_method = VALUES(pay_method), guest_order = VALUES(guest_order), guest_token = VALUES(guest_token), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), balance_frozen = VALUES(balance_frozen), frozen_amount = VALUES(frozen_amount), frozen_released_at = VALUES(frozen_released_at), complaint_withdrawn_at = VALUES(complaint_withdrawn_at), purchase_date = VALUES(purchase_date), payment_trade_no = VALUES(payment_trade_no), delivery_info_json = VALUES(delivery_info_json), complaint_json = VALUES(complaint_json)'
+            'INSERT INTO kn_orders (id, buyer_id, buyer_name, seller_id, seller_name, product_id, product_title, price, unit_price, quantity, fee, seller_amount, pay_method, guest_order, guest_token, guest_email, guest_query_code, balance_frozen, frozen_amount, frozen_released_at, complaint_withdrawn_at, purchase_date, delivery_info_json, complaint_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE buyer_id = VALUES(buyer_id), buyer_name = VALUES(buyer_name), seller_id = VALUES(seller_id), seller_name = VALUES(seller_name), product_id = VALUES(product_id), product_title = VALUES(product_title), price = VALUES(price), unit_price = VALUES(unit_price), quantity = VALUES(quantity), fee = VALUES(fee), seller_amount = VALUES(seller_amount), pay_method = VALUES(pay_method), guest_order = VALUES(guest_order), guest_token = VALUES(guest_token), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), balance_frozen = VALUES(balance_frozen), frozen_amount = VALUES(frozen_amount), frozen_released_at = VALUES(frozen_released_at), complaint_withdrawn_at = VALUES(complaint_withdrawn_at), purchase_date = VALUES(purchase_date), delivery_info_json = VALUES(delivery_info_json), complaint_json = VALUES(complaint_json)'
         );
         return $stmt->execute([
             $order['id'],
@@ -818,7 +779,6 @@ class RelationalStore {
             intval($order['frozen_released_at'] ?? 0),
             intval($order['complaint_withdrawn_at'] ?? 0),
             intval($order['purchase_date'] ?? time()),
-            $order['payment_trade_no'] ?? '',
             $this->encodeJson($order['delivery_info'] ?? []),
             $this->encodeJson($complaint),
         ]);
@@ -926,16 +886,8 @@ class RelationalStore {
         ];
     }
 
-    private function normalizeCardTypeValue($cardType) {
-        $type = strtolower(trim((string)$cardType));
-        if (in_array($type, ['membership', 'subdomain'], true)) {
-            return $type;
-        }
-        return 'balance';
-    }
-
     private function upsertCardCode(array $card) {
-        $cardType = $this->normalizeCardTypeValue($card['card_type'] ?? 'balance');
+        $cardType = ($card['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
         $stmt = $this->pdo->prepare(
             'INSERT INTO kn_card_codes (id, code, amount, card_type, target_level, is_used, used_by, used_at, created_by, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -946,7 +898,7 @@ class RelationalStore {
             $card['code'] ?? '',
             floatval($card['amount'] ?? 0),
             $cardType,
-            in_array($cardType, ['membership', 'subdomain'], true) ? trim((string)($card['target_level'] ?? '')) : '',
+            $cardType === 'membership' ? trim((string)($card['target_level'] ?? '')) : '',
             !empty($card['used']) ? 1 : 0,
             $card['used_by'] ?? null,
             isset($card['used_at']) ? intval($card['used_at']) : null,
@@ -1027,7 +979,6 @@ class RelationalStore {
             'refund_applied' => !empty($row['refund_applied']),
             'refunded_amount' => floatval($row['refunded_amount'] ?? 0),
             'refunded_at' => isset($row['refunded_at']) && $row['refunded_at'] !== null ? intval($row['refunded_at']) : null,
-            'balance_applied' => !empty($row['balance_applied']),
             'created_at' => intval($row['created_at']),
             'paid_at' => $row['paid_at'] !== null ? intval($row['paid_at']) : null,
         ];
@@ -1035,9 +986,9 @@ class RelationalStore {
 
     private function upsertPaymentOrder(array $order) {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_payment_orders (id, trade_no, user_id, payment_config_id, pay_type, amount, actual_amount, fee, status, order_type, title, description, target_level, product_id, quantity, pickup_password_hash, guest_token, guest_order, guest_email, guest_query_code, buyer_name, related_id, delivery_status, delivery_error, refund_applied, refunded_amount, refunded_at, balance_applied, created_at, paid_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE trade_no = VALUES(trade_no), user_id = VALUES(user_id), payment_config_id = VALUES(payment_config_id), pay_type = VALUES(pay_type), amount = VALUES(amount), actual_amount = VALUES(actual_amount), fee = VALUES(fee), status = VALUES(status), order_type = VALUES(order_type), title = VALUES(title), description = VALUES(description), target_level = VALUES(target_level), product_id = VALUES(product_id), quantity = VALUES(quantity), pickup_password_hash = VALUES(pickup_password_hash), guest_token = VALUES(guest_token), guest_order = VALUES(guest_order), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), buyer_name = VALUES(buyer_name), related_id = VALUES(related_id), delivery_status = VALUES(delivery_status), delivery_error = VALUES(delivery_error), refund_applied = VALUES(refund_applied), refunded_amount = VALUES(refunded_amount), refunded_at = VALUES(refunded_at), balance_applied = VALUES(balance_applied), created_at = VALUES(created_at), paid_at = VALUES(paid_at)'
+            'INSERT INTO kn_payment_orders (id, trade_no, user_id, payment_config_id, pay_type, amount, actual_amount, fee, status, order_type, title, description, target_level, product_id, quantity, pickup_password_hash, guest_token, guest_order, guest_email, guest_query_code, buyer_name, related_id, delivery_status, delivery_error, refund_applied, refunded_amount, refunded_at, created_at, paid_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE trade_no = VALUES(trade_no), user_id = VALUES(user_id), payment_config_id = VALUES(payment_config_id), pay_type = VALUES(pay_type), amount = VALUES(amount), actual_amount = VALUES(actual_amount), fee = VALUES(fee), status = VALUES(status), order_type = VALUES(order_type), title = VALUES(title), description = VALUES(description), target_level = VALUES(target_level), product_id = VALUES(product_id), quantity = VALUES(quantity), pickup_password_hash = VALUES(pickup_password_hash), guest_token = VALUES(guest_token), guest_order = VALUES(guest_order), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), buyer_name = VALUES(buyer_name), related_id = VALUES(related_id), delivery_status = VALUES(delivery_status), delivery_error = VALUES(delivery_error), refund_applied = VALUES(refund_applied), refunded_amount = VALUES(refunded_amount), refunded_at = VALUES(refunded_at), created_at = VALUES(created_at), paid_at = VALUES(paid_at)'
         );
         return $stmt->execute([
             $order['id'],
@@ -1067,7 +1018,6 @@ class RelationalStore {
             !empty($order['refund_applied']) ? 1 : 0,
             floatval($order['refunded_amount'] ?? 0),
             isset($order['refunded_at']) ? intval($order['refunded_at']) : null,
-            !empty($order['balance_applied']) ? 1 : 0,
             intval($order['created_at'] ?? time()),
             isset($order['paid_at']) ? intval($order['paid_at']) : null,
         ]);
@@ -1162,6 +1112,47 @@ class RelationalStore {
         return $row ? $this->rowToSubdomain($row) : null;
     }
 
+    public function listSellerSubdomains($page = 1, $pageSize = 20, $keyword = '', $status = '') {
+        $page = max(1, intval($page));
+        $pageSize = max(10, min(200, intval($pageSize)));
+        $offset = ($page - 1) * $pageSize;
+        $where = ['1=1'];
+        $params = [];
+        $keyword = trim((string)$keyword);
+        if ($keyword !== '') {
+            $where[] = '(s.prefix LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR s.user_id LIKE ?)';
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $keyword) . '%';
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+        }
+        if ($status !== '') {
+            $where[] = 's.status = ?';
+            $params[] = $status;
+        }
+        $whereSql = implode(' AND ', $where);
+        $fromSql = 'kn_seller_subdomains s LEFT JOIN kn_users u ON u.id = s.user_id';
+        $countStmt = $this->pdo->prepare("SELECT COUNT(*) FROM {$fromSql} WHERE {$whereSql}");
+        $countStmt->execute($params);
+        $total = intval($countStmt->fetchColumn());
+        $stmt = $this->pdo->prepare("SELECT s.*, u.username, u.email FROM {$fromSql} WHERE {$whereSql} ORDER BY s.updated_at DESC, s.created_at DESC LIMIT ? OFFSET ?");
+        foreach ($params as $index => $value) {
+            $stmt->bindValue($index + 1, $value);
+        }
+        $stmt->bindValue(count($params) + 1, $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $items = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $item = $this->rowToSubdomain($row);
+            $item['username'] = $row['username'] ?? '';
+            $item['email'] = $row['email'] ?? '';
+            $items[] = $item;
+        }
+        return ['items' => $items, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize];
+    }
+
     public function saveSellerSubdomain(array $subdomain) {
         $now = time();
         if (empty($subdomain['id'])) {
@@ -1193,4 +1184,11 @@ class RelationalStore {
             intval($subdomain['updated_at'] ?? $now),
         ]);
     }
+
+    public function deleteSellerSubdomain($id) {
+        $stmt = $this->pdo->prepare('DELETE FROM kn_seller_subdomains WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+        return $stmt->rowCount() > 0;
+    }
 }
+
