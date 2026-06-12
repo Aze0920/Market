@@ -4,6 +4,8 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/Mailer.php';
+require_once __DIR__ . '/../core/NotifyMail.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -240,6 +242,14 @@ switch ($action) {
                 'processed_by' => sanitizeString($admin['username']),
                 'processed_at' => time()
             ]);
+
+            $updatedRequest = $db->getWithdrawRequest($requestId) ?: $withdrawRequest;
+            $updatedRequest['admin_note'] = $adminNote;
+            $targetUser = $db->getUserById($withdrawRequest['user_id']);
+            if ($targetUser) {
+                $config = $db->getSystemConfig();
+                NotifyMail::userWithdrawApproved($updatedRequest, $targetUser, $config, $adminNote);
+            }
             
             jsonResponse(['success' => true, 'message' => '已标记为已支付']);
         }

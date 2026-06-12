@@ -21,6 +21,72 @@ class KeyNestMailer {
         return strtr($template, $safe);
     }
 
+    public static function renderNotificationCard($config, array $vars) {
+        $siteName = htmlspecialchars((string)($vars['site_name'] ?? $config['site_name'] ?? 'KeyNest'), ENT_QUOTES, 'UTF-8');
+        $title = htmlspecialchars((string)($vars['title'] ?? '系统通知'), ENT_QUOTES, 'UTF-8');
+        $badge = htmlspecialchars((string)($vars['badge'] ?? '通知'), ENT_QUOTES, 'UTF-8');
+        $message = nl2br(htmlspecialchars((string)($vars['message'] ?? ''), ENT_QUOTES, 'UTF-8'));
+        $footer = htmlspecialchars((string)($vars['footer'] ?? '如非本人操作，请尽快登录账号查看详情。'), ENT_QUOTES, 'UTF-8');
+        $time = htmlspecialchars((string)($vars['time'] ?? date('Y-m-d H:i:s')), ENT_QUOTES, 'UTF-8');
+        $accentMap = [
+            'primary' => ['#6d5dfc', '#8b5cf6', '#eef2ff'],
+            'warning' => ['#f59e0b', '#ef4444', '#fff7ed'],
+            'success' => ['#10b981', '#059669', '#ecfdf5'],
+            'danger' => ['#ef4444', '#dc2626', '#fef2f2'],
+            'info' => ['#3b82f6', '#6366f1', '#eff6ff'],
+        ];
+        $accent = (string)($vars['accent'] ?? 'primary');
+        $colors = $accentMap[$accent] ?? $accentMap['primary'];
+
+        $detailsHtml = '';
+        if (!empty($vars['details']) && is_array($vars['details'])) {
+            foreach ($vars['details'] as $row) {
+                if (!is_array($row)) continue;
+                $label = htmlspecialchars((string)($row['label'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $value = htmlspecialchars((string)($row['value'] ?? ''), ENT_QUOTES, 'UTF-8');
+                if ($label === '' && $value === '') continue;
+                $detailsHtml .= '<tr><td style="padding:10px 0;color:#64748b;font-size:13px;width:96px;vertical-align:top;white-space:nowrap">' . $label . '</td><td style="padding:10px 0;color:#0f172a;font-size:14px;font-weight:600;word-break:break-word">' . $value . '</td></tr>';
+            }
+        }
+
+        $highlightHtml = '';
+        if (!empty($vars['highlight_value'])) {
+            $hlLabel = htmlspecialchars((string)($vars['highlight_label'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $hlValue = htmlspecialchars((string)$vars['highlight_value'], ENT_QUOTES, 'UTF-8');
+            $highlightHtml = '<div style="margin:20px 0;padding:20px;border-radius:18px;background:' . $colors[2] . ';border:1px dashed ' . $colors[0] . ';text-align:center">'
+                . ($hlLabel !== '' ? '<div style="font-size:13px;color:#64748b;margin-bottom:8px">' . $hlLabel . '</div>' : '')
+                . '<div style="font-size:30px;font-weight:900;color:' . $colors[0] . ';letter-spacing:3px;word-break:break-all;line-height:1.4">' . $hlValue . '</div></div>';
+        }
+
+        $detailsBlock = $detailsHtml !== ''
+            ? '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:18px 0 8px;border-top:1px solid #eef2f7;border-bottom:1px solid #eef2f7">' . $detailsHtml . '</table>'
+            : '';
+
+        return '<div style="margin:0;padding:28px;background:#f3f6fb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1f2937">'
+            . '<div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.12);border:1px solid #e5e7eb">'
+            . '<div style="padding:26px 30px;background:linear-gradient(135deg,' . $colors[0] . ',' . $colors[1] . ');color:#fff">'
+            . '<div style="display:inline-block;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.18);font-size:12px;font-weight:700;letter-spacing:.4px">' . $badge . '</div>'
+            . '<div style="font-size:14px;opacity:.92;margin-top:12px">' . $siteName . '</div>'
+            . '<div style="font-size:24px;font-weight:800;margin-top:6px;line-height:1.35">' . $title . '</div>'
+            . '</div>'
+            . '<div style="padding:30px">'
+            . ($message !== '' ? '<p style="margin:0 0 6px;font-size:15px;line-height:1.8;color:#4b5563">' . $message . '</p>' : '')
+            . $detailsBlock
+            . $highlightHtml
+            . '<p style="margin:18px 0 0;font-size:12px;line-height:1.7;color:#94a3b8">' . $footer . '<br>发送时间：' . $time . '</p>'
+            . '</div></div></div>';
+    }
+
+    public static function sendNotification($to, $subject, $config, array $cardVars) {
+        $email = trim((string)$to);
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return ['success' => false, 'message' => '收件邮箱无效'];
+        }
+        $cardVars['site_name'] = $cardVars['site_name'] ?? ($config['site_name'] ?? 'KeyNest');
+        $html = self::renderNotificationCard($config, $cardVars);
+        return self::send($email, $subject, $html, $config);
+    }
+
     private static function sendResend($to, $subject, $html, $config) {
         $apiKey = trim((string)($config['resend_api_key'] ?? ''));
         $fromEmail = trim((string)($config['resend_from_email'] ?? ''));

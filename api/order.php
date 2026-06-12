@@ -5,6 +5,7 @@
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
 require_once __DIR__ . '/../core/Mailer.php';
+require_once __DIR__ . '/../core/NotifyMail.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -355,15 +356,6 @@ switch ($action) {
 
         $password = genComplaintPassword();
         $config = $db->getSystemConfig();
-        $mailResult = KeyNestMailer::send(
-            $email,
-            'KeyNest 订单投诉撤诉密码',
-            '<p>您正在投诉订单：<strong>' . htmlspecialchars($order['product_title'] ?? $id, ENT_QUOTES, 'UTF-8') . '</strong></p><p>撤诉密码为：</p><h2 style="letter-spacing:4px;">' . $password . '</h2><p>请妥善保存，撤诉时需要输入该密码。</p>',
-            $config
-        );
-        if (empty($mailResult['success'])) {
-            jsonResponse(['success' => false, 'message' => '投诉密码邮件发送失败：' . ($mailResult['message'] ?? '请检查邮箱配置')], 400);
-        }
 
         freezeSellerOrderBalance($order);
         $order['complaint'] = [
@@ -388,6 +380,14 @@ switch ($action) {
             'created_at' => time(),
             'updated_at' => time()
         ];
+
+        $mailResult = NotifyMail::buyerComplaintEmail($order, $password, $config);
+        if (empty($mailResult['success'])) {
+            releaseSellerOrderBalance($order);
+            unset($order['complaint']);
+            jsonResponse(['success' => false, 'message' => '投诉密码邮件发送失败：' . ($mailResult['message'] ?? '请检查邮箱配置')], 400);
+        }
+        NotifyMail::sellerComplaintReceived($order, $user, $config);
         $db->updateOrder($order);
         jsonResponse(['success' => true, 'message' => '投诉已提交，撤诉密码已发送到邮箱，订单金额已冻结']);
 
@@ -419,7 +419,10 @@ switch ($action) {
         $order['complaint']['funds_settled'] = true;
         $order['complaint']['funds_settled_at'] = time();
         $order['complaint_withdrawn_at'] = time();
+        $config = $db->getSystemConfig();
         $db->updateOrder($order);
+        NotifyMail::sellerComplaintWithdrawn($order, $config);
+        NotifyMail::buyerComplaintWithdrawn($order, $config);
         jsonResponse(['success' => true, 'message' => '已撤诉，冻结金额已解冻，投诉记录已保留']);
 
     case 'reply_complaint':
@@ -479,7 +482,11 @@ switch ($action) {
             $order['complaint']['seller_replied_at'] = time();
         }
         $order['complaint']['updated_at'] = time();
+        $config = $db->getSystemConfig();
         $db->updateOrder($order);
+        if ($isSeller) {
+            NotifyMail::buyerSellerReply($order, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
+        }
         jsonResponse(['success' => true, 'message' => '回复已提交']);
 
     case 'seller_refund_complaint':
@@ -522,7 +529,11 @@ switch ($action) {
         $order['complaint']['seller_replied_at'] = time();
         $order['complaint']['seller_refunded_at'] = time();
         $order['complaint']['seller_refunded_by'] = $user['username'] ?? 'seller';
+        $refundAmount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? 0));
+        $config = $db->getSystemConfig();
         $db->updateOrder($order);
+        NotifyMail::buyerSellerRefund($order, $refundAmount, $refundNote, $config);
+        NotifyMail::sellerComplaintRefundDone($order, $refundAmount, $refundNote, $config);
         jsonResponse(['success' => true, 'message' => $message]);
 
     case 'overview':
