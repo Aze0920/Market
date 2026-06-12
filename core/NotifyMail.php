@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/OrderTradeNo.php';
+
 class NotifyMail {
     private static function siteName($config) {
         $name = trim((string)($config['site_name'] ?? 'KeyNest'));
@@ -21,10 +23,20 @@ class NotifyMail {
     private static function moneyText($amount) {
         return '¥' . number_format((float)$amount, 2, '.', '');
     }
+    private static function orderTradeNoValue($order) {
+        global $db;
+        $tradeNo = trim((string)($order['payment_trade_no'] ?? ''));
+        if ($tradeNo === '' && isset($db)) {
+            $order = OrderTradeNo::attachToOrder($order, $db);
+            $tradeNo = trim((string)($order['payment_trade_no'] ?? ''));
+        }
+        return $tradeNo !== '' ? $tradeNo : (string)($order['id'] ?? '-');
+    }
+
     private static function orderDetails($order, $extra = []) {
         $rows = [
             ['label' => '商品', 'value' => (string)($order['product_title'] ?? '-')],
-            ['label' => '交易号', 'value' => (string)($order['payment_trade_no'] ?? $order['id'] ?? '-')],
+            ['label' => '交易号', 'value' => self::orderTradeNoValue($order)],
         ];
         foreach ($extra as $row) {
             if (!is_array($row)) continue;

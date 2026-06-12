@@ -5,6 +5,7 @@
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
 require_once __DIR__ . '/../core/Mailer.php';
+require_once __DIR__ . '/../core/OrderTradeNo.php';
 require_once __DIR__ . '/../core/NotifyMail.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -151,25 +152,13 @@ function freezeSellerOrderBalance(&$order) {
 }
 
 function attachPaymentTradeNoToOrder($order) {
-    $wrapped = [$order];
-    attachPaymentTradeNoToOrders($wrapped);
-    return $wrapped[0];
+    global $db;
+    return OrderTradeNo::attachToOrder($order, $db);
 }
 
 function attachPaymentTradeNoToOrders(array $orders) {
     global $db;
-    $map = [];
-    foreach ($db->getPaymentOrders() as $paymentOrder) {
-        $relatedId = trim((string)($paymentOrder['related_id'] ?? ''));
-        if ($relatedId !== '' && empty($map[$relatedId])) {
-            $map[$relatedId] = (string)($paymentOrder['trade_no'] ?? '');
-        }
-    }
-    foreach ($orders as &$order) {
-        $order['payment_trade_no'] = $map[$order['id'] ?? ''] ?? '';
-    }
-    unset($order);
-    return $orders;
+    return OrderTradeNo::attachToOrders($orders, $db);
 }
 
 function releaseSellerOrderBalance(&$order) {

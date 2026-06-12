@@ -1587,7 +1587,7 @@ function renderComplaints() {
     let complaints = Admin.cache.complaints || [];
     if (status !== 'all') complaints = complaints.filter(o => (o.complaint?.status || '') === status);
     if (keyword) {
-        complaints = complaints.filter(o => [o.id, o.product_title, o.buyer_name, o.seller_name, o.complaint?.reason].some(v => String(v || '').toLowerCase().includes(keyword)));
+        complaints = complaints.filter(o => [o.id, o.payment_trade_no, o.product_title, o.buyer_name, o.seller_name, o.complaint?.reason].some(v => String(v || '').toLowerCase().includes(keyword)));
     }
     const allCount = Admin.cache.complaints?.length || 0;
     const openCount = (Admin.cache.complaints || []).filter(o => (o.complaint?.status || '') === 'open').length;
@@ -1640,14 +1640,18 @@ function renderComplaints() {
         input?.setSelectionRange(input.value.length, input.value.length);
     }
 }
+function adminOrderTradeNo(order) {
+    return order?.payment_trade_no || order?.id || '-';
+}
 function complaintAdminTableRows(orders) {
     if (!orders.length) return '<tr><td colspan="7" class="text-center text-muted py-4">暂无投诉记录</td></tr>';
     return orders.map(order => {
         const complaint = order.complaint || {};
         const id = escapeHtml(order.id || '');
+        const tradeNo = escapeHtml(adminOrderTradeNo(order));
         return `
             <tr class="complaint-row-toggle" data-complaint-id="${id}" onclick="toggleComplaintDetail('${id}')">
-                <td><strong>${escapeHtml(order.product_title || '-')}</strong><div class="small text-muted"><code>${id}</code></div></td>
+                <td><strong>${escapeHtml(order.product_title || '-')}</strong><div class="small text-muted">交易号 <code>${tradeNo}</code></div></td>
                 <td>${escapeHtml(order.buyer_name || '-')}<div class="small text-muted">${escapeHtml(recordUserEmail(order, 'buyer_id', order.buyer_id || ''))}</div></td>
                 <td>${escapeHtml(order.seller_name || '-')}<div class="small text-muted">${escapeHtml(recordUserEmail(order, 'seller_id', order.seller_id || ''))}</div></td>
                 <td>${money(order.price)}<div class="small text-danger">冻结 ${money(order.frozen_amount || 0)}</div></td>
@@ -2945,9 +2949,38 @@ function emailProfileSummary(profile = {}) {
     const provider = profile.provider === 'resend' ? 'Resend' : 'SMTP';
     return `${name} · ${provider}`;
 }
+const EMAIL_PROFILE_COLLAPSE_KEY = 'keynest_admin_email_profile_collapsed';
+const EMAIL_PROFILE_TEST_TO_KEY = 'keynest_admin_email_test_to';
+function getEmailProfileCollapseMap() {
+    try {
+        const raw = localStorage.getItem(EMAIL_PROFILE_COLLAPSE_KEY);
+        const map = raw ? JSON.parse(raw) : {};
+        return map && typeof map === 'object' ? map : {};
+    } catch (e) {
+        return {};
+    }
+}
+function isEmailProfileCollapsed(profileId, index = 0) {
+    const map = getEmailProfileCollapseMap();
+    if (Object.prototype.hasOwnProperty.call(map, profileId)) {
+        return !!map[profileId];
+    }
+    return index > 0;
+}
+function setEmailProfileCollapsed(profileId, collapsed) {
+    const map = getEmailProfileCollapseMap();
+    map[profileId] = !!collapsed;
+    localStorage.setItem(EMAIL_PROFILE_COLLAPSE_KEY, JSON.stringify(map));
+}
+function removeEmailProfileCollapseState(profileId) {
+    const map = getEmailProfileCollapseMap();
+    delete map[profileId];
+    localStorage.setItem(EMAIL_PROFILE_COLLAPSE_KEY, JSON.stringify(map));
+}
 function emailProfileCardHtml(profile, index, collapsed = true) {
     const id = escapeHtml(profile.id || ('email_' + index));
     const provider = profile.provider || 'smtp';
+    const savedTestTo = localStorage.getItem(EMAIL_PROFILE_TEST_TO_KEY) || '';
     return `
         <div class="email-profile-card border rounded-3 mb-3" data-profile-id="${id}">
             <div class="email-profile-head d-flex justify-content-between align-items-center gap-2 p-3" onclick="toggleEmailProfileCard('${id}')" style="cursor:pointer">
@@ -2975,6 +3008,14 @@ function emailProfileCardHtml(profile, index, collapsed = true) {
                     <div class="col-md-2 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">加密</label><select class="form-select email-profile-field" data-profile-id="${id}" data-field="smtp_secure"><option value="ssl" ${profile.smtp_secure === 'ssl' ? 'selected' : ''}>SSL</option><option value="tls" ${profile.smtp_secure === 'tls' ? 'selected' : ''}>TLS</option><option value="none" ${profile.smtp_secure === 'none' ? 'selected' : ''}>无</option></select></div>
                     <div class="col-md-4 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 账号</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_username" value="${escapeHtml(profile.smtp_username || '')}"></div>
                     <div class="col-md-6 email-profile-smtp-${id} ${provider === 'smtp' ? '' : 'hidden'}"><label class="form-label">SMTP 密码 / 授权码</label><input class="form-control email-profile-field" data-profile-id="${id}" data-field="smtp_password" type="password" placeholder="留空表示不修改"></div>
+                    <div class="col-12 mt-1 pt-3 border-top">
+                        <label class="form-label mb-1">测试此发信配置</label>
+                        <div class="input-group">
+                            <input class="form-control email-profile-test-to" data-profile-id="${id}" value="${escapeHtml(savedTestTo)}" placeholder="输入收件邮箱，仅测试当前这一条" oninput="localStorage.setItem(EMAIL_PROFILE_TEST_TO_KEY, this.value)">
+                            <button class="btn btn-outline-primary" type="button" onclick="testEmailProfile('${id}')">测试发送</button>
+                        </div>
+                        <div class="config-help mt-1">只使用本条配置发送测试邮件，不会轮番切换其他邮箱。</div>
+                    </div>
                 </div>
             </div>
         </div>`;
@@ -2984,6 +3025,7 @@ function toggleEmailProfileCard(id) {
     const card = document.querySelector(`.email-profile-card[data-profile-id="${id}"]`);
     if (!body || !card) return;
     body.classList.toggle('hidden');
+    setEmailProfileCollapsed(id, body.classList.contains('hidden'));
     const icon = card.querySelector('.bi-chevron-down, .bi-chevron-up');
     if (icon) {
         icon.classList.toggle('bi-chevron-down', body.classList.contains('hidden'));
@@ -3014,6 +3056,7 @@ function addEmailProfileRow() {
         smtp_secure: 'ssl'
     };
     list.insertAdjacentHTML('beforeend', emailProfileCardHtml(profile, count - 1, false));
+    setEmailProfileCollapsed(profile.id, false);
 }
 function removeEmailProfile(id) {
     const card = document.querySelector(`.email-profile-card[data-profile-id="${id}"]`);
@@ -3022,6 +3065,7 @@ function removeEmailProfile(id) {
     if (list && list.querySelectorAll('.email-profile-card').length <= 1) {
         return showToast('至少保留一个发信配置', 'warning');
     }
+    removeEmailProfileCollapseState(id);
     card.remove();
 }
 function collectEmailProfilesFromForm() {
@@ -3076,13 +3120,12 @@ function renderReservedEmailSettings(targetId = 'settingsContent') {
                 <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="emailVerifyEnabled" ${c.register_email_verify_enabled ? 'checked' : ''}><label class="form-check-label" for="emailVerifyEnabled">注册时启用邮箱验证码</label></div></div>
                 <div class="col-md-4"><label class="form-label">验证码有效期（分钟）</label><input id="emailCodeTtl" class="form-control" type="number" min="1" max="60" value="${escapeHtml(c.email_code_ttl || 10)}"></div>
                 <div class="col-md-4"><label class="form-label">默认发件人名称</label><input id="resendFromNameGlobal" class="form-control" value="${escapeHtml(c.resend_from_name || 'KeyNest')}"></div>
-                <div class="col-md-4"><label class="form-label">测试收件邮箱</label><div class="input-group"><input id="testEmailTo" class="form-control" placeholder="输入你的邮箱测试发送"><button class="btn btn-outline-primary" type="button" onclick="testEmailSettings()">测试发送</button></div></div>
             </div>
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <h6 class="mb-0">发信方式列表</h6>
                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="addEmailProfileRow()"><i class="bi bi-plus-circle me-1"></i>新增发信方式</button>
             </div>
-            <div id="emailProfilesList">${profiles.map((p, i) => emailProfileCardHtml(p, i, i > 0)).join('')}</div>
+            <div id="emailProfilesList">${profiles.map((p, i) => emailProfileCardHtml(p, i, isEmailProfileCollapsed(p.id || ('email_' + i), i))).join('')}</div>
             <div class="row g-3 align-items-stretch mt-3">
                 <div class="col-lg-6">
                     <div class="d-flex justify-content-between align-items-center mb-2"><label class="form-label mb-0">验证码邮件卡片 HTML</label><button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetEmailTemplateHtml()">恢复默认卡片</button></div>
@@ -3094,31 +3137,31 @@ function renderReservedEmailSettings(targetId = 'settingsContent') {
         </div>`;
     updateEmailTemplatePreview();
 }
-async function saveEmailSettings() {
-    await saveSystemConfigFields({
-        register_email_verify_enabled: checkedValue('emailVerifyEnabled'),
-        email_code_ttl: fieldValue('emailCodeTtl'),
-        resend_from_name: fieldValue('resendFromNameGlobal'),
-        email_template_html: fieldValue('emailTemplateHtml'),
-        email_profiles: JSON.stringify(collectEmailProfilesFromForm())
-    }, '邮箱设置已保存');
-    await loadAdminData();
-    renderReservedEmailSettings();
-}
-async function testEmailSettings() {
-    const email = fieldValue('testEmailTo');
-    if (!email) return showToast('请输入测试收件邮箱', 'warning');
-    const saveRes = await request('finance.php?action=update_system_config', 'POST', {
+async function saveEmailSettingsData() {
+    return request('finance.php?action=update_system_config', 'POST', {
         register_email_verify_enabled: checkedValue('emailVerifyEnabled'),
         email_code_ttl: fieldValue('emailCodeTtl'),
         resend_from_name: fieldValue('resendFromNameGlobal'),
         email_template_html: fieldValue('emailTemplateHtml'),
         email_profiles: JSON.stringify(collectEmailProfilesFromForm())
     });
+}
+async function saveEmailSettings() {
+    const res = await saveEmailSettingsData();
+    if (!res.success) return showToast(res.message || '保存失败', 'error');
+    showToast('邮箱设置已保存', 'success');
+    await loadAdminData();
+    renderReservedEmailSettings();
+}
+async function testEmailProfile(profileId) {
+    const to = document.querySelector(`.email-profile-test-to[data-profile-id="${profileId}"]`)?.value?.trim() || '';
+    if (!to) return showToast('请输入测试收件邮箱', 'warning');
+    localStorage.setItem(EMAIL_PROFILE_TEST_TO_KEY, to);
+    const saveRes = await saveEmailSettingsData();
     if (!saveRes.success) return showToast(saveRes.message || '保存邮箱设置失败', 'error');
-    const res = await request('admin.php?action=test_email', 'POST', { email });
+    const res = await request('admin.php?action=test_email', 'POST', { email: to, profile_id: profileId });
     if (!res.success) return showToast(res.message || '测试发送失败', 'error');
-    showToast((res.message || '测试验证码邮件已发送') + (res.used_profile ? `（使用：${res.used_profile}）` : ''), 'success');
+    showToast((res.message || '测试邮件已发送') + (res.used_profile ? `（${res.used_profile}）` : ''), 'success');
     await loadAdminData();
     renderReservedEmailSettings();
 }

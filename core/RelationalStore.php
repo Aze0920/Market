@@ -252,6 +252,7 @@ class RelationalStore {
         }
         $this->ensureColumn('kn_orders', 'guest_email', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_orders', 'payment_trade_no', "varchar(80) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'guest_email', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'guest_query_code', "char(8) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_payment_orders', 'refund_applied', "tinyint(1) NOT NULL DEFAULT 0");
@@ -722,6 +723,7 @@ class RelationalStore {
             'frozen_released_at' => intval($row['frozen_released_at']),
             'complaint_withdrawn_at' => intval($row['complaint_withdrawn_at']),
             'purchase_date' => intval($row['purchase_date']),
+            'payment_trade_no' => $row['payment_trade_no'] ?? '',
             'delivery_info' => $this->decodeJson($row['delivery_info_json'], []),
         ];
         $complaint = $this->decodeJson($row['complaint_json'], []);
@@ -734,9 +736,9 @@ class RelationalStore {
     private function upsertOrder(array $order) {
         $complaint = $order['complaint'] ?? [];
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_orders (id, buyer_id, buyer_name, seller_id, seller_name, product_id, product_title, price, unit_price, quantity, fee, seller_amount, pay_method, guest_order, guest_token, guest_email, guest_query_code, balance_frozen, frozen_amount, frozen_released_at, complaint_withdrawn_at, purchase_date, delivery_info_json, complaint_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE buyer_id = VALUES(buyer_id), buyer_name = VALUES(buyer_name), seller_id = VALUES(seller_id), seller_name = VALUES(seller_name), product_id = VALUES(product_id), product_title = VALUES(product_title), price = VALUES(price), unit_price = VALUES(unit_price), quantity = VALUES(quantity), fee = VALUES(fee), seller_amount = VALUES(seller_amount), pay_method = VALUES(pay_method), guest_order = VALUES(guest_order), guest_token = VALUES(guest_token), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), balance_frozen = VALUES(balance_frozen), frozen_amount = VALUES(frozen_amount), frozen_released_at = VALUES(frozen_released_at), complaint_withdrawn_at = VALUES(complaint_withdrawn_at), purchase_date = VALUES(purchase_date), delivery_info_json = VALUES(delivery_info_json), complaint_json = VALUES(complaint_json)'
+            'INSERT INTO kn_orders (id, buyer_id, buyer_name, seller_id, seller_name, product_id, product_title, price, unit_price, quantity, fee, seller_amount, pay_method, guest_order, guest_token, guest_email, guest_query_code, balance_frozen, frozen_amount, frozen_released_at, complaint_withdrawn_at, purchase_date, payment_trade_no, delivery_info_json, complaint_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE buyer_id = VALUES(buyer_id), buyer_name = VALUES(buyer_name), seller_id = VALUES(seller_id), seller_name = VALUES(seller_name), product_id = VALUES(product_id), product_title = VALUES(product_title), price = VALUES(price), unit_price = VALUES(unit_price), quantity = VALUES(quantity), fee = VALUES(fee), seller_amount = VALUES(seller_amount), pay_method = VALUES(pay_method), guest_order = VALUES(guest_order), guest_token = VALUES(guest_token), guest_email = VALUES(guest_email), guest_query_code = VALUES(guest_query_code), balance_frozen = VALUES(balance_frozen), frozen_amount = VALUES(frozen_amount), frozen_released_at = VALUES(frozen_released_at), complaint_withdrawn_at = VALUES(complaint_withdrawn_at), purchase_date = VALUES(purchase_date), payment_trade_no = VALUES(payment_trade_no), delivery_info_json = VALUES(delivery_info_json), complaint_json = VALUES(complaint_json)'
         );
         return $stmt->execute([
             $order['id'],
@@ -761,6 +763,7 @@ class RelationalStore {
             intval($order['frozen_released_at'] ?? 0),
             intval($order['complaint_withdrawn_at'] ?? 0),
             intval($order['purchase_date'] ?? time()),
+            $order['payment_trade_no'] ?? '',
             $this->encodeJson($order['delivery_info'] ?? []),
             $this->encodeJson($complaint),
         ]);

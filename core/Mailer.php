@@ -25,6 +25,33 @@ class KeyNestMailer {
         return ['success' => false, 'message' => '所有发信邮箱均失败：' . $errorText, 'errors' => $errors];
     }
 
+    public static function sendWithProfileId($to, $subject, $html, $config, $profileId) {
+        $profileId = trim((string)$profileId);
+        if ($profileId === '') {
+            return ['success' => false, 'message' => '缺少发信配置ID'];
+        }
+        $profile = null;
+        foreach (self::getEmailProfiles($config, false) as $item) {
+            if ((string)($item['id'] ?? '') === $profileId) {
+                $profile = $item;
+                break;
+            }
+        }
+        if (!$profile) {
+            return ['success' => false, 'message' => '未找到指定的发信配置'];
+        }
+        $label = self::profileLabel($profile);
+        $merged = self::mergeProfileIntoConfig($config, $profile);
+        $result = self::sendWithProvider($to, $subject, $html, $merged);
+        if (!empty($result['success'])) {
+            self::persistEmailState(intval($config['email_rotate_index'] ?? 0), '');
+            return array_merge($result, ['used_profile' => $label]);
+        }
+        $errorText = $label . '：' . ($result['message'] ?? '发送失败');
+        self::persistEmailState(intval($config['email_rotate_index'] ?? 0), $errorText);
+        return ['success' => false, 'message' => $errorText, 'used_profile' => $label];
+    }
+
     private static function sendWithProvider($to, $subject, $html, $config) {
         $provider = $config['email_provider'] ?? 'smtp';
         if ($provider === 'resend') {

@@ -5,6 +5,7 @@
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
 require_once __DIR__ . '/../core/Mailer.php';
+require_once __DIR__ . '/../core/OrderTradeNo.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -629,6 +630,7 @@ function adminComplaintOrders() {
             $items[] = adminSafeComplaintOrder($order);
         }
     }
+    OrderTradeNo::attachToOrders($items, $db);
     usort($items, fn($a, $b) => (($b['complaint']['updated_at'] ?? $b['complaint']['created_at'] ?? 0) - ($a['complaint']['updated_at'] ?? $a['complaint']['created_at'] ?? 0)));
     return array_values($items);
 }
@@ -1371,7 +1373,10 @@ switch ($action) {
             'footer' => '这是一封后台测试邮件，不会用于真实注册验证。',
             'time' => date('Y-m-d H:i:s')
         ]);
-        $result = KeyNestMailer::send($to, $subject, $html, $config);
+        $profileId = trim((string)($_POST['profile_id'] ?? ''));
+        $result = $profileId !== ''
+            ? KeyNestMailer::sendWithProfileId($to, $subject, $html, $config, $profileId)
+            : KeyNestMailer::send($to, $subject, $html, $config);
         if (!empty($result['success'])) {
             $result['message'] = ($result['message'] ?? '测试邮件已发送') . '；测试验证码：' . $code;
             if (!empty($result['used_profile'])) {

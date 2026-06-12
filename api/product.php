@@ -1013,8 +1013,9 @@ switch ($action) {
         }
         $order = $purchaseResult['order'];
         $fee = $purchaseResult['fee'];
+        $balanceTradeNo = 'BAL' . date('YmdHis') . rand(1000, 9999);
         $db->createPaymentOrder([
-            'trade_no' => 'BAL' . date('YmdHis') . rand(1000, 9999),
+            'trade_no' => $balanceTradeNo,
             'user_id' => $userId,
             'payment_config_id' => 'balance',
             'pay_type' => 'balance',
@@ -1030,6 +1031,8 @@ switch ($action) {
             'related_id' => $order['id'],
             'paid_at' => time()
         ]);
+        $db->updateOrder(array_merge($order, ['payment_trade_no' => $balanceTradeNo]));
+        $order['payment_trade_no'] = $balanceTradeNo;
 
         jsonResponse(['success' => true, 'message' => '购买成功', 'order' => $order]);
 

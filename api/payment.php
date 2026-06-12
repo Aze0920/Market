@@ -533,6 +533,7 @@ function completeOnlineProductPurchase($order, $payMethod = '') {
 
     $productOrder = [
         'id' => 'id_' . time() . '_' . bin2hex(random_bytes(6)),
+        'payment_trade_no' => trim((string)($order['trade_no'] ?? '')),
         'buyer_id' => $buyer['id'],
         'buyer_name' => sanitizeString($buyer['username']),
         'guest_order' => $isGuestOrder,
