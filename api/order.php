@@ -497,9 +497,9 @@ switch ($action) {
         $db->updateOrder($order);
         $notifyOrder = attachPaymentTradeNoToOrder($order);
         if ($isSeller) {
-            NotifyMail::buyerSellerReply($notifyOrder, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
+            NotifyMail::buyerSellerReply($notifyOrder, $reply, $config);
         } elseif ($isBuyer) {
-            NotifyMail::sellerBuyerReply($notifyOrder, htmlspecialchars($reply, ENT_QUOTES, 'UTF-8'), $config);
+            NotifyMail::sellerBuyerReply($notifyOrder, $reply, $config);
         }
         jsonResponse(['success' => true, 'message' => '回复已提交']);
 
