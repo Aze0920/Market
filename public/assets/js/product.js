@@ -113,6 +113,72 @@ function sellerMembershipBadge(product = {}) {
     return badges.join('');
 }
 
+const SUBDOMAIN_UNAVAILABLE_META = {
+    not_found: { title: '域名未分配', icon: 'bi-globe2', tone: 'info' },
+    pending: { title: '域名审核中', icon: 'bi-hourglass-split', tone: 'warning' },
+    expired: { title: '域名已过期', icon: 'bi-clock-history', tone: 'warning' },
+    disabled: { title: '域名已禁用', icon: 'bi-slash-circle', tone: 'danger' },
+    rejected: { title: '域名未通过', icon: 'bi-x-octagon', tone: 'danger' },
+    inactive: { title: '域名不可用', icon: 'bi-exclamation-triangle', tone: 'warning' }
+};
+
+function getSubdomainUnavailableState(result) {
+    const apiState = result?.subdomain_state;
+    if (apiState?.blocked) {
+        return apiState;
+    }
+    const store = window.SellerStore || {};
+    if (store.prefix && !store.active) {
+        return {
+            blocked: true,
+            prefix: store.prefix,
+            full_domain: store.fullDomain || window.location.hostname,
+            reason: store.reason || (store.pending ? 'pending' : (store.expired ? 'expired' : (store.disabled ? 'disabled' : 'inactive'))),
+            message: store.message || ''
+        };
+    }
+    return null;
+}
+
+function renderSubdomainUnavailableState(state) {
+    const reason = state?.reason || 'not_found';
+    const meta = SUBDOMAIN_UNAVAILABLE_META[reason] || SUBDOMAIN_UNAVAILABLE_META.inactive;
+    const domain = state?.full_domain || window.location.hostname;
+    const message = state?.message || '当前域名未分配，请联系管理员开通后再访问。';
+    const hintMap = {
+        not_found: '该访问地址尚未绑定任何店铺，请联系平台管理员分配域名。',
+        pending: '域名开通申请正在处理中，审核通过后将自动展示对应店铺商品。',
+        expired: '店铺域名服务已到期，续费审核通过后将恢复正常访问。',
+        disabled: '该域名已被管理员停用，如需恢复请联系平台客服。',
+        rejected: '域名申请未通过审核，请联系管理员了解详情。',
+        inactive: '当前域名暂时无法提供服务，请稍后再试或联系管理员。'
+    };
+    const hint = hintMap[reason] || hintMap.inactive;
+    return `
+        <div class="subdomain-unavailable-wrap">
+            <div class="subdomain-unavailable-card tone-${Security.escapeHtml(meta.tone)}">
+                <div class="subdomain-unavailable-icon">
+                    <i class="bi ${Security.escapeHtml(meta.icon)}"></i>
+                </div>
+                <div class="subdomain-unavailable-badge">${Security.escapeHtml(meta.title)}</div>
+                <div class="subdomain-unavailable-domain">${Security.escapeHtml(domain)}</div>
+                <p class="subdomain-unavailable-message">${Security.escapeHtml(message)}</p>
+                <p class="subdomain-unavailable-hint">${Security.escapeHtml(hint)}</p>
+            </div>
+        </div>
+    `;
+}
+
+function showSubdomainUnavailableState(state) {
+    const grid = document.getElementById('productGrid');
+    const emptyState = document.getElementById('emptyProductState');
+    if (!grid || !emptyState || !state) return false;
+    grid.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    emptyState.innerHTML = renderSubdomainUnavailableState(state);
+    return true;
+}
+
 async function loadProducts(options = {}) {
     const grid = document.getElementById('productGrid');
     const emptyState = document.getElementById('emptyProductState');
@@ -132,12 +198,8 @@ async function loadProducts(options = {}) {
     }
     const result = await API.getProducts(filters);
 
-    if (window.SellerStore?.prefix && !window.SellerStore.active) {
-        grid.innerHTML = '';
-        emptyState.classList.remove('hidden');
-        const hint = window.SellerStore.message
-            || (window.SellerStore.pending ? '该店铺二级域名正在审核中，请等待管理员审核通过' : '当前二级域名暂不可用');
-        emptyState.innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle text-warning fs-1"></i><p class="mt-3 mb-0">${Security.escapeHtml(hint)}</p>${window.SellerStore.pending ? '<p class="text-muted small mt-2">审核通过后，此域名将只展示该卖家的全部商品</p>' : ''}</div>`;
+    const unavailableState = getSubdomainUnavailableState(result);
+    if (unavailableState && showSubdomainUnavailableState(unavailableState)) {
         return;
     }
 

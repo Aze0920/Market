@@ -92,7 +92,7 @@ switch ($action) {
                 'prefix' => $prefix,
                 'full_domain' => $fullDomain,
                 'reason' => 'not_found',
-                'message' => '该二级域名尚未开通或未通过审核',
+                'message' => SubdomainHelper::blockedPublicMessage('not_found', $fullDomain),
             ]);
         }
 
@@ -118,19 +118,19 @@ switch ($action) {
         ];
 
         if ($status === 'pending') {
-            $response['message'] = '该店铺二级域名正在审核中，请等待管理员审核通过';
+            $response['message'] = SubdomainHelper::blockedPublicMessage('pending', $fullDomain);
             $response['reason'] = 'pending';
         } elseif ($isExpired) {
-            $response['message'] = '当前二级域名已过期请联系客服进行处理';
+            $response['message'] = SubdomainHelper::blockedPublicMessage('expired', $fullDomain);
             $response['reason'] = 'expired';
         } elseif ($isDisabled) {
-            $response['message'] = '当前二级域名已被禁用';
+            $response['message'] = SubdomainHelper::blockedPublicMessage('disabled', $fullDomain);
             $response['reason'] = 'disabled';
         } elseif ($status === 'rejected') {
-            $response['message'] = '该二级域名申请已被拒绝';
+            $response['message'] = SubdomainHelper::blockedPublicMessage('rejected', $fullDomain);
             $response['reason'] = 'rejected';
         } elseif (!$isActive) {
-            $response['message'] = '当前二级域名暂不可用';
+            $response['message'] = SubdomainHelper::blockedPublicMessage('inactive', $fullDomain);
             $response['reason'] = 'inactive';
         }
 

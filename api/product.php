@@ -318,6 +318,21 @@ function applySubdomainProductScope($db, array &$filters) {
     return true;
 }
 
+function subdomainProductListMeta($db) {
+    require_once __DIR__ . '/../core/SubdomainHelper.php';
+    $scope = $db->resolveSubdomainProductScope();
+    if ($scope === null || ($scope['mode'] ?? '') !== 'blocked') {
+        return null;
+    }
+    return [
+        'blocked' => true,
+        'prefix' => $scope['prefix'] ?? '',
+        'full_domain' => $scope['full_domain'] ?? '',
+        'reason' => $scope['reason'] ?? 'not_found',
+        'message' => $scope['message'] ?? SubdomainHelper::blockedPublicMessage($scope['reason'] ?? 'not_found', $scope['full_domain'] ?? ''),
+    ];
+}
+
 function productAllowedOnCurrentSubdomain($db, array $product) {
     $scope = $db->resolveSubdomainProductScope();
     if ($scope === null) {
@@ -544,7 +559,12 @@ switch ($action) {
             'search' => sanitizeString($_GET['search'] ?? '')
         ];
         if (!applySubdomainProductScope($db, $filters)) {
-            jsonResponse(['success' => true, 'products' => []]);
+            $meta = subdomainProductListMeta($db);
+            jsonResponse([
+                'success' => true,
+                'products' => [],
+                'subdomain_state' => $meta,
+            ]);
         }
         $sellerId = trim((string)($_GET['seller_id'] ?? ''));
         if (empty($filters['seller_id']) && $sellerId !== '' && validateId($sellerId)) {

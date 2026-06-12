@@ -323,26 +323,37 @@ function updateSellerStoreBanner() {
     const banner = document.getElementById('sellerStoreBanner');
     if (!banner) return;
     const store = window.SellerStore || {};
-    if (!store.sellerId) {
+    const isUnavailableSubdomain = !!store.prefix && !store.active;
+    if (!store.sellerId && !isUnavailableSubdomain) {
         banner.classList.add('hidden');
         banner.innerHTML = '';
         return;
     }
     banner.classList.remove('hidden');
-    if (store.active) {
+    if (store.active && store.sellerId) {
         banner.className = 'alert alert-info py-2 px-3 mb-3';
         banner.innerHTML = `<i class="bi bi-shop me-1"></i>当前正在浏览 <strong>${Security.escapeHtml(store.sellerName || store.prefix)}</strong> 的专属店铺（${Security.escapeHtml(store.fullDomain || '')}）`;
         return;
     }
-    banner.className = 'alert alert-warning py-2 px-3 mb-3';
+    const toneMap = {
+        not_found: 'alert-secondary',
+        pending: 'alert-warning',
+        expired: 'alert-warning',
+        disabled: 'alert-danger',
+        rejected: 'alert-danger',
+        inactive: 'alert-warning',
+        feature_disabled: 'alert-warning',
+        base_domain_missing: 'alert-warning'
+    };
+    banner.className = 'alert py-2 px-3 mb-3 ' + (toneMap[store.reason] || 'alert-warning');
     const fallback = store.reason === 'feature_disabled'
         ? '二级域名功能未开启，请先在后台系统设置中开启'
         : (store.reason === 'base_domain_missing'
             ? '后台尚未配置二级域名主域名'
             : (store.reason === 'not_found'
-                ? '该二级域名尚未开通或未通过审核'
+                ? '当前域名未分配，请联系管理员开通后再访问'
                 : '当前二级域名暂不可用'));
-    banner.innerHTML = Security.escapeHtml(store.message || fallback);
+    banner.innerHTML = `<i class="bi bi-globe2 me-1"></i>${Security.escapeHtml(store.message || fallback)}`;
 }
 
 function goMarketHome() {
@@ -384,11 +395,16 @@ function showHome(options = {}) {
     const store = window.SellerStore || {};
     const marketTitle = document.getElementById('marketTitle');
     const marketDescription = document.getElementById('marketDescription');
+    const isUnavailableSubdomain = !!store.prefix && !store.active;
     if (store.sellerId && marketTitle) {
         marketTitle.textContent = (store.sellerName || store.prefix || '卖家') + ' 的店铺';
+    } else if (isUnavailableSubdomain && marketTitle) {
+        marketTitle.textContent = '域名未开通';
     }
     if (store.sellerId && marketDescription) {
         marketDescription.textContent = store.active ? '仅展示该卖家的全部商品' : (store.message || '店铺暂不可用');
+    } else if (isUnavailableSubdomain && marketDescription) {
+        marketDescription.textContent = store.message || '当前域名未分配，请联系管理员';
     }
 
     if (opts.resetFilters !== false) resetMarketFilters();

@@ -3452,3 +3452,96 @@ svg {
         width: 100%;
     }
 }
+
+.subdomain-unavailable-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 2.5rem 1rem 3rem;
+}
+
+.subdomain-unavailable-card {
+    width: min(100%, 520px);
+    text-align: center;
+    padding: 2.25rem 2rem 2rem;
+    border-radius: 1.25rem;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.subdomain-unavailable-card.tone-info {
+    border-color: rgba(99, 102, 241, 0.25);
+}
+
+.subdomain-unavailable-card.tone-warning {
+    border-color: rgba(245, 158, 11, 0.28);
+}
+
+.subdomain-unavailable-card.tone-danger {
+    border-color: rgba(239, 68, 68, 0.24);
+}
+
+.subdomain-unavailable-icon {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    background: rgba(99, 102, 241, 0.12);
+    color: #6366f1;
+}
+
+.subdomain-unavailable-card.tone-warning .subdomain-unavailable-icon {
+    background: rgba(245, 158, 11, 0.14);
+    color: #d97706;
+}
+
+.subdomain-unavailable-card.tone-danger .subdomain-unavailable-icon {
+    background: rgba(239, 68, 68, 0.12);
+    color: #dc2626;
+}
+
+.subdomain-unavailable-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+    margin-bottom: 0.85rem;
+}
+
+.subdomain-unavailable-card.tone-warning .subdomain-unavailable-badge {
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.12);
+}
+
+.subdomain-unavailable-card.tone-danger .subdomain-unavailable-badge {
+    color: #b91c1c;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.subdomain-unavailable-domain {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #0f172a;
+    word-break: break-all;
+    margin-bottom: 0.85rem;
+}
+
+.subdomain-unavailable-message {
+    color: #334155;
+    font-size: 1rem;
+    margin-bottom: 0.65rem;
+}
+
+.subdomain-unavailable-hint {
+    color: #64748b;
+    font-size: 0.88rem;
+    margin-bottom: 0;
+}

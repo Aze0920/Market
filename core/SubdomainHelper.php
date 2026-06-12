@@ -239,6 +239,53 @@ class SubdomainHelper {
         return strtolower(trim((string)$prefix)) . '.' . $baseDomain;
     }
 
+    public static function resolveBlockedReason(array $subdomain = null) {
+        if (!$subdomain) {
+            return 'not_found';
+        }
+        if (!empty($subdomain['disabled']) || ($subdomain['status'] ?? '') === 'disabled') {
+            return 'disabled';
+        }
+        if (self::isExpired($subdomain)) {
+            return 'expired';
+        }
+        if (($subdomain['status'] ?? '') === 'pending' || self::hasRenewalPending($subdomain)) {
+            return 'pending';
+        }
+        if (($subdomain['status'] ?? '') === 'rejected') {
+            return 'rejected';
+        }
+        return 'inactive';
+    }
+
+    public static function blockedPublicMessage($reason, $fullDomain = '') {
+        $map = [
+            'not_found' => '当前域名未分配，请联系管理员开通后再访问。',
+            'pending' => '该店铺域名正在审核中，请稍后再访问。',
+            'expired' => '该店铺域名已过期，请联系卖家或管理员续费。',
+            'disabled' => '该店铺域名已被禁用，暂时无法访问。',
+            'rejected' => '该店铺域名申请未通过，请联系管理员处理。',
+            'inactive' => '当前域名暂不可用，请联系管理员。',
+        ];
+        $message = $map[$reason] ?? $map['inactive'];
+        if ($reason === 'not_found' && $fullDomain !== '') {
+            return $fullDomain . ' 尚未开通。' . $message;
+        }
+        return $message;
+    }
+
+    public static function decorateBlockedScope(array $scope, array $config, $subdomain = null) {
+        $prefix = $scope['prefix'] ?? '';
+        $baseDomain = $scope['base_domain'] ?? self::resolveBaseDomainChoice($config, is_array($subdomain) ? ($subdomain['base_domain'] ?? '') : '');
+        $reason = self::resolveBlockedReason($subdomain);
+        $fullDomain = $prefix !== '' ? self::fullHost($prefix, $baseDomain) : self::normalizeHost($_SERVER['HTTP_HOST'] ?? '');
+        $scope['reason'] = $reason;
+        $scope['base_domain'] = $baseDomain;
+        $scope['full_domain'] = $fullDomain;
+        $scope['message'] = self::blockedPublicMessage($reason, $fullDomain);
+        return $scope;
+    }
+
     public static function extractPrefixFromHost($host, $baseDomains) {
         if (is_string($baseDomains)) {
             $baseDomains = self::getBaseDomains(['subdomain_base_domain' => $baseDomains]);

@@ -1333,9 +1333,14 @@ class Database {
             return null;
         }
         $prefix = $match['prefix'];
+        $baseDomain = $match['base_domain'];
         $subdomain = $this->getSellerSubdomainByPrefix($prefix);
         if (!$subdomain || !SubdomainHelper::isActive($subdomain)) {
-            return ['mode' => 'blocked', 'prefix' => $prefix];
+            return SubdomainHelper::decorateBlockedScope([
+                'mode' => 'blocked',
+                'prefix' => $prefix,
+                'base_domain' => $baseDomain,
+            ], $config, $subdomain);
         }
         return [
             'mode' => 'seller',
