@@ -6,6 +6,7 @@ require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
 require_once __DIR__ . '/../core/Mailer.php';
 require_once __DIR__ . '/../core/OrderTradeNo.php';
+require_once __DIR__ . '/../core/NotifyMail.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -1310,7 +1311,19 @@ switch ($action) {
         $order['complaint']['admin_replied_at'] = $replyItem['created_at'];
         $order['complaint']['updated_at'] = time();
         $db->updateOrder($order);
-        adminJsonResponse(['success' => true, 'message' => '管理员回复已保存']);
+        $config = $db->getSystemConfig();
+        $notifyOrder = OrderTradeNo::attachToOrder($order, $db, false);
+        $adminName = $adminUser['username'] ?? 'admin';
+        $buyerMail = NotifyMail::buyerAdminComplaintReply($notifyOrder, $safeReply, $adminName, $config);
+        $sellerMail = NotifyMail::sellerAdminComplaintReply($notifyOrder, $safeReply, $adminName, $config);
+        $messages = ['管理员回复已保存'];
+        if (empty($buyerMail['success'])) {
+            $messages[] = '买家通知未发送：' . ($buyerMail['message'] ?? '请检查邮箱配置');
+        }
+        if (empty($sellerMail['success'])) {
+            $messages[] = '卖家通知未发送：' . ($sellerMail['message'] ?? '请检查邮箱配置');
+        }
+        adminJsonResponse(['success' => true, 'message' => implode('；', $messages)]);
 
     case 'update_complaint_status':
         $id = trim($_POST['order_id'] ?? '');

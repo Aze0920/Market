@@ -123,6 +123,68 @@ class NotifyMail {
         );
     }
 
+    private static function buyerComplaintEmailAddress($order) {
+        $email = trim((string)($order['complaint']['email'] ?? ''));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return $email;
+        }
+        global $db;
+        $buyer = $db->getUserById($order['buyer_id'] ?? '');
+        return self::userEmail($buyer);
+    }
+
+    public static function buyerAdminComplaintReply($order, $reply, $adminName, $config) {
+        $email = self::buyerComplaintEmailAddress($order);
+        if ($email === '') {
+            return ['success' => false, 'message' => '买家邮箱无效'];
+        }
+        $siteName = self::siteName($config);
+        return KeyNestMailer::sendNotification(
+            $email,
+            $siteName . ' 平台回复了您的投诉',
+            $config,
+            [
+                'title' => '平台已回复投诉',
+                'badge' => '投诉动态',
+                'accent' => 'primary',
+                'message' => '平台对您发起的投诉作出了新的回复，请登录查看详情并继续沟通。',
+                'details' => self::orderDetails($order, [
+                    ['label' => '卖家', 'value' => (string)($order['seller_name'] ?? '卖家')],
+                    ['label' => '平台回复', 'value' => (string)$reply],
+                    ['label' => '处理人', 'value' => (string)$adminName],
+                ]),
+                'footer' => '如问题仍未解决，您可以继续回复或保留投诉等待平台处理。',
+            ]
+        );
+    }
+
+    public static function sellerAdminComplaintReply($order, $reply, $adminName, $config) {
+        global $db;
+        $seller = $db->getUserById($order['seller_id'] ?? '');
+        $email = self::userEmail($seller);
+        if ($email === '') {
+            return ['success' => false, 'message' => '卖家未绑定邮箱'];
+        }
+        $siteName = self::siteName($config);
+        return KeyNestMailer::sendNotification(
+            $email,
+            $siteName . ' 平台回复了投诉',
+            $config,
+            [
+                'title' => '平台已回复投诉',
+                'badge' => '投诉动态',
+                'accent' => 'primary',
+                'message' => '平台对该订单投诉作出了新的回复，请登录查看详情并配合处理。',
+                'details' => self::orderDetails($order, [
+                    ['label' => '买家', 'value' => (string)($order['buyer_name'] ?? '买家')],
+                    ['label' => '平台回复', 'value' => (string)$reply],
+                    ['label' => '处理人', 'value' => (string)$adminName],
+                ]),
+                'footer' => '您可以在「投诉管理 / 售出记录」中查看详情并继续沟通。',
+            ]
+        );
+    }
+
     public static function sellerBuyerReply($order, $reply, $config) {
         global $db;
         $seller = $db->getUserById($order['seller_id'] ?? '');
