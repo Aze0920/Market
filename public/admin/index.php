@@ -401,7 +401,7 @@ const ADMIN_PAGE_KEYS = {
     finance: ['requests'],
     merchant_review: ['users'],
     subdomain_review: ['subdomains'],
-    cards: ['cards', 'membershipLevels'],
+    cards: ['cards', 'membershipLevels', 'sysConfig'],
     payments: ['payConfigs'],
     settings: ['sysConfig'],
     membership: ['membershipLevels', 'sysConfig'],
@@ -2499,12 +2499,15 @@ function renderCards() {
     const cards = Admin.cache.cards || [];
     const hasMembershipLevels = cardMembershipLevelsAdmin().length > 0;
     const subdomainEnabled = isSubdomainFeatureEnabledAdmin();
+    const subdomainPlans = getSubdomainPlansAdmin();
+    const showSubdomainCard = subdomainEnabled || subdomainPlans.length > 0;
     document.getElementById('adminContent').innerHTML = `
         <div class="panel mb-4">
             <div class="panel-title">
                 <div>
                     <h5>生成卡密</h5>
                     <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级；二级域名卡用于兑换指定主域名及时长的二级域名。</div>
+                    ${showSubdomainCard && !subdomainEnabled ? '<div class="small text-warning mt-2">二级域名功能当前未开启，生成二级域名卡前请先在系统设置中开启。</div>' : ''}
                 </div>
             </div>
             <div class="row g-3 align-items-end">
@@ -2513,7 +2516,7 @@ function renderCards() {
                     <select id="cardType" class="form-select" onchange="toggleAdminCardCreateType()">
                         <option value="balance">余额卡</option>
                         <option value="membership">会员卡</option>
-                        ${subdomainEnabled ? '<option value="subdomain">二级域名卡</option>' : ''}
+                        ${showSubdomainCard ? '<option value="subdomain">二级域名卡</option>' : ''}
                     </select>
                 </div>
                 <div class="col-md-6 col-lg-3" id="cardAmountWrap">
