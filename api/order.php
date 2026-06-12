@@ -166,6 +166,67 @@ function releaseSellerOrderBalance(&$order) {
     return true;
 }
 
+function resolveComplaintRefundToBuyer(&$order, $operatorUsername = '') {
+    global $db;
+    if (empty($order['complaint']) || !is_array($order['complaint'])) {
+        return [false, '该订单没有投诉记录'];
+    }
+    if (!empty($order['complaint']['funds_settled'])) {
+        return [false, '该投诉资金已处理，不能重复退款'];
+    }
+    $amount = max(0, floatval($order['complaint']['funds_amount'] ?? $order['frozen_amount'] ?? 0));
+    $buyer = $db->getUserById($order['buyer_id'] ?? '');
+    if (!$buyer) {
+        return [false, '买家账号不存在，无法退款到余额，请联系管理员处理'];
+    }
+    $seller = $db->getUserById($order['seller_id'] ?? '');
+    if (!$seller) {
+        return [false, '卖家不存在'];
+    }
+    if ($amount <= 0) {
+        $order['complaint']['funds_settled'] = true;
+        $order['complaint']['funds_settled_at'] = time();
+        $order['complaint']['funds_action'] = 'none';
+        $order['complaint']['funds_amount'] = 0;
+        $order['complaint']['status'] = 'rejected';
+        $order['complaint']['updated_at'] = time();
+        return [true, '投诉已关闭'];
+    }
+    if (empty($order['balance_frozen'])) {
+        return [false, '订单冻结状态异常，请联系管理员处理'];
+    }
+    $sellerFrozen = floatval($seller['frozen_balance'] ?? 0);
+    if ($sellerFrozen + 0.00001 < $amount) {
+        return [false, '冻结余额不足，无法退款'];
+    }
+    $currentAction = (string)($order['complaint']['funds_action'] ?? 'frozen');
+    $db->updateUser($seller['id'], [
+        'frozen_balance' => max(0, $sellerFrozen - $amount)
+    ]);
+    $db->updateUser($buyer['id'], [
+        'balance' => floatval($buyer['balance'] ?? 0) + $amount
+    ]);
+    $order['balance_frozen'] = false;
+    $order['frozen_released_at'] = time();
+    if (!isset($order['complaint']['funds_history']) || !is_array($order['complaint']['funds_history'])) {
+        $order['complaint']['funds_history'] = [];
+    }
+    $order['complaint']['funds_history'][] = [
+        'from' => $currentAction !== '' ? $currentAction : 'frozen',
+        'to' => 'refund_to_buyer',
+        'amount' => $amount,
+        'created_at' => time(),
+        'by' => $operatorUsername
+    ];
+    $order['complaint']['funds_action'] = 'refund_to_buyer';
+    $order['complaint']['funds_settled'] = true;
+    $order['complaint']['funds_settled_at'] = time();
+    $order['complaint']['funds_amount'] = $amount;
+    $order['complaint']['status'] = 'rejected';
+    $order['complaint']['updated_at'] = time();
+    return [true, '已退款 ¥' . number_format($amount, 2, '.', '') . ' 到买家余额'];
+}
+
 switch ($action) {
     case 'my_orders':
         $userId = requireAuth();
@@ -420,6 +481,49 @@ switch ($action) {
         $order['complaint']['updated_at'] = time();
         $db->updateOrder($order);
         jsonResponse(['success' => true, 'message' => '回复已提交']);
+
+    case 'seller_refund_complaint':
+        $userId = requireAuth();
+        $user = getCurrentUser();
+        $id = $_POST['order_id'] ?? '';
+        $note = trim((string)($_POST['note'] ?? ''));
+        if (!validateId($id)) {
+            jsonResponse(['success' => false, 'message' => '无效的订单ID'], 400);
+        }
+        if ($note !== '' && mb_strlen($note) > 500) {
+            jsonResponse(['success' => false, 'message' => '退款说明最多500字'], 400);
+        }
+        $order = $db->getOrderById($id);
+        if (!$order) {
+            jsonResponse(['success' => false, 'message' => '订单不存在'], 404);
+        }
+        if (($order['seller_id'] ?? '') !== $userId) {
+            jsonResponse(['success' => false, 'message' => '只有卖家可以操作退款'], 403);
+        }
+        if (empty($order['complaint']) || in_array(($order['complaint']['status'] ?? ''), ['resolved', 'rejected', 'withdrawn'], true)) {
+            jsonResponse(['success' => false, 'message' => '该投诉已结束，无法退款'], 400);
+        }
+        [$ok, $message] = resolveComplaintRefundToBuyer($order, $user['username'] ?? 'seller');
+        if (!$ok) {
+            jsonResponse(['success' => false, 'message' => $message], 400);
+        }
+        $refundNote = $note !== '' ? htmlspecialchars($note, ENT_QUOTES, 'UTF-8') : '卖家同意退款，冻结金额已退还给买家';
+        if (!isset($order['complaint']['messages']) || !is_array($order['complaint']['messages'])) {
+            $order['complaint']['messages'] = [];
+        }
+        $order['complaint']['messages'][] = [
+            'role' => 'seller',
+            'user_id' => $userId,
+            'username' => $user['username'] ?? '卖家',
+            'content' => $refundNote,
+            'created_at' => time()
+        ];
+        $order['complaint']['seller_reply'] = $refundNote;
+        $order['complaint']['seller_replied_at'] = time();
+        $order['complaint']['seller_refunded_at'] = time();
+        $order['complaint']['seller_refunded_by'] = $user['username'] ?? 'seller';
+        $db->updateOrder($order);
+        jsonResponse(['success' => true, 'message' => $message]);
 
     case 'overview':
         $userId = requireAuth();

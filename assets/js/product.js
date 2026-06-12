@@ -59,7 +59,7 @@ function deliveryInfoHtml(d) {
     return `
         <textarea class="form-control delivery-plain" readonly rows="${Math.min(Math.max(rows, 6), 16)}" style="resize:vertical;white-space:pre;word-break:normal;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${Security.escapeHtml(text)}</textarea>
         <div class="d-flex flex-wrap gap-2 mt-3">
-            <button class="btn btn-sm btn-outline-primary" onclick="Utils.copyText('${Security.escapeAttr(text)}')"><i class="bi bi-clipboard me-1"></i>复制全部卡密</button>
+            <button class="btn btn-sm btn-outline-primary" data-copy="${Security.escapeAttr(text)}"><i class="bi bi-clipboard me-1"></i>复制全部卡密</button>
         </div>
     `;
 }

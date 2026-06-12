@@ -208,13 +208,21 @@ window.Utils = {
         return str.length > len ? str.substring(0, len) + '...' : str;
     },
     copyText: function(text) {
-        navigator.clipboard.writeText(text).then(function() {
+        const value = text == null ? '' : String(text);
+        navigator.clipboard.writeText(value).then(function() {
             window.Toast.success('已复制到剪贴板');
         }).catch(function() {
             window.Toast.error('复制失败');
         });
     }
 };
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    e.preventDefault();
+    Utils.copyText(btn.getAttribute('data-copy') || '');
+});
 
 function cleanupBootstrapModalArtifacts() {
     const visibleModals = Array.from(document.querySelectorAll('.modal.show'));
@@ -637,7 +645,7 @@ async function loadSalesTab(area) {
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="openSellerOrderInfoModal('${Security.escapeAttr(o.id)}')">订单信息</button>
-                                ${o.complaint && ['open', 'processing'].includes(o.complaint.status) ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${Security.escapeAttr(o.id)}')">查看投诉</button>` : ''}
+                                ${o.complaint && ['open', 'processing'].includes(o.complaint.status) ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${Security.escapeAttr(o.id)}')">查看投诉</button><button class="btn btn-sm btn-danger" onclick="submitSellerComplaintRefund('${Security.escapeAttr(o.id)}')">同意退款</button>` : ''}
                             </td>
                         </tr>
                     `).join('')}
@@ -805,7 +813,7 @@ async function openSellerComplaintModal(orderId) {
     `;
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
-        ${sellerComplaintActive ? `<button class="btn btn-primary" onclick="submitComplaintReply('${Security.escapeAttr(orderId)}', 'sales')">提交回复</button>` : ''}
+        ${sellerComplaintActive ? `<button class="btn btn-danger" onclick="submitSellerComplaintRefund('${Security.escapeAttr(orderId)}')">同意退款</button><button class="btn btn-primary" onclick="submitComplaintReply('${Security.escapeAttr(orderId)}', 'sales')">提交回复</button>` : ''}
     `;
     modal.show();
 }
@@ -819,6 +827,18 @@ async function submitComplaintReply(orderId, refreshTab = 'complaints') {
         renderDashboardTab(refreshTab);
     } else {
         Toast.error(result.message || '回复失败');
+    }
+}
+
+async function submitSellerComplaintRefund(orderId, note = '') {
+    if (!confirm('确认同意退款吗？冻结金额将退还给买家余额，投诉将结束。')) return;
+    const result = await API.sellerRefundComplaint(orderId, note);
+    if (result.success) {
+        Toast.success(result.message || '退款成功');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        renderDashboardTab(App.currentTab || 'complaints');
+    } else {
+        Toast.error(result.message || '退款失败');
     }
 }
 
@@ -1025,7 +1045,7 @@ function renderGuestOrdersList(orders) {
             <div class="d-flex gap-2 flex-wrap mt-2">
                 <button class="btn btn-sm btn-outline-primary" onclick="queryGuestOrder('${Security.escapeAttr(order.id)}')">刷新状态</button>
                 ${order.related_id ? `<button class="btn btn-sm btn-primary" onclick="viewGuestDeliveryInfo('${Security.escapeAttr(order.related_id)}', '${Security.escapeAttr(order.guest_token || getGuestOrderToken())}')">查看发货</button>` : ''}
-                <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(order.id)}')">复制订单号</button>
+                <button class="btn btn-sm btn-outline" data-copy="${Security.escapeAttr(order.id)}">复制订单号</button>
             </div>
         </div>
     `).join('')}</div>`;
@@ -1518,7 +1538,7 @@ async function loadCardManageTab(area) {
                                 <td class="text-muted small">${Utils.formatDate(c.created_at)}</td>
                                 <td>
                                     ${!c.used ? `
-                                        <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(c.code)}')">复制</button>
+                                        <button class="btn btn-sm btn-outline" data-copy="${Security.escapeAttr(c.code)}">复制</button>
                                         <button class="btn btn-sm btn-danger" onclick="deleteCard('${Security.escapeAttr(c.id)}')">删除</button>
                                     ` : ''}
                                 </td>
@@ -3789,7 +3809,7 @@ async function generateCards() {
         return `<div class="d-flex justify-content-between align-items-center py-1">
             <code>${Security.escapeHtml(c.code)}</code>
             <span>${valueText}</span>
-            <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(c.code)}')">复制</button>
+            <button class="btn btn-sm btn-outline" data-copy="${Security.escapeAttr(c.code)}">复制</button>
         </div>`;
     }).join('');
 }
@@ -3934,7 +3954,7 @@ async function loadComplaintsTab(area) {
             ${renderComplaintMessages(order)}
             <div class="d-flex flex-wrap gap-2 justify-content-end">
                 ${role === 'buyer' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-outline-primary" onclick="openComplaintThreadModal('${Security.escapeAttr(order.id)}', 'buyer')">查看实时情况/继续沟通</button><button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${Security.escapeAttr(order.id)}')">撤诉</button>` : ''}
-                ${role === 'seller' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-primary" onclick="openSellerComplaintModal('${Security.escapeAttr(order.id)}')">查看实时情况/回复</button>` : ''}
+                ${role === 'seller' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-primary" onclick="openSellerComplaintModal('${Security.escapeAttr(order.id)}')">查看实时情况/回复</button><button class="btn btn-sm btn-danger" onclick="submitSellerComplaintRefund('${Security.escapeAttr(order.id)}')">同意退款</button>` : ''}
             </div>
         </div>
     `;

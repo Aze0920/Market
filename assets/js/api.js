@@ -325,6 +325,10 @@ const API = {
         return this.request('order.php?action=reply_complaint', 'POST', { order_id: orderId, reply });
     },
 
+    sellerRefundComplaint(orderId, note = '') {
+        return this.request('order.php?action=seller_refund_complaint', 'POST', { order_id: orderId, note });
+    },
+
     getOverview() {
         return this.request('order.php?action=overview');
     },

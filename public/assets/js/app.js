@@ -66,16 +66,6 @@ window.App = {
     currentChatPartner: null,
     currentDetailProduct: null,
     products: [],
-    listState: {
-        overviewOrders: { page: 1, pageSize: 10 },
-        orders: { page: 1, pageSize: 10 },
-        sales: { page: 1, pageSize: 10 },
-        balanceRequests: { page: 1, pageSize: 10 },
-        balancePayments: { page: 1, pageSize: 10 },
-        reviews: { page: 1, pageSize: 10 },
-        buyerComplaints: { page: 1, pageSize: 10 },
-        sellerComplaints: { page: 1, pageSize: 10 }
-    },
 
     setUser: function(user) {
         this.currentUser = user;
@@ -210,10 +200,7 @@ document.head.appendChild(slideStyle);
 
 window.Utils = {
     formatDate(timestamp) {
-        const numeric = Number(timestamp || 0);
-        if (!Number.isFinite(numeric) || numeric <= 0) return '-';
-        const date = new Date(numeric * 1000);
-        if (Number.isNaN(date.getTime())) return '-';
+        const date = new Date(timestamp * 1000);
         return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0') + ' ' + String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
     },
     truncate: function(str, len) {
@@ -221,13 +208,21 @@ window.Utils = {
         return str.length > len ? str.substring(0, len) + '...' : str;
     },
     copyText: function(text) {
-        navigator.clipboard.writeText(text).then(function() {
+        const value = text == null ? '' : String(text);
+        navigator.clipboard.writeText(value).then(function() {
             window.Toast.success('已复制到剪贴板');
         }).catch(function() {
             window.Toast.error('复制失败');
         });
     }
 };
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    e.preventDefault();
+    Utils.copyText(btn.getAttribute('data-copy') || '');
+});
 
 function cleanupBootstrapModalArtifacts() {
     const visibleModals = Array.from(document.querySelectorAll('.modal.show'));
@@ -289,61 +284,6 @@ function getInitialFrontendState() {
         page: ['home', 'dashboard'].includes(page) ? page : 'home',
         tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'profile', 'customlabel', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
     };
-}
-
-const frontPageSizeOptions = [10, 20, 50, 100];
-function frontListState(key) {
-    if (!App.listState) App.listState = {};
-    if (!App.listState[key]) App.listState[key] = { page: 1, pageSize: 10 };
-    App.listState[key].page = Math.max(1, Number(App.listState[key].page || 1));
-    App.listState[key].pageSize = Math.max(10, Math.min(100, Number(App.listState[key].pageSize || 10)));
-    return App.listState[key];
-}
-function frontPaginate(key, list) {
-    const state = frontListState(key);
-    const items = Array.isArray(list) ? list : [];
-    const totalPages = Math.max(1, Math.ceil(items.length / state.pageSize));
-    state.page = Math.min(Math.max(1, state.page), totalPages);
-    return {
-        state,
-        items: items.slice((state.page - 1) * state.pageSize, state.page * state.pageSize),
-        total: items.length,
-        totalPages
-    };
-}
-function frontPaginationHtml(key, total, label = '条') {
-    const state = frontListState(key);
-    const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
-    state.page = Math.min(Math.max(1, state.page), totalPages);
-    if (total <= 0) return '';
-    return `
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
-            <div class="small text-muted">第 ${state.page} / ${totalPages} 页，共 ${total} ${label}</div>
-            <div class="d-flex flex-wrap align-items-center gap-2">
-                <select class="form-select form-select-sm" style="width:auto;min-width:116px" onchange="setFrontPageSize('${Security.escapeAttr(key)}', this.value)">
-                    ${frontPageSizeOptions.map(size => `<option value="${size}" ${Number(state.pageSize) === size ? 'selected' : ''}>每页 ${size} 条</option>`).join('')}
-                </select>
-                <button class="btn btn-sm btn-outline" ${state.page <= 1 ? 'disabled' : ''} onclick="setFrontPage('${Security.escapeAttr(key)}', ${state.page - 1})">上一页</button>
-                <button class="btn btn-sm btn-outline" ${state.page >= totalPages ? 'disabled' : ''} onclick="setFrontPage('${Security.escapeAttr(key)}', ${state.page + 1})">下一页</button>
-            </div>
-        </div>`;
-}
-function setFrontPage(key, page) {
-    frontListState(key).page = Math.max(1, Number(page) || 1);
-    renderDashboardTab(App.currentTab || 'overview');
-}
-function setFrontPageSize(key, pageSize) {
-    const state = frontListState(key);
-    state.pageSize = Math.max(10, Math.min(100, Number(pageSize) || 10));
-    state.page = 1;
-    renderDashboardTab(App.currentTab || 'overview');
-}
-function resetFrontListPage(key) {
-    frontListState(key).page = 1;
-}
-
-function frontMessageTime(message) {
-    return Utils.formatDate(message?.timestamp || message?.created_at || message?.time || message?.createdAt || message?.date);
 }
 
 function resetMarketFilters() {
@@ -528,7 +468,6 @@ async function loadOverviewTab(area) {
     }
 
     const o = result.overview;
-    const overviewOrdersPage = frontPaginate('overviewOrders', o.recent_orders || []);
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-speedometer2 me-2 text-primary"></i>控制台概览</h5>
         <div class="row g-3 mb-4">
@@ -562,17 +501,17 @@ async function loadOverviewTab(area) {
             </div>
         </div>
         <h6 class="fw-bold mb-3">最近购买记录</h6>
-        ${overviewOrdersPage.total === 0 ?
+        ${o.recent_orders.length === 0 ?
             '<p class="text-muted">暂无购买记录</p>' :
             `<div class="bg-light rounded-3 p-3">
-                ${overviewOrdersPage.items.map(o => `
+                ${o.recent_orders.map(o => `
                     <div class="d-flex justify-content-between py-2 border-bottom">
                         <button type="button" class="btn btn-link p-0 text-start fw-semibold text-decoration-none" onclick="openOrderProductDetail('${Security.escapeAttr(o.product_id)}')">${Utils.truncate(o.product_title, 25)}</button>
                         <span class="text-danger fw-semibold">-¥${o.price.toFixed(2)}</span>
                         <span class="text-muted small">${Utils.formatDate(o.purchase_date)}</span>
                     </div>
                 `).join('')}
-            </div>${frontPaginationHtml('overviewOrders', overviewOrdersPage.total, '条购买记录')}`
+            </div>`
         }
     `;
 }
@@ -628,7 +567,6 @@ async function loadOrdersTab(area) {
         return;
     }
 
-    const ordersPage = frontPaginate('orders', result.orders || []);
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-receipt me-2"></i>购买记录</h5>
         <div class="table-responsive">
@@ -644,7 +582,7 @@ async function loadOrdersTab(area) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${ordersPage.items.map(o => `
+                    ${result.orders.map(o => `
                         <tr>
                             <td>
                                 <button type="button" class="btn btn-link p-0 text-start fw-semibold text-decoration-none order-product-link" onclick="openOrderProductDetail('${Security.escapeAttr(o.product_id)}')" title="查看商品详情">
@@ -666,7 +604,6 @@ async function loadOrdersTab(area) {
                 </tbody>
             </table>
         </div>
-        ${frontPaginationHtml('orders', ordersPage.total, '条购买记录')}
     `;
 }
 
@@ -683,7 +620,6 @@ async function loadSalesTab(area) {
         return;
     }
 
-    const salesPage = frontPaginate('sales', result.orders || []);
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-graph-up me-2"></i>售出记录</h5>
         <div class="table-responsive">
@@ -698,7 +634,7 @@ async function loadSalesTab(area) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${salesPage.items.map(o => `
+                    ${result.orders.map(o => `
                         <tr>
                             <td>
                                 ${Utils.truncate(o.product_title, 20)}
@@ -709,14 +645,13 @@ async function loadSalesTab(area) {
                             <td class="text-muted small">${Utils.formatDate(o.purchase_date)}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline" onclick="openSellerOrderInfoModal('${Security.escapeAttr(o.id)}')">订单信息</button>
-                                ${o.complaint && ['open', 'processing'].includes(o.complaint.status) ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${Security.escapeAttr(o.id)}')">查看投诉</button>` : ''}
+                                ${o.complaint && ['open', 'processing'].includes(o.complaint.status) ? `<button class="btn btn-sm btn-warning" onclick="openSellerComplaintModal('${Security.escapeAttr(o.id)}')">查看投诉</button><button class="btn btn-sm btn-danger" onclick="submitSellerComplaintRefund('${Security.escapeAttr(o.id)}')">同意退款</button>` : ''}
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         </div>
-        ${frontPaginationHtml('sales', salesPage.total, '条售出记录')}
     `;
 }
 
@@ -878,7 +813,7 @@ async function openSellerComplaintModal(orderId) {
     `;
     document.getElementById('purchaseFooter').innerHTML = `
         <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
-        ${sellerComplaintActive ? `<button class="btn btn-primary" onclick="submitComplaintReply('${Security.escapeAttr(orderId)}', 'sales')">提交回复</button>` : ''}
+        ${sellerComplaintActive ? `<button class="btn btn-danger" onclick="submitSellerComplaintRefund('${Security.escapeAttr(orderId)}')">同意退款</button><button class="btn btn-primary" onclick="submitComplaintReply('${Security.escapeAttr(orderId)}', 'sales')">提交回复</button>` : ''}
     `;
     modal.show();
 }
@@ -892,6 +827,18 @@ async function submitComplaintReply(orderId, refreshTab = 'complaints') {
         renderDashboardTab(refreshTab);
     } else {
         Toast.error(result.message || '回复失败');
+    }
+}
+
+async function submitSellerComplaintRefund(orderId, note = '') {
+    if (!confirm('确认同意退款吗？冻结金额将退还给买家余额，投诉将结束。')) return;
+    const result = await API.sellerRefundComplaint(orderId, note);
+    if (result.success) {
+        Toast.success(result.message || '退款成功');
+        bootstrap.Modal.getInstance(document.getElementById('purchaseConfirmModal'))?.hide();
+        renderDashboardTab(App.currentTab || 'complaints');
+    } else {
+        Toast.error(result.message || '退款失败');
     }
 }
 
@@ -1098,7 +1045,7 @@ function renderGuestOrdersList(orders) {
             <div class="d-flex gap-2 flex-wrap mt-2">
                 <button class="btn btn-sm btn-outline-primary" onclick="queryGuestOrder('${Security.escapeAttr(order.id)}')">刷新状态</button>
                 ${order.related_id ? `<button class="btn btn-sm btn-primary" onclick="viewGuestDeliveryInfo('${Security.escapeAttr(order.related_id)}', '${Security.escapeAttr(order.guest_token || getGuestOrderToken())}')">查看发货</button>` : ''}
-                <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(order.id)}')">复制订单号</button>
+                <button class="btn btn-sm btn-outline" data-copy="${Security.escapeAttr(order.id)}">复制订单号</button>
             </div>
         </div>
     `).join('')}</div>`;
@@ -1256,10 +1203,9 @@ async function loadBalanceTab(area) {
     if (!result.success || result.requests.length === 0) {
         requestsHtml = '<p class="text-muted mt-3">暂无申请记录</p>';
     } else {
-        const requestsPage = frontPaginate('balanceRequests', result.requests || []);
         requestsHtml = `
             <div class="mt-3">
-                ${requestsPage.items.map(r => `
+                ${result.requests.map(r => `
                     <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                         <div>
                             <span>${r.type === 'deposit' ? '充值' : (r.payment_method ? '提现-' + r.payment_method : '提现')} ¥${r.amount.toFixed(2)}</span>
@@ -1275,18 +1221,17 @@ async function loadBalanceTab(area) {
                     </div>
                 `).join('')}
             </div>
-            ${frontPaginationHtml('balanceRequests', requestsPage.total, '条申请记录')}
         `;
     }
+
     let paymentOrdersHtml = '';
     if (!paymentResult.success || paymentResult.orders.length === 0) {
         paymentOrdersHtml = '<p class="text-muted mt-3">暂无余额流水记录</p>';
     } else {
         const sortedPaymentOrders = [...paymentResult.orders].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
-        const paymentOrdersPage = frontPaginate('balancePayments', sortedPaymentOrders);
         paymentOrdersHtml = `
             <div class="mt-3">
-                ${paymentOrdersPage.items.map(o => `
+                ${sortedPaymentOrders.map(o => `
                     <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                         <span>${Security.escapeHtml(paymentOrderTitle(o))}</span>
                         <span class="badge badge-${paymentOrderStatusClass(o)}">
@@ -1296,7 +1241,6 @@ async function loadBalanceTab(area) {
                     </div>
                 `).join('')}
             </div>
-            ${frontPaginationHtml('balancePayments', paymentOrdersPage.total, '条流水记录')}
         `;
     }
 
@@ -1488,16 +1432,22 @@ function renderMembershipCardActivationCard() {
             <div class="card-header">
                 <i class="bi bi-credit-card-2-front"></i>
                 <h5>卡密激活会员</h5>
-                <small>请使用卡密激活会员</small>
+                <small>使用会员卡密快速开通权益</small>
             </div>
             <div class="card-body">
-                <div class="text-center py-4">
-                    <div class="fw-semibold text-muted">请使用卡密激活会员</div>
+                <div class="text-center mb-3">
+                    <span class="badge bg-primary-light text-primary fs-5"><i class="bi bi-key"></i> 输入卡密</span>
                 </div>
+                <ul class="privilege-list">
+                    <li><i class="bi bi-check"></i> 支持后台生成的会员卡密</li>
+                    <li><i class="bi bi-check"></i> 兑换成功后自动刷新会员等级</li>
+                    <li><i class="bi bi-check"></i> 独立激活入口，不占用会员等级配置</li>
+                    <li><i class="bi bi-check"></i> Free 为默认会员，不支持生成激活卡</li>
+                </ul>
             </div>
             <div class="card-footer">
                 <button class="btn btn-primary w-100" onclick="openCardRechargeModal('membership')">
-                    <i class="bi bi-key me-1"></i>输入卡密
+                    <i class="bi bi-lightning-charge me-1"></i>立即激活
                 </button>
             </div>
         </div>
@@ -1588,7 +1538,7 @@ async function loadCardManageTab(area) {
                                 <td class="text-muted small">${Utils.formatDate(c.created_at)}</td>
                                 <td>
                                     ${!c.used ? `
-                                        <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(c.code)}')">复制</button>
+                                        <button class="btn btn-sm btn-outline" data-copy="${Security.escapeAttr(c.code)}">复制</button>
                                         <button class="btn btn-sm btn-danger" onclick="deleteCard('${Security.escapeAttr(c.id)}')">删除</button>
                                     ` : ''}
                                 </td>
@@ -2017,7 +1967,6 @@ function initEditProductImageDropZone() {
 async function loadReviewsTab(area) {
     const result = await API.getProductReviews();
     const comments = result.success ? result.comments : [];
-    const reviewsPage = frontPaginate('reviews', comments);
     area.innerHTML = `
         <h5 class="fw-bold mb-4"><i class="bi bi-star-half me-2"></i>评价管理</h5>
         ${comments.length === 0 ? `
@@ -2039,7 +1988,7 @@ async function loadReviewsTab(area) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${reviewsPage.items.map(c => `
+                        ${comments.map(c => `
                             <tr>
                                 <td>${Security.escapeHtml(Utils.truncate(c.product_title || '-', 24))}</td>
                                 <td>${Security.escapeHtml(c.buyer_name || c.username || '-')}</td>
@@ -2051,7 +2000,6 @@ async function loadReviewsTab(area) {
                     </tbody>
                 </table>
             </div>
-            ${frontPaginationHtml('reviews', reviewsPage.total, '条评价')}
         `}
     `;
 }
@@ -2842,7 +2790,7 @@ async function selectContactTab(username, options = {}) {
                 ${messages.map(m => `
                     <div class="chat-bubble ${m.from === App.currentUser.username ? 'sent' : 'received'}">
                         ${Security.escapeHtml(m.content)}
-                        <span class="chat-time">${frontMessageTime(m)}</span>
+                        <span class="chat-time">${Utils.formatDate(m.timestamp)}</span>
                     </div>
                 `).join('') || '<div class="empty-state py-4"><p>暂无消息，开始聊天吧</p></div>'}
             </div>
@@ -3861,7 +3809,7 @@ async function generateCards() {
         return `<div class="d-flex justify-content-between align-items-center py-1">
             <code>${Security.escapeHtml(c.code)}</code>
             <span>${valueText}</span>
-            <button class="btn btn-sm btn-outline" onclick="Utils.copyText('${Security.escapeAttr(c.code)}')">复制</button>
+            <button class="btn btn-sm btn-outline" data-copy="${Security.escapeAttr(c.code)}">复制</button>
         </div>`;
     }).join('');
 }
@@ -3993,29 +3941,22 @@ async function loadComplaintsTab(area) {
             </div>
         `).join('')}</div>`;
     };
-    const buyerPage = frontPaginate('buyerComplaints', buyerComplaints);
-    const sellerPage = frontPaginate('sellerComplaints', sellerComplaints);
     const renderComplaintCard = (order, role) => `
-        <details class="complaint-manage-card" onclick="event.stopPropagation()">
-            <summary class="d-flex justify-content-between align-items-start gap-3" style="cursor:pointer;list-style:none;">
+        <div class="complaint-manage-card">
+            <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
                 <div>
                     <div class="fw-bold">${Security.escapeHtml(order.product_title || '-')}</div>
                     <div class="text-muted small">${role === 'buyer' ? '我是买家' : '我是卖家'} · 订单 ${Security.escapeHtml(order.id || '-')} · 冻结 ¥${Number(order.frozen_amount || 0).toFixed(2)} · ${Utils.formatDate(order.complaint?.created_at || order.purchase_date)}</div>
                 </div>
-                <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                    ${renderStatus(order.complaint)}
-                    <span class="small text-primary">展开详情</span>
-                </div>
-            </summary>
-            <div class="mt-3">
-                ${renderAdminProgress(order.complaint)}
-                ${renderComplaintMessages(order)}
-                <div class="d-flex flex-wrap gap-2 justify-content-end">
-                    ${role === 'buyer' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-outline-primary" onclick="openComplaintThreadModal('${Security.escapeAttr(order.id)}', 'buyer')">查看实时情况/继续沟通</button><button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${Security.escapeAttr(order.id)}')">撤诉</button>` : ''}
-                    ${role === 'seller' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-primary" onclick="openSellerComplaintModal('${Security.escapeAttr(order.id)}')">查看实时情况/回复</button>` : ''}
-                </div>
+                ${renderStatus(order.complaint)}
             </div>
-        </details>
+            ${renderAdminProgress(order.complaint)}
+            ${renderComplaintMessages(order)}
+            <div class="d-flex flex-wrap gap-2 justify-content-end">
+                ${role === 'buyer' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-outline-primary" onclick="openComplaintThreadModal('${Security.escapeAttr(order.id)}', 'buyer')">查看实时情况/继续沟通</button><button class="btn btn-sm btn-warning" onclick="openWithdrawComplaintModal('${Security.escapeAttr(order.id)}')">撤诉</button>` : ''}
+                ${role === 'seller' && isComplaintActive(order.complaint) ? `<button class="btn btn-sm btn-primary" onclick="openSellerComplaintModal('${Security.escapeAttr(order.id)}')">查看实时情况/回复</button><button class="btn btn-sm btn-danger" onclick="submitSellerComplaintRefund('${Security.escapeAttr(order.id)}')">同意退款</button>` : ''}
+            </div>
+        </div>
     `;
     area.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -4026,13 +3967,13 @@ async function loadComplaintsTab(area) {
             <div class="col-lg-6">
                 <div class="card h-100"><div class="card-body">
                     <h6 class="fw-bold mb-3"><i class="bi bi-cart-check me-1"></i>我的投诉</h6>
-                    ${buyerComplaints.length === 0 ? '<p class="text-muted small mb-0">暂无你发起的投诉</p>' : `${buyerPage.items.map(o => renderComplaintCard(o, 'buyer')).join('')}${frontPaginationHtml('buyerComplaints', buyerPage.total, '条投诉')}`}
+                    ${buyerComplaints.length === 0 ? '<p class="text-muted small mb-0">暂无你发起的投诉</p>' : buyerComplaints.map(o => renderComplaintCard(o, 'buyer')).join('')}
                 </div></div>
             </div>
             <div class="col-lg-6">
                 <div class="card h-100"><div class="card-body">
                     <h6 class="fw-bold mb-3"><i class="bi bi-shop me-1"></i>收到的投诉</h6>
-                    ${sellerComplaints.length === 0 ? '<p class="text-muted small mb-0">暂无买家投诉</p>' : `${sellerPage.items.map(o => renderComplaintCard(o, 'seller')).join('')}${frontPaginationHtml('sellerComplaints', sellerPage.total, '条投诉')}`}
+                    ${sellerComplaints.length === 0 ? '<p class="text-muted small mb-0">暂无买家投诉</p>' : sellerComplaints.map(o => renderComplaintCard(o, 'seller')).join('')}
                 </div></div>
             </div>
         </div>
