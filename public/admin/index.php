@@ -2481,7 +2481,7 @@ function toggleAdminCardCreateType() {
     document.getElementById('cardSubdomainDomainWrap')?.classList.toggle('d-none', type !== 'subdomain');
 }
 function subdomainCardDomainOptionsAdmin() {
-    const plans = getSubdomainDomainPlansAdmin();
+    const plans = getSubdomainPlansAdmin();
     if (!plans.length) return '<option value="">未配置主域名</option>';
     return plans.map(plan => {
         const domain = String(plan.domain || '').replace(/^\*\./, '');
