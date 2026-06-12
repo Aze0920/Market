@@ -517,6 +517,10 @@ switch ($action) {
             'category' => sanitizeString($_GET['category'] ?? 'all'),
             'search' => sanitizeString($_GET['search'] ?? '')
         ];
+        $sellerId = trim((string)($_GET['seller_id'] ?? ''));
+        if ($sellerId !== '' && preg_match('/^[a-zA-Z0-9_]+$/', $sellerId)) {
+            $filters['seller_id'] = $sellerId;
+        }
         $products = $db->getProducts($filters);
         $levels = $db->getMembershipLevels();
         $config = $db->getSystemConfig();

@@ -35,6 +35,7 @@ class AdminQuery {
             'pay_order_count' => 0,
             'open_complaints' => 0,
             'pending_requests' => 0,
+            'pending_subdomains' => 0,
             'today_receipt' => 0.0,
             'today_profit' => 0.0,
         ];
@@ -44,6 +45,7 @@ class AdminQuery {
         $complaintWhere = $this->complaintWhereSql();
         $stats['open_complaints'] = intval($this->pdo->query("SELECT COUNT(*) FROM kn_orders WHERE {$complaintWhere} AND complaint_json LIKE '%\"status\":\"open\"%'")->fetchColumn());
         $stats['pending_requests'] = intval($this->pdo->query("SELECT (SELECT COUNT(*) FROM kn_deposit_requests WHERE status = 'pending') + (SELECT COUNT(*) FROM kn_withdraw_requests WHERE status = 'pending')")->fetchColumn());
+        $stats['pending_subdomains'] = intval($this->pdo->query("SELECT COUNT(*) FROM kn_seller_subdomains WHERE status = 'pending'")->fetchColumn());
 
         $stmt = $this->pdo->prepare(
             "SELECT order_type, amount, actual_amount, fee
@@ -286,6 +288,44 @@ class AdminQuery {
         $now = time();
         $stmt->execute([$now, $cutoff]);
         return $stmt->rowCount();
+    }
+
+    public function subdomainsPage($page, $pageSize, $keyword = '', $status = '') {
+        [$page, $pageSize, $offset] = self::pageParams($page, $pageSize);
+        $where = ['1=1'];
+        $params = [];
+        $like = $this->likeKeyword($keyword);
+        if ($like !== null) {
+            $where[] = '(s.prefix LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR s.user_id LIKE ?)';
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+        }
+        if ($status !== '') {
+            $where[] = 's.status = ?';
+            $params[] = $status;
+        }
+        $whereSql = implode(' AND ', $where);
+        $fromSql = 'kn_seller_subdomains s LEFT JOIN kn_users u ON u.id = s.user_id';
+        $countStmt = $this->pdo->prepare("SELECT COUNT(*) FROM {$fromSql} WHERE {$whereSql}");
+        $countStmt->execute($params);
+        $total = intval($countStmt->fetchColumn());
+        $stmt = $this->pdo->prepare("SELECT s.*, u.username, u.email FROM {$fromSql} WHERE {$whereSql} ORDER BY s.updated_at DESC, s.created_at DESC LIMIT ? OFFSET ?");
+        foreach ($params as $index => $value) {
+            $stmt->bindValue($index + 1, $value);
+        }
+        $stmt->bindValue(count($params) + 1, $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $items = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $item = $this->store->hydrateSubdomainRow($row);
+            $item['username'] = $row['username'] ?? '';
+            $item['email'] = $row['email'] ?? '';
+            $items[] = $item;
+        }
+        return compact('items', 'total', 'page', 'pageSize');
     }
 
     public function ensurePerformanceIndexes() {

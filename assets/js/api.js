@@ -384,9 +384,27 @@ const API = {
         return this.request('finance.php?action=reject', 'POST', { id, admin_note: adminNote });
     },
 
+    // 二级域名
+    resolveSubdomain(host = '') {
+        const params = host ? ('&host=' + encodeURIComponent(host)) : '';
+        return this.request('subdomain.php?action=resolve' + params);
+    },
+
+    getMySubdomain() {
+        return this.request('subdomain.php?action=my');
+    },
+
+    checkSubdomainPrefix(prefix) {
+        return this.request('subdomain.php?action=check_prefix&prefix=' + encodeURIComponent(prefix));
+    },
+
+    purchaseSubdomain(prefix, months = 1) {
+        return this.request('subdomain.php?action=purchase', 'POST', { prefix, months });
+    },
+
     // 卡密
-    useCard(code) {
-        return this.request('card.php?action=use', 'POST', { code });
+    useCard(code, extra = {}) {
+        return this.request('card.php?action=use', 'POST', { code, ...extra });
     },
 
     getCards(onlyUnused = false) {

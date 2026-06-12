@@ -276,13 +276,72 @@ function normalizeFrontendHash() {
     return new URLSearchParams({ page: 'dashboard', tab: raw });
 }
 
+const FRONT_DASHBOARD_TABS = ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'subdomain', 'cardmanage', 'paymentmanage', 'profile', 'customlabel', 'messages', 'reviews', 'complaints'];
+
+window.SellerStore = {
+    active: false,
+    sellerId: null,
+    sellerName: '',
+    prefix: '',
+    fullDomain: '',
+    expired: false,
+    pending: false,
+    disabled: false,
+    message: ''
+};
+
+async function initSellerStoreContext() {
+    const res = await API.resolveSubdomain(window.location.hostname);
+    if (!res.success) return;
+    const hasStore = !!(res.active || res.expired || res.pending || res.disabled);
+    if (!hasStore) {
+        window.SellerStore = { active: false, sellerId: null, sellerName: '', prefix: '', fullDomain: '', expired: false, pending: false, disabled: false, message: '' };
+        return;
+    }
+    window.SellerStore = {
+        active: !!res.active,
+        sellerId: res.seller_id || null,
+        sellerName: res.seller_name || '',
+        prefix: res.prefix || '',
+        fullDomain: res.full_domain || '',
+        expired: !!res.expired,
+        pending: !!res.pending,
+        disabled: !!res.disabled,
+        message: res.message || ''
+    };
+    updateSellerStoreBanner();
+}
+
+function updateSellerStoreBanner() {
+    const banner = document.getElementById('sellerStoreBanner');
+    if (!banner) return;
+    const store = window.SellerStore || {};
+    if (!store.sellerId) {
+        banner.classList.add('hidden');
+        banner.innerHTML = '';
+        return;
+    }
+    banner.classList.remove('hidden');
+    if (store.active) {
+        banner.className = 'alert alert-info py-2 px-3 mb-3';
+        banner.innerHTML = `<i class="bi bi-shop me-1"></i>当前正在浏览 <strong>${Security.escapeHtml(store.sellerName || store.prefix)}</strong> 的专属店铺（${Security.escapeHtml(store.fullDomain || '')}）`;
+        return;
+    }
+    banner.className = 'alert alert-warning py-2 px-3 mb-3';
+    banner.innerHTML = Security.escapeHtml(store.message || '当前二级域名暂不可用');
+}
+
+function goMarketHome() {
+    showHome({ resetFilters: true });
+}
+
 function getInitialFrontendState() {
     const hash = normalizeFrontendHash();
     const page = hash.get('page') || localStorage.getItem('keynest_front_page') || 'home';
     const tab = hash.get('tab') || localStorage.getItem('keynest_front_tab') || 'overview';
     return {
         page: ['home', 'dashboard'].includes(page) ? page : 'home',
-        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'profile', 'customlabel', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
+        tab: FRONT_DASHBOARD_TABS.includes(tab) ? tab : 'overview'
     };
 }
 
@@ -308,7 +367,18 @@ function showHome(options = {}) {
     const marketLink = navLinks.find(link => link.textContent.includes('市场'));
     if (marketLink) marketLink.classList.add('active');
 
+    const store = window.SellerStore || {};
+    const marketTitle = document.getElementById('marketTitle');
+    const marketDescription = document.getElementById('marketDescription');
+    if (store.sellerId && marketTitle) {
+        marketTitle.textContent = (store.sellerName || store.prefix || '卖家') + ' 的店铺';
+    }
+    if (store.sellerId && marketDescription) {
+        marketDescription.textContent = store.active ? '仅展示该卖家的全部商品' : (store.message || '店铺暂不可用');
+    }
+
     if (opts.resetFilters !== false) resetMarketFilters();
+    updateSellerStoreBanner();
     loadProducts({ forceAll: opts.resetFilters !== false });
 }
 
@@ -360,6 +430,9 @@ function renderDashboardTab(tabName) {
             break;
         case 'membership':
             loadMembershipTab(contentArea);
+            break;
+        case 'subdomain':
+            loadSubdomainTab(contentArea);
             break;
         case 'cardmanage':
             loadCardManageTab(contentArea);
@@ -417,6 +490,9 @@ function renderDashboard(tabName = null) {
         </div>
         <div class="sidebar-nav-item" data-tab="membership">
             <i class="bi bi-gem"></i><span>会员中心</span>
+        </div>
+        <div class="sidebar-nav-item" data-tab="subdomain">
+            <i class="bi bi-globe2"></i><span>二级域名</span>
         </div>
     `;
     if (App.currentUser.role === 'admin') {
@@ -2089,6 +2165,123 @@ function handlePaymentQrImageError(img, label = '收款码') {
             <small>原收款码文件未找到，请验证后重新上传</small>
         </div>
     `;
+}
+
+async function loadSubdomainTab(area) {
+    const result = await API.getMySubdomain();
+    if (!result.success) {
+        area.innerHTML = '<div class="empty-state"><p>加载失败</p></div>';
+        return;
+    }
+    const config = result.config || {};
+    const subdomain = result.subdomain;
+    const merchantApproved = (result.merchant_status || 'none') === 'approved';
+    const monthlyPrice = Number(config.monthly_price || 10).toFixed(2);
+    const wildcard = Security.escapeHtml(config.wildcard_domain || config.base_domain || '未配置');
+    let statusHtml = '<span class="badge bg-secondary">未开通</span>';
+    if (subdomain) {
+        if (subdomain.status === 'pending') statusHtml = '<span class="badge bg-warning text-dark">待审核</span>';
+        else if (subdomain.is_active) statusHtml = '<span class="badge bg-success">生效中</span>';
+        else if (subdomain.is_expired) statusHtml = '<span class="badge bg-danger">已过期</span>';
+        else if (subdomain.status === 'rejected') statusHtml = '<span class="badge bg-danger">已拒绝</span>';
+        else if (subdomain.disabled || subdomain.status === 'disabled') statusHtml = '<span class="badge bg-danger">已禁用</span>';
+        else statusHtml = '<span class="badge bg-info text-dark">' + Security.escapeHtml(subdomain.status || '-') + '</span>';
+    }
+    area.innerHTML = `
+        <h5 class="fw-bold mb-4"><i class="bi bi-globe2 me-2 text-primary"></i>二级域名店铺</h5>
+        ${!config.enabled ? '<div class="alert alert-warning">管理员尚未开启二级域名功能。</div>' : ''}
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="profile-card-soft border p-4 h-100">
+                    <div class="small text-muted mb-2">平台主域名</div>
+                    <div class="fw-bold mb-3"><code>${wildcard}</code></div>
+                    <div class="small text-muted mb-1">当前状态</div>
+                    <div class="mb-3">${statusHtml}</div>
+                    ${subdomain ? `
+                        <div class="small text-muted mb-1">我的二级域名</div>
+                        <div class="fw-bold mb-3"><code>${Security.escapeHtml(subdomain.full_domain || subdomain.prefix || '-')}</code></div>
+                        <div class="small text-muted mb-1">到期时间</div>
+                        <div class="mb-0">${subdomain.expires_at ? new Date(subdomain.expires_at * 1000).toLocaleString() : '审核通过后生效'}</div>
+                    ` : '<div class="text-muted small">购买或兑换后，访问您的二级域名将只展示您的全部商品。</div>'}
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="profile-card-soft border p-4 mb-4">
+                    <h6 class="fw-bold mb-3">余额购买</h6>
+                    ${!merchantApproved ? '<div class="alert alert-warning small">请先完成商家认证后再申请二级域名。</div>' : ''}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">域名前缀</label>
+                            <div class="input-group">
+                                <input id="subdomainPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}" ${subdomain?.status === 'pending' ? 'readonly' : ''}>
+                                <span class="input-group-text">.${Security.escapeHtml(config.base_domain || 'yourdomain.com')}</span>
+                            </div>
+                            <div id="subdomainPrefixHint" class="form-text"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">购买月数</label>
+                            <input id="subdomainMonthsInput" class="form-control" type="number" min="1" max="36" value="1">
+                        </div>
+                        <div class="col-12">
+                            <div class="small text-muted mb-2">价格：¥${monthlyPrice} / 月，购买后需等待管理员审核。</div>
+                            <button class="btn btn-primary" onclick="purchaseSellerSubdomain()" ${!config.enabled || !merchantApproved ? 'disabled' : ''}>立即购买</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="profile-card-soft border p-4">
+                    <h6 class="fw-bold mb-3">卡密兑换</h6>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">域名前缀</label>
+                            <input id="subdomainCardPrefixInput" class="form-control" placeholder="例如：roxy" value="${Security.escapeAttr(subdomain?.prefix || '')}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">二级域名卡密</label>
+                            <input id="subdomainCardCodeInput" class="form-control" placeholder="输入卡密代码">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-outline-primary" onclick="redeemSubdomainCard()" ${!config.enabled || !merchantApproved ? 'disabled' : ''}>兑换并提交审核</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    const prefixInput = document.getElementById('subdomainPrefixInput');
+    if (prefixInput && !prefixInput.readOnly) {
+        prefixInput.addEventListener('input', () => {
+            clearTimeout(window.__subdomainPrefixTimer);
+            window.__subdomainPrefixTimer = setTimeout(async () => {
+                const prefix = prefixInput.value.trim();
+                const hint = document.getElementById('subdomainPrefixHint');
+                if (!prefix || !hint) return;
+                const check = await API.checkSubdomainPrefix(prefix);
+                hint.textContent = check.message || '';
+                hint.className = 'form-text ' + (check.success && check.available ? 'text-success' : 'text-danger');
+            }, 300);
+        });
+    }
+}
+
+async function purchaseSellerSubdomain() {
+    const prefix = document.getElementById('subdomainPrefixInput')?.value?.trim() || '';
+    const months = document.getElementById('subdomainMonthsInput')?.value || '1';
+    if (!prefix) return Toast.warning('请输入域名前缀');
+    const result = await API.purchaseSubdomain(prefix, months);
+    if (!result.success) return Toast.error(result.message || '购买失败');
+    Toast.success(result.message || '购买成功');
+    await refreshUserData();
+    renderDashboardTab('subdomain');
+}
+
+async function redeemSubdomainCard() {
+    const prefix = document.getElementById('subdomainCardPrefixInput')?.value?.trim() || '';
+    const code = document.getElementById('subdomainCardCodeInput')?.value?.trim() || '';
+    if (!prefix) return Toast.warning('请输入域名前缀');
+    if (!code) return Toast.warning('请输入卡密');
+    const result = await API.useCard(code, { subdomain_prefix: prefix });
+    if (!result.success) return Toast.error(result.message || '兑换失败');
+    Toast.success(result.message || '兑换成功');
+    renderDashboardTab('subdomain');
 }
 
 async function loadProfileTab(area) {

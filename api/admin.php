@@ -7,6 +7,7 @@ require_once __DIR__ . '/../core/Database.php';
 require_once __DIR__ . '/../core/Mailer.php';
 require_once __DIR__ . '/../core/OrderTradeNo.php';
 require_once __DIR__ . '/../core/NotifyMail.php';
+require_once __DIR__ . '/../core/SubdomainHelper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -1147,6 +1148,100 @@ switch ($action) {
             adminJsonResponse(['success' => false, 'message' => '商家审核处理失败'], 500);
         }
         adminJsonResponse(['success' => true, 'message' => $decision === 'approve' ? '已通过商家重新开通申请' : '已拒绝商家重新开通申请']);
+
+    case 'subdomains':
+        adminRequireAdmin();
+        $params = adminListParams();
+        $status = $params['status'] === 'all' ? '' : $params['status'];
+        $result = $db->adminQuery()->subdomainsPage($params['page'], $params['page_size'], $params['keyword'], $status);
+        $config = $db->getSystemConfig();
+        $baseDomain = SubdomainHelper::normalizeBaseDomain($config['subdomain_base_domain'] ?? '');
+        $items = array_map(function($item) use ($baseDomain) {
+            $item['full_domain'] = $baseDomain !== '' ? SubdomainHelper::fullHost($item['prefix'] ?? '', $baseDomain) : '';
+            $item['is_expired'] = SubdomainHelper::isExpired($item);
+            $item['is_active'] = SubdomainHelper::isActive($item);
+            return $item;
+        }, $result['items']);
+        adminPaginatedResponse([
+            'subdomains' => $items,
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'page_size' => $result['pageSize'],
+        ]);
+
+    case 'review_subdomain':
+        $admin = adminRequireAdmin();
+        $id = trim($_POST['id'] ?? '');
+        $decision = trim($_POST['decision'] ?? '');
+        $subdomain = $db->getSellerSubdomainById($id);
+        if (!$subdomain) {
+            adminJsonResponse(['success' => false, 'message' => '二级域名记录不存在'], 404);
+        }
+        if (($subdomain['status'] ?? '') !== 'pending') {
+            adminJsonResponse(['success' => false, 'message' => '该记录不在待审核状态'], 400);
+        }
+        if ($decision === 'approve') {
+            $months = max(1, intval($subdomain['pending_months'] ?? 1));
+            $baseExpires = max(intval($subdomain['expires_at'] ?? 0), time());
+            $subdomain['expires_at'] = $baseExpires + SubdomainHelper::monthSeconds($months);
+            $subdomain['status'] = 'approved';
+            $subdomain['pending_months'] = 0;
+            $subdomain['approved_at'] = time();
+            $subdomain['disabled'] = false;
+        } else {
+            $subdomain['status'] = 'rejected';
+            $subdomain['pending_months'] = 0;
+        }
+        $subdomain['reviewed_at'] = time();
+        $subdomain['reviewed_by'] = $admin['id'] ?? '';
+        if (!$db->saveSellerSubdomain($subdomain)) {
+            adminJsonResponse(['success' => false, 'message' => '审核处理失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => $decision === 'approve' ? '已通过二级域名审核' : '已拒绝二级域名申请']);
+
+    case 'update_subdomain':
+        $admin = adminRequireAdmin();
+        $id = trim($_POST['id'] ?? '');
+        $subdomain = $db->getSellerSubdomainById($id);
+        if (!$subdomain) {
+            adminJsonResponse(['success' => false, 'message' => '二级域名记录不存在'], 404);
+        }
+        if (isset($_POST['prefix'])) {
+            $prefix = strtolower(trim((string)$_POST['prefix']));
+            $error = SubdomainHelper::validatePrefix($prefix);
+            if ($error) {
+                adminJsonResponse(['success' => false, 'message' => $error], 400);
+            }
+            $other = $db->getSellerSubdomainByPrefix($prefix);
+            if ($other && ($other['id'] ?? '') !== $id) {
+                adminJsonResponse(['success' => false, 'message' => '该前缀已被其他卖家占用'], 400);
+            }
+            $subdomain['prefix'] = $prefix;
+        }
+        if (isset($_POST['expires_at'])) {
+            $subdomain['expires_at'] = max(0, intval($_POST['expires_at']));
+        }
+        if (isset($_POST['disabled'])) {
+            $subdomain['disabled'] = filter_var($_POST['disabled'], FILTER_VALIDATE_BOOLEAN);
+            if ($subdomain['disabled']) {
+                $subdomain['status'] = 'disabled';
+            } elseif (($subdomain['status'] ?? '') === 'disabled') {
+                $subdomain['status'] = 'approved';
+            }
+        }
+        if (isset($_POST['status'])) {
+            $status = trim((string)$_POST['status']);
+            if (in_array($status, ['pending', 'approved', 'rejected', 'disabled'], true)) {
+                $subdomain['status'] = $status;
+                $subdomain['disabled'] = $status === 'disabled';
+            }
+        }
+        $subdomain['reviewed_at'] = time();
+        $subdomain['reviewed_by'] = $admin['id'] ?? '';
+        if (!$db->saveSellerSubdomain($subdomain)) {
+            adminJsonResponse(['success' => false, 'message' => '更新失败'], 500);
+        }
+        adminJsonResponse(['success' => true, 'message' => '二级域名信息已更新']);
 
     case 'product_stock':
         $id = trim($_GET['id'] ?? $_POST['id'] ?? '');

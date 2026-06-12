@@ -246,6 +246,25 @@ class RelationalStore {
                 `updated_at` int unsigned NOT NULL DEFAULT 0,
                 PRIMARY KEY (`config_key`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS `kn_seller_subdomains` (
+                `id` varchar(80) NOT NULL,
+                `user_id` varchar(80) NOT NULL,
+                `prefix` varchar(63) NOT NULL,
+                `status` varchar(20) NOT NULL DEFAULT 'pending',
+                `expires_at` int unsigned NOT NULL DEFAULT 0,
+                `pending_months` int unsigned NOT NULL DEFAULT 0,
+                `last_price_paid` decimal(14,2) NOT NULL DEFAULT 0.00,
+                `disabled` tinyint(1) NOT NULL DEFAULT 0,
+                `created_at` int unsigned NOT NULL DEFAULT 0,
+                `approved_at` int unsigned NOT NULL DEFAULT 0,
+                `reviewed_at` int unsigned NOT NULL DEFAULT 0,
+                `reviewed_by` varchar(80) NOT NULL DEFAULT '',
+                `updated_at` int unsigned NOT NULL DEFAULT 0,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_subdomain_prefix` (`prefix`),
+                UNIQUE KEY `uk_subdomain_user` (`user_id`),
+                KEY `idx_subdomain_status` (`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         ];
         foreach ($statements as $sql) {
             $this->pdo->exec($sql);
@@ -907,8 +926,16 @@ class RelationalStore {
         ];
     }
 
+    private function normalizeCardTypeValue($cardType) {
+        $type = strtolower(trim((string)$cardType));
+        if (in_array($type, ['membership', 'subdomain'], true)) {
+            return $type;
+        }
+        return 'balance';
+    }
+
     private function upsertCardCode(array $card) {
-        $cardType = ($card['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
+        $cardType = $this->normalizeCardTypeValue($card['card_type'] ?? 'balance');
         $stmt = $this->pdo->prepare(
             'INSERT INTO kn_card_codes (id, code, amount, card_type, target_level, is_used, used_by, used_at, created_by, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -919,7 +946,7 @@ class RelationalStore {
             $card['code'] ?? '',
             floatval($card['amount'] ?? 0),
             $cardType,
-            $cardType === 'membership' ? trim((string)($card['target_level'] ?? '')) : '',
+            in_array($cardType, ['membership', 'subdomain'], true) ? trim((string)($card['target_level'] ?? '')) : '',
             !empty($card['used']) ? 1 : 0,
             $card['used_by'] ?? null,
             isset($card['used_at']) ? intval($card['used_at']) : null,
@@ -1088,6 +1115,82 @@ class RelationalStore {
             isset($request['processed_at']) ? intval($request['processed_at']) : null,
             intval($request['created_at'] ?? time()),
             intval($request['deadline'] ?? 0),
+        ]);
+    }
+
+    public function hydrateSubdomainRow(array $row) {
+        return $this->rowToSubdomain($row);
+    }
+
+    private function rowToSubdomain(array $row) {
+        return [
+            'id' => $row['id'],
+            'user_id' => $row['user_id'] ?? '',
+            'prefix' => strtolower($row['prefix'] ?? ''),
+            'status' => $row['status'] ?? 'pending',
+            'expires_at' => intval($row['expires_at'] ?? 0),
+            'pending_months' => intval($row['pending_months'] ?? 0),
+            'last_price_paid' => floatval($row['last_price_paid'] ?? 0),
+            'disabled' => !empty($row['disabled']),
+            'created_at' => intval($row['created_at'] ?? 0),
+            'approved_at' => intval($row['approved_at'] ?? 0),
+            'reviewed_at' => intval($row['reviewed_at'] ?? 0),
+            'reviewed_by' => $row['reviewed_by'] ?? '',
+            'updated_at' => intval($row['updated_at'] ?? 0),
+        ];
+    }
+
+    public function getSellerSubdomainById($id) {
+        $stmt = $this->pdo->prepare('SELECT * FROM kn_seller_subdomains WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? $this->rowToSubdomain($row) : null;
+    }
+
+    public function getSellerSubdomainByUserId($userId) {
+        $stmt = $this->pdo->prepare('SELECT * FROM kn_seller_subdomains WHERE user_id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? $this->rowToSubdomain($row) : null;
+    }
+
+    public function getSellerSubdomainByPrefix($prefix) {
+        $prefix = strtolower(trim((string)$prefix));
+        $stmt = $this->pdo->prepare('SELECT * FROM kn_seller_subdomains WHERE prefix = ? LIMIT 1');
+        $stmt->execute([$prefix]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? $this->rowToSubdomain($row) : null;
+    }
+
+    public function saveSellerSubdomain(array $subdomain) {
+        $now = time();
+        if (empty($subdomain['id'])) {
+            $subdomain['id'] = 'subdomain_' . $now . '_' . bin2hex(random_bytes(6));
+        }
+        if (empty($subdomain['created_at'])) {
+            $subdomain['created_at'] = $now;
+        }
+        $subdomain['updated_at'] = $now;
+        $subdomain['prefix'] = strtolower(trim((string)($subdomain['prefix'] ?? '')));
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO kn_seller_subdomains (id, user_id, prefix, status, expires_at, pending_months, last_price_paid, disabled, created_at, approved_at, reviewed_at, reviewed_by, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), prefix = VALUES(prefix), status = VALUES(status), expires_at = VALUES(expires_at), pending_months = VALUES(pending_months), last_price_paid = VALUES(last_price_paid), disabled = VALUES(disabled), approved_at = VALUES(approved_at), reviewed_at = VALUES(reviewed_at), reviewed_by = VALUES(reviewed_by), updated_at = VALUES(updated_at)'
+        );
+        return $stmt->execute([
+            $subdomain['id'],
+            $subdomain['user_id'] ?? '',
+            $subdomain['prefix'],
+            $subdomain['status'] ?? 'pending',
+            intval($subdomain['expires_at'] ?? 0),
+            intval($subdomain['pending_months'] ?? 0),
+            floatval($subdomain['last_price_paid'] ?? 0),
+            !empty($subdomain['disabled']) ? 1 : 0,
+            intval($subdomain['created_at'] ?? $now),
+            intval($subdomain['approved_at'] ?? 0),
+            intval($subdomain['reviewed_at'] ?? 0),
+            $subdomain['reviewed_by'] ?? '',
+            intval($subdomain['updated_at'] ?? $now),
         ]);
     }
 }

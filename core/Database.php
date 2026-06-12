@@ -496,7 +496,26 @@ class Database {
             'admin_badge_icon' => 'bi-shield-fill-check',
             'admin_badge_gradient' => 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
             'admin_badge_text' => '管理员',
+            'subdomain_enabled' => false,
+            'subdomain_base_domain' => '',
+            'subdomain_monthly_price' => 10,
         ];
+    }
+
+    public function getSellerSubdomainById($id) {
+        return $this->store->getSellerSubdomainById($id);
+    }
+
+    public function getSellerSubdomainByUserId($userId) {
+        return $this->store->getSellerSubdomainByUserId($userId);
+    }
+
+    public function getSellerSubdomainByPrefix($prefix) {
+        return $this->store->getSellerSubdomainByPrefix($prefix);
+    }
+
+    public function saveSellerSubdomain(array $subdomain) {
+        return $this->store->saveSellerSubdomain($subdomain);
     }
 
     public function getSystemConfig() {

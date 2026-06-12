@@ -4,6 +4,8 @@
  */
 require_once __DIR__ . '/index.php';
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../core/SubdomainHelper.php';
+require_once __DIR__ . '/../core/SubdomainPurchase.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -88,7 +90,39 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '该卡密已被使用'], 400);
         }
 
-        $cardType = ($card['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
+        $rawType = strtolower(trim((string)($card['card_type'] ?? 'balance')));
+        $cardType = in_array($rawType, ['membership', 'subdomain'], true) ? $rawType : 'balance';
+        if ($cardType === 'subdomain') {
+            $config = $db->getSystemConfig();
+            if (empty($config['subdomain_enabled'])) {
+                jsonResponse(['success' => false, 'message' => '二级域名功能未开启'], 400);
+            }
+            if (($user['merchant_status'] ?? 'none') !== 'approved') {
+                jsonResponse(['success' => false, 'message' => '请先完成商家认证后再兑换二级域名卡密'], 400);
+            }
+            $months = max(1, min(36, intval($card['target_level'] ?? 1)));
+            $prefix = strtolower(trim((string)($_POST['subdomain_prefix'] ?? '')));
+            $error = SubdomainHelper::validatePrefix($prefix);
+            if ($error) {
+                jsonResponse(['success' => false, 'message' => $error], 400);
+            }
+            $existing = $db->getSellerSubdomainByUserId($userId);
+            if ($existing && ($existing['status'] ?? '') === 'pending') {
+                jsonResponse(['success' => false, 'message' => '您已有待审核的二级域名申请，请等待审核完成'], 400);
+            }
+            $result = SubdomainPurchase::apply($db, $user, $prefix, $months, 0, 'card');
+            if (!$result['success']) {
+                jsonResponse(['success' => false, 'message' => $result['message'] ?? '兑换失败'], 400);
+            }
+            $db->useCardCode($code, $userId);
+            jsonResponse([
+                'success' => true,
+                'message' => '二级域名卡密兑换成功，已提交审核，请等待管理员审核通过后生效',
+                'card_type' => 'subdomain',
+                'months' => $months,
+                'prefix' => $prefix,
+            ]);
+        }
         if ($cardType === 'membership') {
             $levels = $db->getMembershipLevels();
             $targetLevel = trim((string)($card['target_level'] ?? ''));
@@ -162,7 +196,8 @@ switch ($action) {
 
     case 'create':
         requireAdmin();
-        $cardType = ($_POST['card_type'] ?? 'balance') === 'membership' ? 'membership' : 'balance';
+        $rawType = strtolower(trim((string)($_POST['card_type'] ?? 'balance')));
+        $cardType = in_array($rawType, ['membership', 'subdomain'], true) ? $rawType : 'balance';
         $amount = floatval($_POST['amount'] ?? 0);
         $targetLevel = trim((string)($_POST['target_level'] ?? ''));
         $count = intval($_POST['count'] ?? 1);
@@ -177,6 +212,11 @@ switch ($action) {
             }
             $amount = 0;
         }
+        if ($cardType === 'subdomain') {
+            $months = max(1, min(36, intval($targetLevel ?: 1)));
+            $targetLevel = (string)$months;
+            $amount = 0;
+        }
         if ($count < 1 || $count > 100) {
             jsonResponse(['success' => false, 'message' => '单次最多生成100张卡密'], 400);
         }
@@ -188,7 +228,7 @@ switch ($action) {
                 'code' => genCardCode(),
                 'amount' => $amount,
                 'card_type' => $cardType,
-                'target_level' => $cardType === 'membership' ? $targetLevel : '',
+                'target_level' => in_array($cardType, ['membership', 'subdomain'], true) ? $targetLevel : '',
                 'used' => false,
                 'used_by' => null,
                 'used_at' => null,

@@ -125,11 +125,25 @@ async function loadProducts(options = {}) {
     grid.innerHTML = '<div class="col-12"><div class="loading"><div class="spinner"></div></div></div>';
     emptyState.classList.add('hidden');
 
-    const result = await API.getProducts({ search, category });
+    const filters = { search, category };
+    if (window.SellerStore?.active && window.SellerStore.sellerId) {
+        filters.seller_id = window.SellerStore.sellerId;
+    }
+    const result = await API.getProducts(filters);
+
+    if (window.SellerStore?.sellerId && !window.SellerStore.active) {
+        grid.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        emptyState.innerHTML = `<div class="text-center py-5"><i class="bi bi-exclamation-triangle text-warning fs-1"></i><p class="mt-3 mb-0">${Security.escapeHtml(window.SellerStore.message || '当前二级域名暂不可用')}</p></div>`;
+        return;
+    }
 
     if (!result.success || result.products.length === 0) {
         grid.innerHTML = '';
         emptyState.classList.remove('hidden');
+        if (window.SellerStore?.active) {
+            emptyState.innerHTML = '<div class="text-center py-5"><p class="mb-0">该卖家暂无在售商品</p></div>';
+        }
         return;
     }
 

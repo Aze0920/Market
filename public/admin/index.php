@@ -319,6 +319,7 @@ if (isset($_SESSION['user_id'])) {
         <button class="side-link" data-page="complaints" onclick="switchAdminPage('complaints')"><i class="bi bi-exclamation-octagon-fill"></i>投诉管理</button>
         <button class="side-link" data-page="finance" onclick="switchAdminPage('finance')"><i class="bi bi-wallet2"></i>充值提现</button>
         <button class="side-link" data-page="merchant_review" onclick="switchAdminPage('merchant_review')"><i class="bi bi-shop-window"></i>商家审核</button>
+        <button class="side-link" data-page="subdomain_review" onclick="switchAdminPage('subdomain_review')"><i class="bi bi-globe2"></i>域名审核</button>
         <button class="side-link" data-page="cards" onclick="switchAdminPage('cards')"><i class="bi bi-credit-card-2-front-fill"></i>卡密管理</button>
         <button class="side-link" data-page="membership" onclick="switchAdminPage('membership')"><i class="bi bi-gem"></i>会员等级</button>
         <button class="side-link" data-page="settings" onclick="switchAdminPage('settings')"><i class="bi bi-gear-fill"></i>系统设置</button>
@@ -349,7 +350,7 @@ if (isset($_SESSION['user_id'])) {
 <?php endif; ?>
 
 <script>
-const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, dataLoaded: {}, cacheLoadedAt: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, orders: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, complaints: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, comments: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, products: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' } } };
+const Admin = { user: null, page: 'overview', settingsTab: 'basic', cache: {}, dataLoaded: {}, cacheLoadedAt: {}, csrfToken: null, serverGateMessage: <?php echo json_encode($adminGateMessage, JSON_UNESCAPED_UNICODE); ?>, listState: { users: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, orders: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, complaints: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, comments: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, products: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' }, subdomains: { page: 1, pageSize: 20, keyword: '', status: 'all', merchant_status: '' } } };
 const ADMIN_CACHE_TTL_MS = 45000;
 const adminSearchTimers = {};
 function adminListQuery(key) {
@@ -387,7 +388,8 @@ const ADMIN_DATA_LOADERS = {
     sysConfig: () => request('admin.php?action=system_config'),
     complaints: () => request(adminListUrl('admin.php?action=complaints', 'complaints')),
     membershipLevels: () => request('admin.php?action=membership_levels'),
-    comments: () => request(adminListUrl('admin.php?action=comments', 'comments'))
+    comments: () => request(adminListUrl('admin.php?action=comments', 'comments')),
+    subdomains: () => request(adminListUrl('admin.php?action=subdomains', 'subdomains'))
 };
 const ADMIN_PAGE_KEYS = {
     overview: ['dashboard'],
@@ -398,6 +400,7 @@ const ADMIN_PAGE_KEYS = {
     complaints: ['complaints'],
     finance: ['requests'],
     merchant_review: ['users'],
+    subdomain_review: ['subdomains'],
     cards: ['cards', 'membershipLevels'],
     payments: ['payConfigs'],
     settings: ['sysConfig'],
@@ -405,7 +408,7 @@ const ADMIN_PAGE_KEYS = {
     updates: [],
     logs: []
 };
-const ADMIN_LIST_KEY_MAP = { users: 'users', orders: 'payOrders', complaints: 'complaints', comments: 'comments', products: 'products' };
+const ADMIN_LIST_KEY_MAP = { users: 'users', orders: 'payOrders', complaints: 'complaints', comments: 'comments', products: 'products', subdomains: 'subdomains' };
 const adminPageSizeOptions = [10, 20, 50, 100, 200, 500, 1000];
 const apiBase = <?php echo json_encode($apiBasePath, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 
@@ -517,8 +520,8 @@ function refreshAdminProfileUI() {
     renderAdminProfileDropdown();
 }
 function restoreAdminState() {
-    const validPages = ['overview', 'users', 'products', 'orders', 'complaints', 'finance', 'cards', 'settings', 'membership', 'updates', 'logs'];
-    const validSettingsTabs = ['basic', 'payment', 'login', 'agreements', 'email', 'captcha', 'announcement'];
+    const validPages = ['overview', 'users', 'products', 'orders', 'complaints', 'finance', 'merchant_review', 'subdomain_review', 'cards', 'settings', 'membership', 'updates', 'logs'];
+    const validSettingsTabs = ['basic', 'payment', 'login', 'agreements', 'email', 'captcha', 'announcement', 'subdomain'];
     const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
     const storedPage = localStorage.getItem('keynest_admin_page');
     const storedTab = localStorage.getItem('keynest_admin_settings_tab');
@@ -701,6 +704,10 @@ function applyAdminCacheKey(key, res) {
             Admin.cache.comments = res.comments || [];
             Admin.cache.commentsMeta = { total: Number(res.total ?? Admin.cache.comments.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
             break;
+        case 'subdomains':
+            Admin.cache.subdomains = res.subdomains || [];
+            Admin.cache.subdomainsMeta = { total: Number(res.total ?? Admin.cache.subdomains.length), page: Number(res.page ?? 1), page_size: Number(res.page_size ?? 20) };
+            break;
     }
 }
 function scheduleAdminListReload(listKey, delay = 350) {
@@ -779,7 +786,7 @@ function switchAdminPage(page, settingsTab = null) {
 }
 function setTitle(title) { document.getElementById('pageTitle').textContent = title; }
 function renderPage() {
-    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, comments: renderComments, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, merchant_review: renderMerchantReview, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
+    const renderers = { overview: renderOverview, users: renderUsers, products: renderProducts, comments: renderComments, orders: renderOrders, complaints: renderComplaints, finance: renderFinance, merchant_review: renderMerchantReview, subdomain_review: renderSubdomainReview, cards: renderCards, payments: renderPayments, settings: renderSettings, membership: renderMembershipAdmin, updates: renderUpdates, logs: renderLogs     };
     updateAdminNavActive(Admin.page === 'settings' && Admin.settingsTab === 'payment' ? 'payment' : null);
     (renderers[Admin.page] || renderOverview)();
 }
@@ -798,6 +805,7 @@ function renderOverview() {
             ${stat('bi-hourglass-split', '#fef3c7', '#b45309', stats.pending_requests ?? 0, '待处理申请')}
             ${stat('bi-wallet2', '#e0f2fe', '#0369a1', money(stats.today_receipt ?? 0), '今日收款')}
             ${stat('bi-graph-up-arrow', '#f0fdf4', '#16a34a', money(stats.today_profit ?? 0), '今日利润')}
+            ${stat('bi-globe2', '#fce7f3', '#be185d', stats.pending_subdomains ?? 0, '域名待审核')}
         </div>
         <div class="row g-4">
             <div class="col-lg-7"><div class="panel"><div class="panel-title"><h5>最新用户</h5><button class="btn btn-sm btn-outline-primary" onclick="switchAdminPage('users')">查看全部</button></div>${userTable(users)}</div></div>
@@ -1169,6 +1177,114 @@ async function reviewMerchant(id, decision) {
     showToast(res.message || '已处理', 'success');
     await loadAdminData();
     renderMerchantReview();
+}
+
+function subdomainStatusBadge(item) {
+    const status = item.status || 'none';
+    if (item.is_expired) return '<span class="badge bg-warning text-dark">已过期</span>';
+    if (status === 'pending') return '<span class="badge bg-warning text-dark">待审核</span>';
+    if (status === 'approved' && item.is_active) return '<span class="badge bg-success">生效中</span>';
+    if (status === 'approved') return '<span class="badge bg-secondary">已通过</span>';
+    if (status === 'disabled' || item.disabled) return '<span class="badge bg-danger">已禁用</span>';
+    if (status === 'rejected') return '<span class="badge bg-danger">已拒绝</span>';
+    return '<span class="badge bg-secondary">' + escapeHtml(status) + '</span>';
+}
+function renderSubdomainReview() {
+    setTitle('域名审核');
+    const state = adminListQuery('subdomains');
+    const meta = Admin.cache.subdomainsMeta || {};
+    const items = Admin.cache.subdomains || [];
+    const total = Number(meta.total ?? items.length);
+    const status = state.status || 'all';
+    document.getElementById('adminContent').innerHTML = `
+        <div class="panel">
+            <div class="panel-title">
+                <div>
+                    <h5>二级域名管理</h5>
+                    <div class="small text-muted mt-1">审核卖家申请的二级域名，并可维护到期时间与禁用状态。</div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="loadAdminData()"><i class="bi bi-arrow-clockwise me-1"></i>刷新</button>
+            </div>
+            <div class="row g-2 mb-3 align-items-center">
+                <div class="col-md-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input class="form-control" placeholder="搜索前缀、用户名或邮箱" value="${escapeHtml(state.keyword || '')}" oninput="adminListQuery('subdomains').keyword=this.value.trim();adminListQuery('subdomains').page=1;scheduleAdminListReload('subdomains')">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" onchange="adminListQuery('subdomains').status=this.value;adminListQuery('subdomains').page=1;reloadAdminListKey('subdomains')">
+                        <option value="all" ${status === 'all' ? 'selected' : ''}>全部状态</option>
+                        <option value="pending" ${status === 'pending' ? 'selected' : ''}>待审核</option>
+                        <option value="approved" ${status === 'approved' ? 'selected' : ''}>已通过</option>
+                        <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>已拒绝</option>
+                        <option value="disabled" ${status === 'disabled' ? 'selected' : ''}>已禁用</option>
+                    </select>
+                </div>
+                <div class="col-md-auto ms-md-auto text-muted small">共 ${total} 条记录</div>
+            </div>
+            ${items.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>卖家</th><th>二级域名</th><th>状态</th><th>到期时间</th><th>待生效月数</th><th>最近支付</th><th>操作</th></tr></thead><tbody>${items.map(item => subdomainReviewRow(item)).join('')}</tbody></table></div>` : '<div class="text-muted py-4 text-center">暂无二级域名记录</div>'}
+            ${adminPaginationHtml(state.page, state.pageSize, total, 'setSubdomainsPage', '条记录')}
+        </div>`;
+}
+function subdomainReviewRow(item) {
+    const expiresValue = item.expires_at ? new Date(item.expires_at * 1000).toISOString().slice(0, 16) : '';
+    const pendingMonths = Number(item.pending_months || 0);
+    const actions = [];
+    if ((item.status || '') === 'pending') {
+        actions.push(`<button class="btn btn-sm btn-success me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','approve')">通过</button>`);
+        actions.push(`<button class="btn btn-sm btn-outline-danger me-1" onclick="reviewSubdomain('${escapeHtml(item.id)}','reject')">拒绝</button>`);
+    }
+    actions.push(`<button class="btn btn-sm btn-outline-primary me-1" onclick="saveSubdomainExpiry('${escapeHtml(item.id)}')">保存到期</button>`);
+    actions.push(`<button class="btn btn-sm btn-outline-secondary" onclick="toggleSubdomainDisabled('${escapeHtml(item.id)}', ${item.disabled || item.status === 'disabled' ? 'false' : 'true'})">${item.disabled || item.status === 'disabled' ? '启用' : '禁用'}</button>`);
+    return `<tr>
+        <td><strong>${escapeHtml(item.username || '-')}</strong><div class="small text-muted">${escapeHtml(item.email || item.user_id || '-')}</div></td>
+        <td><div><code>${escapeHtml(item.full_domain || item.prefix || '-')}</code></div><div class="small text-muted">前缀：${escapeHtml(item.prefix || '-')}</div></td>
+        <td>${subdomainStatusBadge(item)}</td>
+        <td><input id="subdomain-expiry-${escapeHtml(item.id)}" class="form-control form-control-sm" type="datetime-local" value="${escapeHtml(expiresValue)}"></td>
+        <td>${pendingMonths > 0 ? pendingMonths + ' 个月' : '-'}</td>
+        <td>${money(item.last_price_paid || 0)}</td>
+        <td class="text-nowrap">${actions.join('')}</td>
+    </tr>`;
+}
+function setSubdomainsPage(page) {
+    adminListQuery('subdomains').page = Number(page) || 1;
+    reloadAdminListKey('subdomains');
+}
+async function reviewSubdomain(id, decision) {
+    const item = (Admin.cache.subdomains || []).find(row => row.id === id);
+    if (!item) return showToast('记录不存在', 'error');
+    const ok = await adminConfirm({
+        title: decision === 'approve' ? '通过二级域名审核？' : '拒绝二级域名申请？',
+        message: `确认${decision === 'approve' ? '通过' : '拒绝'}卖家“${item.username || '-'}”的二级域名 ${item.full_domain || item.prefix || '-'}？`,
+        confirmText: decision === 'approve' ? '确认通过' : '确认拒绝',
+        cancelText: '取消',
+        danger: decision !== 'approve'
+    });
+    if (!ok) return;
+    const res = await request('admin.php?action=review_subdomain', 'POST', { id, decision });
+    if (!res.success) return showToast(res.message || '处理失败', 'error');
+    showToast(res.message || '已处理', 'success');
+    await loadAdminData();
+    renderSubdomainReview();
+}
+async function saveSubdomainExpiry(id) {
+    const input = document.getElementById('subdomain-expiry-' + id);
+    if (!input || !input.value) return showToast('请先选择到期时间', 'error');
+    const expiresAt = Math.floor(new Date(input.value).getTime() / 1000);
+    if (!Number.isFinite(expiresAt) || expiresAt <= 0) return showToast('到期时间无效', 'error');
+    const res = await request('admin.php?action=update_subdomain', 'POST', { id, expires_at: expiresAt });
+    if (!res.success) return showToast(res.message || '保存失败', 'error');
+    showToast('到期时间已更新', 'success');
+    await loadAdminData();
+    renderSubdomainReview();
+}
+async function toggleSubdomainDisabled(id, disabled) {
+    const res = await request('admin.php?action=update_subdomain', 'POST', { id, disabled: disabled ? '1' : '0' });
+    if (!res.success) return showToast(res.message || '操作失败', 'error');
+    showToast(disabled ? '已禁用该二级域名' : '已启用该二级域名', 'success');
+    await loadAdminData();
+    renderSubdomainReview();
 }
 
 function renderProducts() {
@@ -2289,6 +2405,7 @@ function toggleAdminCardCreateType() {
     const type = document.getElementById('cardType')?.value || 'balance';
     document.getElementById('cardAmountWrap')?.classList.toggle('d-none', type !== 'balance');
     document.getElementById('cardMembershipWrap')?.classList.toggle('d-none', type !== 'membership');
+    document.getElementById('cardSubdomainWrap')?.classList.toggle('d-none', type !== 'subdomain');
 }
 function renderCards() {
     setTitle('卡密管理');
@@ -2299,7 +2416,7 @@ function renderCards() {
             <div class="panel-title">
                 <div>
                     <h5>生成卡密</h5>
-                    <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级，Free 默认等级不可生成。</div>
+                    <div class="small text-muted mt-1">余额卡用于充值余额；会员卡用于激活指定会员等级；二级域名卡用于兑换指定月数的二级域名。</div>
                 </div>
             </div>
             <div class="row g-3 align-items-end">
@@ -2308,6 +2425,7 @@ function renderCards() {
                     <select id="cardType" class="form-select" onchange="toggleAdminCardCreateType()">
                         <option value="balance">余额卡</option>
                         <option value="membership">会员卡</option>
+                        <option value="subdomain">二级域名卡</option>
                     </select>
                 </div>
                 <div class="col-md-6 col-lg-3" id="cardAmountWrap">
@@ -2317,6 +2435,10 @@ function renderCards() {
                 <div class="col-md-6 col-lg-4 d-none" id="cardMembershipWrap">
                     <label class="form-label">会员权益</label>
                     <select id="cardTargetLevel" class="form-select" ${hasMembershipLevels ? '' : 'disabled'}>${cardMembershipOptionsAdmin()}</select>
+                </div>
+                <div class="col-md-6 col-lg-4 d-none" id="cardSubdomainWrap">
+                    <label class="form-label">兑换月数</label>
+                    <input id="cardSubdomainMonths" class="form-control" type="number" min="1" max="36" value="1" placeholder="例如：1">
                 </div>
                 <div class="col-md-6 col-lg-2">
                     <label class="form-label">生成数量</label>
@@ -2351,14 +2473,16 @@ function renderCards() {
                     </thead>
                     <tbody>
                         ${cards.map(c => {
-                            const type = (c.card_type || 'balance') === 'membership' ? 'membership' : 'balance';
+                            const type = ['membership', 'subdomain'].includes(c.card_type || 'balance') ? c.card_type : 'balance';
+                            const typeLabel = type === 'membership' ? '<span class="badge-soft primary">会员卡</span>' : (type === 'subdomain' ? '<span class="badge-soft warning">二级域名卡</span>' : '<span class="badge-soft success">余额卡</span>');
+                            const valueLabel = type === 'membership' ? escapeHtml(c.target_level || '-') : (type === 'subdomain' ? escapeHtml((c.target_level || '1') + ' 个月') : '余额充值');
                             return `
                             <tr>
                                 <td><input class="form-check-input card-select" type="checkbox" value="${escapeHtml(c.id)}" onchange="updateCardBatchToolbar()"></td>
                                 <td><code>${escapeHtml(c.code)}</code></td>
-                                <td>${type === 'membership' ? '<span class="badge-soft primary">会员卡</span>' : '<span class="badge-soft success">余额卡</span>'}</td>
-                                <td>${type === 'membership' ? '-' : money(c.amount)}</td>
-                                <td>${type === 'membership' ? escapeHtml(c.target_level || '-') : '余额充值'}</td>
+                                <td>${typeLabel}</td>
+                                <td>${type === 'balance' ? money(c.amount) : '-'}</td>
+                                <td>${valueLabel}</td>
                                 <td>${c.used ? '<span class="badge-soft danger">已使用</span>' : '<span class="badge-soft success">未使用</span>'}</td>
                                 <td><code class="small">${escapeHtml(c.used_user_id || c.used_by || '-')}</code></td>
                                 <td>${escapeHtml(c.used_user_email || '-')}</td>
@@ -2447,9 +2571,10 @@ async function createCards() {
     const cardType = document.getElementById('cardType')?.value || 'balance';
     const amount = document.getElementById('cardAmount')?.value || '';
     const count = document.getElementById('cardCount')?.value || '1';
-    const targetLevel = document.getElementById('cardTargetLevel')?.value || '';
+    let targetLevel = document.getElementById('cardTargetLevel')?.value || '';
     if (cardType === 'balance' && Number(amount) <= 0) return showToast('请输入大于 0 的充值金额', 'error');
     if (cardType === 'membership' && !targetLevel) return showToast('请选择要生成的会员权益', 'error');
+    if (cardType === 'subdomain') targetLevel = document.getElementById('cardSubdomainMonths')?.value || '1';
     const res = await request('card.php?action=create', 'POST', { amount, count, card_type: cardType, target_level: targetLevel });
     if (!res.success) return showToast(res.message || '生成失败', 'error');
     showToast(res.message || '生成成功', 'success');
@@ -2877,7 +3002,8 @@ function renderSettings() {
         ['agreements', '协议管理'],
         ['email', '邮箱验证'],
         ['captcha', '人机验证'],
-        ['announcement', '公告设置']
+        ['announcement', '公告设置'],
+        ['subdomain', '二级域名']
     ];
     document.getElementById('adminContent').innerHTML = `
         <div class="settings-tabs">
@@ -2896,7 +3022,7 @@ async function switchSettingsTab(tab) {
     renderSettings();
 }
 function renderSettingsContent() {
-    const map = { basic: renderBasicSettings, payment: renderPaymentSettingsOnly, login: renderReservedLoginSettings, agreements: renderAgreementSettings, email: renderReservedEmailSettings, captcha: renderReservedCaptchaSettings, announcement: renderReservedAnnouncementSettings };
+    const map = { basic: renderBasicSettings, payment: renderPaymentSettingsOnly, login: renderReservedLoginSettings, agreements: renderAgreementSettings, email: renderReservedEmailSettings, captcha: renderReservedCaptchaSettings, announcement: renderReservedAnnouncementSettings, subdomain: renderSubdomainSettings };
     (map[Admin.settingsTab] || renderBasicSettings)('settingsContent');
 }
 function renderBasicSettings(targetId = 'settingsContent') {
@@ -2959,6 +3085,53 @@ function renderBasicSettings(targetId = 'settingsContent') {
                 </div>
             </div>
         </div>`;
+}
+function renderSubdomainSettings(targetId = 'settingsContent') {
+    const c = Admin.cache.sysConfig || {};
+    const enabled = c.subdomain_enabled === true || c.subdomain_enabled === '1' || c.subdomain_enabled === 1;
+    document.getElementById(targetId).innerHTML = `
+        <div class="panel settings-basic-panel">
+            <div class="panel-title">
+                <div>
+                    <h5 class="mb-1">二级域名</h5>
+                    <div class="text-muted small">配置卖家独立店铺域名。DNS 需已配置泛解析，例如填写 <code>*.az0.cn</code> 或 <code>az0.cn</code>。</div>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <label class="admin-setting-card ${enabled ? 'is-on' : 'is-off'} h-100" for="setSubdomainEnabled">
+                        <span class="admin-setting-icon"><i class="bi bi-globe2"></i></span>
+                        <span class="admin-setting-copy">
+                            <span class="admin-setting-title">开启二级域名功能</span>
+                            <span class="admin-setting-desc">开启后卖家可在控制台申请独立二级域名店铺。</span>
+                            <span class="admin-setting-state">当前状态：${enabled ? '已开启' : '已关闭'}</span>
+                        </span>
+                        <span class="form-check form-switch admin-setting-switch">
+                            <input class="form-check-input" type="checkbox" id="setSubdomainEnabled" ${enabled ? 'checked' : ''}>
+                        </span>
+                    </label>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">主域名</label>
+                    <input id="setSubdomainBaseDomain" class="form-control" placeholder="例如：*.az0.cn 或 az0.cn" value="${escapeHtml(c.subdomain_base_domain || '')}">
+                    <div class="form-text">卖家填写前缀后访问形如 <code>前缀.az0.cn</code></div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">每月价格（元）</label>
+                    <input id="setSubdomainMonthlyPrice" class="form-control" type="number" min="0.01" step="0.01" value="${escapeHtml(c.subdomain_monthly_price ?? 10)}">
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary" onclick="saveSubdomainSettings()"><i class="bi bi-check2-circle me-1"></i>保存二级域名设置</button>
+                </div>
+            </div>
+        </div>`;
+}
+async function saveSubdomainSettings() {
+    await saveSystemConfigFields({
+        subdomain_enabled: document.getElementById('setSubdomainEnabled')?.checked ? '1' : '0',
+        subdomain_base_domain: document.getElementById('setSubdomainBaseDomain')?.value || '',
+        subdomain_monthly_price: document.getElementById('setSubdomainMonthlyPrice')?.value || '10'
+    }, '二级域名设置已保存');
 }
 async function saveSettings() { const res = await request('finance.php?action=update_system_config', 'POST', { site_name: document.getElementById('setSiteName').value, site_description: document.getElementById('setSiteDescription').value, min_withdraw_amount: document.getElementById('setMinWithdraw').value, withdraw_fee_rate: document.getElementById('setWithdrawFee').value, allow_guest_purchase: document.getElementById('setAllowGuestPurchase')?.checked ? '1' : '0', enable_membership_card_activation: document.getElementById('setEnableMembershipCardActivation')?.checked ? '1' : '0' }); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast('保存成功', 'success'); await loadAdminData(); }
 async function saveSystemConfigFields(data, successMessage = '保存成功') { const res = await request('finance.php?action=update_system_config', 'POST', data); if (!res.success) return showToast(res.message || '保存失败', 'error'); showToast(successMessage, 'success'); await loadAdminData(); }
