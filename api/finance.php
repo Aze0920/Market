@@ -532,20 +532,33 @@ switch ($action) {
         require_once __DIR__ . '/../core/Mailer.php';
         $user = getCurrentUser();
         $config = $db->getSystemConfig();
-        
+
         if (!$user || $user['role'] !== 'admin') {
-            unset($config['admin_wechat_qrcode']);
-            unset($config['admin_alipay_qrcode']);
-            unset($config['smtp_password']);
-            unset($config['resend_api_key']);
-            unset($config['captcha_secret_key']);
-            unset($config['oauth_qq_app_key']);
-            unset($config['oauth_wechat_app_secret']);
-            unset($config['oauth_caihong_key']);
+            // 非管理员仅返回前端展示所需的公开字段，避免泄露邮箱/SMTP/OAuth 等内部配置
+            $publicKeys = [
+                'site_name', 'site_description',
+                'enable_withdraw', 'min_withdraw_amount', 'withdraw_fee_rate',
+                'allow_guest_purchase',
+                'enable_membership_card_activation',
+                'register_email_verify_enabled',
+                'subdomain_enabled',
+                'announcement_enabled', 'announcement_position', 'announcement_popup_enabled',
+                'announcement_items', 'announcement_content', 'announcement_title',
+                'user_agreement_title', 'user_agreement_content',
+                'merchant_agreement_title', 'merchant_agreement_content',
+            ];
+            $publicConfig = [];
+            foreach ($publicKeys as $key) {
+                if (array_key_exists($key, $config)) {
+                    $publicConfig[$key] = $config[$key];
+                }
+            }
+            jsonResponse(['success' => true, 'config' => $publicConfig]);
         }
+
         $config = KeyNestMailer::stripProfileSecrets($config);
         unset($config['smtp_password'], $config['resend_api_key']);
-        
+
         jsonResponse(['success' => true, 'config' => $config]);
 
     case 'update_system_config':

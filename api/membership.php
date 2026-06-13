@@ -46,6 +46,19 @@ function levelOrderMap($levels) {
 switch ($action) {
     case 'levels':
         $levels = $db->getMembershipLevels();
+        if (!isset($_SESSION['user_id'])) {
+            // 未登录用户隐藏价格与费率等商业敏感字段，仅保留展示所需信息
+            $sensitiveLevelKeys = ['cost', 'fee_rate', 'publish_fee_per_account'];
+            foreach ($levels as $name => &$level) {
+                if (!is_array($level)) {
+                    continue;
+                }
+                foreach ($sensitiveLevelKeys as $key) {
+                    unset($level[$key]);
+                }
+            }
+            unset($level);
+        }
         jsonResponse(['success' => true, 'levels' => $levels]);
 
     case 'upgrade':

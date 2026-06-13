@@ -1115,6 +1115,21 @@ switch ($action) {
             exit;
         }
 
+        $tradeStatus = trim((string)($data['trade_status'] ?? ''));
+        if ($tradeStatus !== '' && strtoupper($tradeStatus) !== 'TRADE_SUCCESS') {
+            echo 'fail';
+            exit;
+        }
+
+        if (isset($data['money']) && $data['money'] !== '') {
+            $paidMoney = number_format((float)$data['money'], 2, '.', '');
+            $expectedMoney = number_format((float)($order['actual_amount'] ?? $order['amount'] ?? 0), 2, '.', '');
+            if ($paidMoney !== $expectedMoney) {
+                echo 'fail';
+                exit;
+            }
+        }
+
         if ($order['status'] === 'paid') {
             if (($order['type'] ?? '') === 'product_online_purchase' && empty($order['related_id'])) {
                 finalizePaidPaymentOrder($order, $data);

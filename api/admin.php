@@ -775,6 +775,7 @@ function adminDashboardData() {
     $products = array_values(array_filter(array_map('adminSafeProduct', $db->getTable('products'))));
     $paymentOrders = $db->getPaymentOrders();
     $todayReceipt = 0.0;
+    $todayProfit = 0.0;
     foreach ($paymentOrders as $order) {
         if (($order['status'] ?? '') !== 'paid') {
             continue;
@@ -782,6 +783,23 @@ function adminDashboardData() {
         $paidAt = intval($order['paid_at'] ?? 0);
         if ($paidAt >= $todayStart) {
             $todayReceipt += floatval($order['actual_amount'] ?? $order['amount'] ?? 0);
+            $type = (string)($order['type'] ?? '');
+            if ($type === 'membership_upgrade') {
+                // 在线开通会员：平台收入为支付手续费部分
+                $todayProfit += floatval($order['fee'] ?? 0);
+            } elseif ($type === 'membership_upgrade_balance') {
+                // 余额开通会员：全额归平台
+                $todayProfit += abs(floatval($order['amount'] ?? 0));
+            } elseif ($type === 'subdomain_purchase' || $type === 'subdomain_renew') {
+                // 二级域名购买/续费：全额归平台
+                $todayProfit += abs(floatval($order['amount'] ?? 0));
+            }
+        }
+    }
+    // 商品成交手续费（含发布费，已合并在订单 fee 字段）
+    foreach ($db->getTable('orders') as $order) {
+        if (intval($order['purchase_date'] ?? 0) >= $todayStart) {
+            $todayProfit += floatval($order['fee'] ?? 0);
         }
     }
     $complaints = adminComplaintOrders();
@@ -809,7 +827,7 @@ function adminDashboardData() {
             'open_complaints' => $complaintSummary['open'],
             'pending_requests' => count($pendingRequests),
             'today_receipt' => round($todayReceipt, 2),
-            'today_profit' => 0,
+            'today_profit' => round($todayProfit, 2),
             'pending_subdomains' => $pendingSubdomains,
         ],
         'recent_users' => array_slice($users, 0, 8),
