@@ -282,6 +282,10 @@ class RelationalStore {
         $this->ensureColumn('kn_card_codes', 'base_domain', "varchar(120) NOT NULL DEFAULT ''");
         $this->ensureColumn('kn_seller_subdomains', 'base_domain', "varchar(190) NOT NULL DEFAULT ''");
         $this->ensureSignedDecimalColumn('kn_users', 'balance', 'decimal(14,2)', '0.00');
+        // 商铺自定义设置字段
+        $this->ensureColumn('kn_users', 'shop_name', "varchar(100) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_users', 'shop_announcement', "varchar(500) NOT NULL DEFAULT ''");
+        $this->ensureColumn('kn_users', 'shop_custom_css', "mediumtext");
         $this->ensureSignedDecimalColumn('kn_users', 'frozen_balance', 'decimal(14,2)', '0.00');
     }
 
@@ -634,6 +638,9 @@ class RelationalStore {
             'custom_label_icon' => $row['custom_label_icon'],
             'custom_label_gradient' => $row['custom_label_gradient'],
             'payment_methods' => $this->decodeJson($row['payment_methods_json'], []),
+            'shop_name' => $row['shop_name'] ?? '',
+            'shop_announcement' => $row['shop_announcement'] ?? '',
+            'shop_custom_css' => $row['shop_custom_css'] ?? '',
             'created_at' => intval($row['created_at']),
             'last_login' => intval($row['last_login']),
         ];
@@ -642,9 +649,9 @@ class RelationalStore {
 
     private function upsertUser(array $user) {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO kn_users (id, username, password, email, balance, frozen_balance, role, membership_level, avatar, qq_openid, qq_nickname, qq_bound_at, merchant_status, merchant_rules_accepted, merchant_rules_accepted_at, merchant_opened_once, merchant_approved_at, merchant_reapply_at, custom_label_text, custom_label_icon, custom_label_gradient, payment_methods_json, created_at, last_login)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE username = VALUES(username), password = VALUES(password), email = VALUES(email), balance = VALUES(balance), frozen_balance = VALUES(frozen_balance), role = VALUES(role), membership_level = VALUES(membership_level), avatar = VALUES(avatar), qq_openid = VALUES(qq_openid), qq_nickname = VALUES(qq_nickname), qq_bound_at = VALUES(qq_bound_at), merchant_status = VALUES(merchant_status), merchant_rules_accepted = VALUES(merchant_rules_accepted), merchant_rules_accepted_at = VALUES(merchant_rules_accepted_at), merchant_opened_once = VALUES(merchant_opened_once), merchant_approved_at = VALUES(merchant_approved_at), merchant_reapply_at = VALUES(merchant_reapply_at), custom_label_text = VALUES(custom_label_text), custom_label_icon = VALUES(custom_label_icon), custom_label_gradient = VALUES(custom_label_gradient), payment_methods_json = VALUES(payment_methods_json), created_at = VALUES(created_at), last_login = VALUES(last_login)'
+            'INSERT INTO kn_users (id, username, password, email, balance, frozen_balance, role, membership_level, avatar, qq_openid, qq_nickname, qq_bound_at, merchant_status, merchant_rules_accepted, merchant_rules_accepted_at, merchant_opened_once, merchant_approved_at, merchant_reapply_at, custom_label_text, custom_label_icon, custom_label_gradient, payment_methods_json, shop_name, shop_announcement, shop_custom_css, created_at, last_login)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE username = VALUES(username), password = VALUES(password), email = VALUES(email), balance = VALUES(balance), frozen_balance = VALUES(frozen_balance), role = VALUES(role), membership_level = VALUES(membership_level), avatar = VALUES(avatar), qq_openid = VALUES(qq_openid), qq_nickname = VALUES(qq_nickname), qq_bound_at = VALUES(qq_bound_at), merchant_status = VALUES(merchant_status), merchant_rules_accepted = VALUES(merchant_rules_accepted), merchant_rules_accepted_at = VALUES(merchant_rules_accepted_at), merchant_opened_once = VALUES(merchant_opened_once), merchant_approved_at = VALUES(merchant_approved_at), merchant_reapply_at = VALUES(merchant_reapply_at), custom_label_text = VALUES(custom_label_text), custom_label_icon = VALUES(custom_label_icon), custom_label_gradient = VALUES(custom_label_gradient), payment_methods_json = VALUES(payment_methods_json), shop_name = VALUES(shop_name), shop_announcement = VALUES(shop_announcement), shop_custom_css = VALUES(shop_custom_css), created_at = VALUES(created_at), last_login = VALUES(last_login)'
         );
         return $stmt->execute([
             $user['id'],
@@ -669,6 +676,9 @@ class RelationalStore {
             $user['custom_label_icon'] ?? '',
             $user['custom_label_gradient'] ?? '',
             $this->encodeJson($user['payment_methods'] ?? []),
+            $user['shop_name'] ?? '',
+            $user['shop_announcement'] ?? '',
+            $user['shop_custom_css'] ?? '',
             intval($user['created_at'] ?? time()),
             intval($user['last_login'] ?? 0),
         ]);

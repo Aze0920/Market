@@ -276,7 +276,7 @@ function normalizeFrontendHash() {
     return new URLSearchParams({ page: 'dashboard', tab: raw });
 }
 
-const FRONT_DASHBOARD_TABS = ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'subdomain', 'cardmanage', 'paymentmanage', 'profile', 'customlabel', 'messages', 'reviews', 'complaints'];
+const FRONT_DASHBOARD_TABS = ['overview', 'orders', 'sales', 'myproducts', 'balance', 'subdomain', 'profile', 'messages', 'reviews', 'complaints'];
 
 function isSubdomainFeatureEnabled() {
     const c = window.KeyNestSystemConfig || {};
@@ -466,9 +466,6 @@ function renderDashboardTab(tabName) {
         case 'balance':
             loadBalanceTab(contentArea);
             break;
-        case 'membership':
-            loadMembershipTab(contentArea);
-            break;
         case 'subdomain':
             if (!isSubdomainFeatureEnabled()) {
                 loadOverviewTab(contentArea);
@@ -476,17 +473,8 @@ function renderDashboardTab(tabName) {
             }
             loadSubdomainTab(contentArea);
             break;
-        case 'cardmanage':
-            loadCardManageTab(contentArea);
-            break;
-        case 'paymentmanage':
-            loadPaymentManageTab(contentArea);
-            break;
         case 'profile':
             loadProfileTab(contentArea);
-            break;
-        case 'customlabel':
-            loadCustomLabelTab(contentArea);
             break;
         case 'messages':
             loadMessagesTab(contentArea);
@@ -528,32 +516,17 @@ function renderDashboard(tabName = null) {
             <i class="bi bi-box-seam"></i><span>我的商品</span>
         </div>
         <div class="sidebar-nav-item" data-tab="balance">
-            <i class="bi bi-wallet2"></i><span>余额管理</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="membership">
-            <i class="bi bi-gem"></i><span>会员中心</span>
+            <i class="bi bi-wallet2"></i><span>财务中心</span>
         </div>
         ${isSubdomainFeatureEnabled() ? `
         <div class="sidebar-nav-item" data-tab="subdomain">
             <i class="bi bi-globe2"></i><span>二级域名</span>
         </div>` : ''}
     `;
-    if (App.currentUser.role === 'admin') {
-        sidebarHtml += `
-            <div class="sidebar-nav-item" data-tab="cardmanage">
-                <i class="bi bi-credit-card-2-front"></i><span>卡密管理</span>
-            </div>
-            <div class="sidebar-nav-item" data-tab="paymentmanage">
-                <i class="bi bi-cash-stack"></i><span>支付接口</span>
-            </div>
-        `;
-    }
+    // 管理员功能已移至后台，前端控制台不再显示
     sidebarHtml += `
         <div class="sidebar-nav-item" data-tab="profile">
             <i class="bi bi-person-circle"></i><span>个人中心</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="customlabel">
-            <i class="bi bi-tags"></i><span>自定义标签</span>
         </div>
         <div class="sidebar-nav-item" data-tab="messages">
             <i class="bi bi-chat-dots"></i><span>私信</span>

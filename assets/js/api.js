@@ -161,6 +161,14 @@ const API = {
         return this.request('auth.php?action=save_custom_label', 'POST', { text, icon, gradient });
     },
 
+    updateShopSettings(shopName, shopAnnouncement, shopCustomCss) {
+        return this.request('auth.php?action=update_shop_settings', 'POST', {
+            shop_name: shopName,
+            shop_announcement: shopAnnouncement,
+            shop_custom_css: shopCustomCss
+        });
+    },
+
     async uploadPaymentQrcode(file, method = '', emailCode = '', account = '') {
         const options = {
             method: 'POST',

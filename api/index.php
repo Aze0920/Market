@@ -58,9 +58,11 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/../config/install.php';
 require_once __DIR__ . '/../core/SecurityLogger.php';
+require_once __DIR__ . '/../core/SecurityValidator.php';
 keynest_require_installed(true);
 
 $GLOBALS['api_logger'] = new SecurityLogger();
+$GLOBALS['security_validator'] = new SecurityValidator();
 $GLOBALS['api_request_started_at'] = microtime(true);
 $GLOBALS['api_request_logged'] = false;
 
@@ -94,6 +96,33 @@ function apiLogRequest($level, $extra = []) {
 }
 
 apiLogRequest('info', ['event' => 'start']);
+
+// 检测可疑输入
+function detectSuspiciousRequestInput() {
+    if (!isset($GLOBALS['api_logger']) || !($GLOBALS['api_logger'] instanceof SecurityLogger)) return;
+    $logger = $GLOBALS['api_logger'];
+    
+    // 检查GET参数
+    foreach ($_GET as $key => $value) {
+        if (is_string($value) && strlen($value) > 0) {
+            $result = $logger->detectSuspiciousInput($value, 'get_' . $key);
+            if ($result['is_suspicious']) {
+                apiLogRequest('warning', ['event' => 'suspicious_get_input', 'key' => $key, 'type' => $result['type']]);
+            }
+        }
+    }
+    
+    // 检查POST参数
+    foreach ($_POST as $key => $value) {
+        if (is_string($value) && strlen($value) > 0) {
+            $result = $logger->detectSuspiciousInput($value, 'post_' . $key);
+            if ($result['is_suspicious']) {
+                apiLogRequest('warning', ['event' => 'suspicious_post_input', 'key' => $key, 'type' => $result['type']]);
+            }
+        }
+    }
+}
+detectSuspiciousRequestInput();
 
 set_error_handler(function($severity, $message, $file, $line) {
     if (!(error_reporting() & $severity)) return false;

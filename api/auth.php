@@ -578,6 +578,8 @@ switch ($action) {
         jsonResponse(['success' => true, 'message' => '密码已重置，请使用新密码登录']);
 
     case 'register':
+        $validator = $GLOBALS['security_validator'] ?? new SecurityValidator();
+        
         $username = sanitizeUsername($_POST['username'] ?? '');
         $email = sanitizeEmail($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
@@ -589,24 +591,24 @@ switch ($action) {
             jsonResponse(['success' => false, 'message' => '请先阅读并同意用户协议和商家协议'], 400);
         }
 
-        if (empty($username) || empty($email) || empty($password)) {
-            jsonResponse(['success' => false, 'message' => '请填写所有字段'], 400);
+        // 使用SecurityValidator进行后端验证
+        $usernameResult = $validator->validateUsername($username);
+        if (!$usernameResult['valid']) {
+            jsonResponse(['success' => false, 'message' => $usernameResult['message']], 400);
         }
-        if (mb_strlen($username, 'UTF-8') < 2 || mb_strlen($username, 'UTF-8') > 30) {
-            jsonResponse(['success' => false, 'message' => '用户名需2-30个字符'], 400);
+        $username = $usernameResult['value'];
+
+        $emailResult = $validator->validateEmail($email);
+        if (!$emailResult['valid']) {
+            jsonResponse(['success' => false, 'message' => $emailResult['message']], 400);
         }
-        if (!preg_match('/^[\p{L}\p{N}_\x{4e00}-\x{9fa5}]+$/u', $username)) {
-            jsonResponse(['success' => false, 'message' => '用户名只能包含中文、字母、数字和下划线'], 400);
+        $email = $emailResult['value'];
+
+        $passwordResult = $validator->validatePassword($password);
+        if (!$passwordResult['valid']) {
+            jsonResponse(['success' => false, 'message' => $passwordResult['message']], 400);
         }
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            jsonResponse(['success' => false, 'message' => '请输入有效的邮箱地址'], 400);
-        }
-        if (strlen($password) < 8) {
-            jsonResponse(['success' => false, 'message' => '密码至少8位'], 400);
-        }
-        if (!preg_match('/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/', $password)) {
-            jsonResponse(['success' => false, 'message' => '密码需包含字母和数字（至少8位）'], 400);
-        }
+
         if ($password !== $passwordConfirm) {
             jsonResponse(['success' => false, 'message' => '两次密码不一致'], 400);
         }
@@ -1112,6 +1114,40 @@ switch ($action) {
         $user = $db->getUserById($userId);
         jsonResponse(['success' => true, 'message' => 'QQ 已解绑', 'user' => safeUser($user)]);
 
+    case 'update_shop_settings':
+        $userId = requireAuth();
+        $user = $db->getUserById($userId);
+        if (!$user) {
+            jsonResponse(['success' => false, 'message' => '用户不存在'], 404);
+        }
+        // 商铺名称：1-50个字符
+        $shopName = trim((string)($_POST['shop_name'] ?? ''));
+        $shopNameLen = function_exists('mb_strlen') ? mb_strlen($shopName, 'UTF-8') : strlen($shopName);
+        if ($shopName !== '' && ($shopNameLen < 1 || $shopNameLen > 50)) {
+            jsonResponse(['success' => false, 'message' => '商铺名称需为 1-50 个字符'], 400);
+        }
+        // 商铺公告：最多500字符
+        $announcement = trim((string)($_POST['shop_announcement'] ?? ''));
+        $announcementLen = function_exists('mb_strlen') ? mb_strlen($announcement, 'UTF-8') : strlen($announcement);
+        if ($announcementLen > 500) {
+            jsonResponse(['success' => false, 'message' => '商铺公告不能超过 500 个字符'], 400);
+        }
+        // 自定义 CSS：安全过滤
+        $customCss = trim((string)($_POST['shop_custom_css'] ?? ''));
+        if ($customCss !== '' && preg_match('/<\s*script|javascript:|on\w+\s*=|expression\s*\(|url\s*\(/i', $customCss)) {
+            jsonResponse(['success' => false, 'message' => '自定义 CSS 中禁止包含 JavaScript、事件处理器或危险表达式'], 400);
+        }
+        $updates = [
+            'shop_name' => mb_substr($shopName, 0, 100),
+            'shop_announcement' => mb_substr($announcement, 0, 500),
+            'shop_custom_css' => mb_substr($customCss, 0, 65535),
+        ];
+        if (!$db->updateUser($userId, $updates)) {
+            jsonResponse(['success' => false, 'message' => '商铺设置保存失败'], 500);
+        }
+        $updatedUser = $db->getUserById($userId);
+        jsonResponse(['success' => true, 'message' => '商铺设置已保存', 'user' => safeUser($updatedUser)]);
+
     case 'search_users':
         requireAuth();
         $query = sanitizeUsername($_GET['query'] ?? '');
@@ -1129,6 +1165,73 @@ switch ($action) {
                     'username' => htmlspecialchars($u['username'], ENT_QUOTES, 'UTF-8')];
         }, array_values($results));
         jsonResponse(['success' => true, 'users' => $results]);
+
+    case 'seller_info':
+        // 获取卖家商铺信息（公开接口，无需登录）
+        $identifier = trim((string)($_GET['identifier'] ?? ''));
+        if ($identifier === '') {
+            jsonResponse(['success' => false, 'message' => '缺少商铺标识'], 400);
+        }
+        // 安全过滤：只允许字母、数字、下划线、横线
+        if (!preg_match('/^[a-zA-Z0-9_\-]{1,50}$/', $identifier)) {
+            jsonResponse(['success' => false, 'message' => '商铺标识格式不正确'], 400);
+        }
+
+        // 尝试通过用户名或用户ID查找
+        $seller = null;
+        $allUsers = $db->getTable('users');
+
+        // 先尝试用户名匹配
+        foreach ($allUsers as $u) {
+            if (isset($u['username']) && strtolower($u['username']) === strtolower($identifier)) {
+                $seller = $u;
+                break;
+            }
+        }
+
+        // 如果没找到，尝试用户ID匹配
+        if (!$seller) {
+            foreach ($allUsers as $u) {
+                if (isset($u['id']) && $u['id'] === $identifier) {
+                    $seller = $u;
+                    break;
+                }
+            }
+        }
+
+        if (!$seller) {
+            jsonResponse(['success' => false, 'message' => '商铺不存在'], 404);
+        }
+
+        // 检查卖家是否被禁用
+        if (!empty($seller['disabled']) || ($seller['role'] ?? '') === 'banned') {
+            jsonResponse(['success' => false, 'message' => '该商铺已被关闭'], 403);
+        }
+
+        // 返回商铺公开信息
+        $sellerInfo = [
+            'id' => htmlspecialchars($seller['id'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'username' => htmlspecialchars($seller['username'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'shop_name' => htmlspecialchars($seller['shop_name'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'shop_announcement' => htmlspecialchars($seller['shop_announcement'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'shop_custom_css' => '', // CSS需要特殊处理，不直接输出HTML
+            'avatar' => '',
+            'membership_level' => htmlspecialchars($seller['membership_level'] ?? 'Free', ENT_QUOTES, 'UTF-8'),
+        ];
+
+        // 头像URL（仅允许特定格式）
+        $avatar = trim((string)($seller['avatar'] ?? ''));
+        if (preg_match('/^\/uploads\/avatars\/[a-zA-Z0-9_.-]+\.(png|jpe?g|gif|webp)(\?.*)?$/i', $avatar)) {
+            $sellerInfo['avatar'] = $avatar;
+        }
+
+        // 自定义CSS（已过滤危险内容）
+        $customCss = trim((string)($seller['shop_custom_css'] ?? ''));
+        if ($customCss !== '' && !preg_match('/<\s*script|javascript:|on\w+\s*=|expression\s*\(/i', $customCss)) {
+            $sellerInfo['shop_custom_css'] = $customCss;
+        }
+
+        jsonResponse(['success' => true, 'seller' => $sellerInfo]);
 
     default:
         jsonResponse(['success' => false, 'message' => '未知操作'], 400);

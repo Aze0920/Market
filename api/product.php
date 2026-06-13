@@ -558,6 +558,11 @@ switch ($action) {
             'category' => sanitizeString($_GET['category'] ?? 'all'),
             'search' => sanitizeString($_GET['search'] ?? '')
         ];
+        // 获取排序方式（安全过滤）
+        $sortBy = trim((string)($_GET['sort'] ?? ''));
+        if (!in_array($sortBy, ['default', 'sales', 'price_asc', 'price_desc', 'rating', 'newest'])) {
+            $sortBy = 'default';
+        }
         if (!applySubdomainProductScope($db, $filters)) {
             $meta = subdomainProductListMeta($db);
             jsonResponse([
@@ -585,16 +590,75 @@ switch ($action) {
             $p['rating_good'] = $stats['good'];
             $p['rating_bad'] = $stats['bad'];
             $p['rating_total'] = $stats['total'];
+            // 计算好评率（避免除零错误）
+            $p['rating_rate'] = $stats['total'] > 0 ? $stats['good'] / $stats['total'] : 0;
             unset($p['account_list'], $p['pickup_password']);
         }
         unset($p);
-        usort($products, function($a, $b) {
-            $priorityDiff = intval($b['seller_membership_priority'] ?? 0) <=> intval($a['seller_membership_priority'] ?? 0);
-            if ($priorityDiff !== 0) return $priorityDiff;
-            $timeDiff = intval($b['updated_at'] ?? $b['created_at'] ?? 0) <=> intval($a['updated_at'] ?? $a['created_at'] ?? 0);
-            if ($timeDiff !== 0) return $timeDiff;
-            return intval($b['sales'] ?? 0) <=> intval($a['sales'] ?? 0);
-        });
+
+        // 根据排序方式进行排序
+        switch ($sortBy) {
+            case 'sales':
+                // 按销量排序（销量优先，再按好评率）
+                usort($products, function($a, $b) {
+                    $salesDiff = intval($b['sales'] ?? 0) <=> intval($a['sales'] ?? 0);
+                    if ($salesDiff !== 0) return $salesDiff;
+                    return floatval($b['rating_rate'] ?? 0) <=> floatval($a['rating_rate'] ?? 0);
+                });
+                break;
+            case 'price_asc':
+                // 价格升序
+                usort($products, function($a, $b) {
+                    return floatval($a['price'] ?? 0) <=> floatval($b['price'] ?? 0);
+                });
+                break;
+            case 'price_desc':
+                // 价格降序
+                usort($products, function($a, $b) {
+                    return floatval($b['price'] ?? 0) <=> floatval($a['price'] ?? 0);
+                });
+                break;
+            case 'rating':
+                // 按好评率排序（好评率优先，再按会员等级）
+                usort($products, function($a, $b) {
+                    $ratingDiff = floatval($b['rating_rate'] ?? 0) <=> floatval($a['rating_rate'] ?? 0);
+                    if ($ratingDiff !== 0) return $ratingDiff;
+                    $priorityDiff = intval($b['seller_membership_priority'] ?? 0) <=> intval($a['seller_membership_priority'] ?? 0);
+                    if ($priorityDiff !== 0) return $priorityDiff;
+                    return intval($b['sales'] ?? 0) <=> intval($a['sales'] ?? 0);
+                });
+                break;
+            case 'newest':
+                // 按最新发布排序
+                usort($products, function($a, $b) {
+                    $timeDiff = intval($b['updated_at'] ?? $b['created_at'] ?? 0) <=> intval($a['updated_at'] ?? $a['created_at'] ?? 0);
+                    if ($timeDiff !== 0) return $timeDiff;
+                    return intval($b['seller_membership_priority'] ?? 0) <=> intval($a['seller_membership_priority'] ?? 0);
+                });
+                break;
+            case 'default':
+            default:
+                // 默认排序：综合排序（会员等级权重最高，其次好评率和销量）
+                usort($products, function($a, $b) {
+                    // 1. 会员等级优先级（权重最高）
+                    $priorityDiff = intval($b['seller_membership_priority'] ?? 0) <=> intval($a['seller_membership_priority'] ?? 0);
+                    if ($priorityDiff !== 0) return $priorityDiff;
+                    
+                    // 2. 综合评分（好评率 * 0.6 + 销量评分 * 0.4）
+                    $aScore = (floatval($a['rating_rate'] ?? 0) * 60) + (min(intval($a['sales'] ?? 0), 100) * 0.4);
+                    $bScore = (floatval($b['rating_rate'] ?? 0) * 60) + (min(intval($b['sales'] ?? 0), 100) * 0.4);
+                    $scoreDiff = $bScore <=> $aScore;
+                    if ($scoreDiff !== 0) return $scoreDiff;
+                    
+                    // 3. 更新时间
+                    $timeDiff = intval($b['updated_at'] ?? $b['created_at'] ?? 0) <=> intval($a['updated_at'] ?? $a['created_at'] ?? 0);
+                    if ($timeDiff !== 0) return $timeDiff;
+                    
+                    // 4. 商品ID（稳定排序）
+                    return $b['id'] <=> $a['id'];
+                });
+                break;
+        }
         jsonResponse(['success' => true, 'products' => $products]);
 
     case 'get':

@@ -63,6 +63,21 @@
         <main class="main-content">
             <div class="container">
                 <div id="homePage">
+                    <!-- 二级商铺公告区域 -->
+                    <div id="shopAnnouncementArea" class="hidden mb-4">
+                        <div class="shop-announcement-card">
+                            <div class="d-flex align-items-start gap-3">
+                                <div class="shop-announcement-icon">
+                                    <i class="bi bi-megaphone-fill"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <div class="shop-announcement-title mb-1"></div>
+                                    <div class="shop-announcement-content"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
                         <div>
                             <h3 class="fw-bold mb-1"><i class="bi bi-grid-fill text-primary me-2"></i><span id="marketTitle">虚拟商品市场</span></h3>
@@ -79,6 +94,14 @@
                                 <option value="流媒体">流媒体账号</option>
                                 <option value="软件许可">软件许可</option>
                                 <option value="其他">其他</option>
+                            </select>
+                            <select id="sortFilter" class="form-select" style="width:130px;" onchange="filterProducts()">
+                                <option value="default">综合排序</option>
+                                <option value="sales">销量优先</option>
+                                <option value="rating">好评优先</option>
+                                <option value="newest">最新发布</option>
+                                <option value="price_asc">价格最低</option>
+                                <option value="price_desc">价格最高</option>
                             </select>
                         </div>
                     </div>
@@ -118,10 +141,7 @@
                                 <i class="bi bi-box-seam"></i><span>我的商品</span>
                             </div>
                             <div class="sidebar-nav-item" data-tab="balance">
-                                <i class="bi bi-wallet2"></i><span>余额管理</span>
-                            </div>
-                            <div class="sidebar-nav-item" data-tab="membership">
-                                <i class="bi bi-gem"></i><span>会员中心</span>
+                                <i class="bi bi-wallet2"></i><span>财务中心</span>
                             </div>
                             <div class="sidebar-nav-item" data-tab="profile">
                                 <i class="bi bi-person-circle"></i><span>个人中心</span>
@@ -658,6 +678,7 @@
     <script src="assets/js/product.js?v=V1.1.46"></script>
     <script src="assets/js/message.js?v=V1.1.43"></script>
     <script src="assets/js/auth.js?v=V1.1.45"></script>
+    <script src="assets/js/dashboard/index.js?v=V1.2.0"></script>
     <script>
         window.KEYNEST_ASSET_VERSION = 'V1.1.45';
 
@@ -966,6 +987,9 @@
                 App.clearUser();
             }
 
+            // 检测二级商铺并应用自定义设置
+            await detectAndApplySubShopSettings();
+
             const initialState = getInitialFrontendState();
             App.currentPage = initialState.page;
             App.currentTab = initialState.tab;
@@ -988,6 +1012,73 @@
                 setTimeout(() => openGuestOrdersModal(), 300);
             }
             setTimeout(maybeShowAnnouncementPopup, 500);
+        }
+
+        /**
+         * 检测二级商铺并应用自定义设置（CSS注入、公告显示、商铺名称）
+         */
+        async function detectAndApplySubShopSettings() {
+            try {
+                const host = window.location.host;
+                const resolveResult = await API.request('subdomain.php?action=resolve&host=' + encodeURIComponent(host), 'GET', {});
+                if (!resolveResult.success || !resolveResult.active) {
+                    return;
+                }
+                const shopInfo = resolveResult;
+                // 应用商铺自定义 CSS
+                if (shopInfo.shop_custom_css) {
+                    applyShopCustomCss(shopInfo.shop_custom_css);
+                }
+                // 显示商铺公告
+                if (shopInfo.shop_announcement) {
+                    applyShopAnnouncement(shopInfo.shop_name || shopInfo.seller_name || '商铺公告', shopInfo.shop_announcement);
+                }
+                // 更新页面标题为商铺名称
+                if (shopInfo.shop_name) {
+                    const brand = document.getElementById('siteBrandName');
+                    const marketTitle = document.getElementById('marketTitle');
+                    if (brand) brand.textContent = shopInfo.shop_name;
+                    if (marketTitle) marketTitle.textContent = shopInfo.shop_name + ' 的店铺';
+                }
+            } catch (e) {
+                console.warn('Sub-shop detection failed:', e);
+            }
+        }
+
+        /**
+         * 注入二级商铺自定义 CSS
+         */
+        function applyShopCustomCss(css) {
+            if (!css) return;
+            // 双重安全过滤：去除危险内容
+            const safeCss = css
+                .replace(/<\/?[^>]+>/gi, '')
+                .replace(/javascript:/gi, '')
+                .replace(/on\w+\s*=/gi, '')
+                .replace(/expression\s*\(/gi, '')
+                .replace(/url\s*\(/gi, 'url(');
+            let styleEl = document.getElementById('shop-custom-css-container');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'shop-custom-css-container';
+                document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = safeCss;
+            styleEl.type = 'text/css';
+        }
+
+        /**
+         * 显示二级商铺公告
+         */
+        function applyShopAnnouncement(title, content) {
+            if (!content) return;
+            const area = document.getElementById('shopAnnouncementArea');
+            if (!area) return;
+            const titleEl = area.querySelector('.shop-announcement-title');
+            const contentEl = area.querySelector('.shop-announcement-content');
+            if (titleEl) titleEl.textContent = Security.escapeHtml(title);
+            if (contentEl) contentEl.textContent = content;
+            area.classList.remove('hidden');
         }
 
         async function applySiteConfig() {

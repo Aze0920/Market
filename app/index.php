@@ -37,6 +37,15 @@ if ($path === '/' || $path === '/index.php') {
     exit;
 }
 
+// 主域名商铺路由：/shop/{identifier}
+if (preg_match('#^/shop/([a-zA-Z0-9_\-]{1,50})$#', $path, $matches)) {
+    $shopIdentifier = $matches[1];
+    // 设置商铺标识供前端使用
+    $_GET['shop_identifier'] = $shopIdentifier;
+    include $rootPath . '/templates/shop.html';
+    exit;
+}
+
 if ($path === '/admin' || $path === '/admin/') {
     include $rootPath . '/admin/index.php';
     exit;

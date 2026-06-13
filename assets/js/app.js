@@ -274,7 +274,7 @@ function getInitialFrontendState() {
     const tab = hash.get('tab') || localStorage.getItem('keynest_front_tab') || 'overview';
     return {
         page: ['home', 'dashboard'].includes(page) ? page : 'home',
-        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'cardmanage', 'paymentmanage', 'profile', 'customlabel', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
+        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'subdomain', 'profile', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
     };
 }
 
@@ -350,20 +350,8 @@ function renderDashboardTab(tabName) {
         case 'balance':
             loadBalanceTab(contentArea);
             break;
-        case 'membership':
-            loadMembershipTab(contentArea);
-            break;
-        case 'cardmanage':
-            loadCardManageTab(contentArea);
-            break;
-        case 'paymentmanage':
-            loadPaymentManageTab(contentArea);
-            break;
         case 'profile':
             loadProfileTab(contentArea);
-            break;
-        case 'customlabel':
-            loadCustomLabelTab(contentArea);
             break;
         case 'messages':
             loadMessagesTab(contentArea);
@@ -391,6 +379,7 @@ function renderDashboard(tabName = null) {
     }
     document.getElementById('dashBalance').textContent = '¥ ' + App.currentUser.balance.toFixed(2) + (App.currentUser.frozen_balance > 0 ? '（冻结 ¥' + Number(App.currentUser.frozen_balance).toFixed(2) + '）' : '');
 
+    // 优化后的侧边栏结构：合并部分功能页
     let sidebarHtml = `
         <div class="sidebar-nav-item active" data-tab="overview">
             <i class="bi bi-house"></i><span>概览</span>
@@ -405,28 +394,13 @@ function renderDashboard(tabName = null) {
             <i class="bi bi-box-seam"></i><span>我的商品</span>
         </div>
         <div class="sidebar-nav-item" data-tab="balance">
-            <i class="bi bi-wallet2"></i><span>余额管理</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="membership">
-            <i class="bi bi-gem"></i><span>会员中心</span>
+            <i class="bi bi-wallet2"></i><span>财务中心</span>
         </div>
     `;
-    if (App.currentUser.role === 'admin') {
-        sidebarHtml += `
-            <div class="sidebar-nav-item" data-tab="cardmanage">
-                <i class="bi bi-credit-card-2-front"></i><span>卡密管理</span>
-            </div>
-            <div class="sidebar-nav-item" data-tab="paymentmanage">
-                <i class="bi bi-cash-stack"></i><span>支付接口</span>
-            </div>
-        `;
-    }
+    // 管理员功能已移至后台，前端控制台不再显示
     sidebarHtml += `
         <div class="sidebar-nav-item" data-tab="profile">
             <i class="bi bi-person-circle"></i><span>个人中心</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="customlabel">
-            <i class="bi bi-tags"></i><span>自定义标签</span>
         </div>
         <div class="sidebar-nav-item" data-tab="messages">
             <i class="bi bi-chat-dots"></i><span>私信</span>
@@ -445,6 +419,11 @@ function renderDashboard(tabName = null) {
             renderDashboardTab(this.dataset.tab);
         };
     });
+
+    // 初始化二级商铺访问控制
+    if (window.__dashboardInitAccessControl) {
+        window.__dashboardInitAccessControl();
+    }
 
     const activeTab = tabName || App.currentTab || 'overview';
     const hasActiveTab = !!document.querySelector(`#dashSidebar .sidebar-nav-item[data-tab="${activeTab}"]`);

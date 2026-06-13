@@ -10,6 +10,26 @@ function renderMarkdown(markdown) {
     return html.split(/\n{2,}/).map(part => /<\/?(h\d|ul|li|pre|blockquote|hr|img)/.test(part) ? part.replace(/\n/g, '<br>') : `<p>${part.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
+/**
+ * 检测二级商铺用户并设置阻止标志（用于发布商品等受限功能）
+ * 直接调用API检测，不依赖其他模块
+ */
+window.checkAndBlockSubShopUser = async function() {
+    // 如果已经检测过，直接返回缓存结果
+    if (window.__subShopCheckDone === true) {
+        return;
+    }
+    try {
+        var result = await window.API.request('subdomain.php?action=my', 'GET', {});
+        if (result.success && result.subdomain && result.subdomain.prefix) {
+            window.__subShopBlocked = true;
+        }
+    } catch (e) {
+        console.warn('Sub-shop check failed:', e);
+    }
+    window.__subShopCheckDone = true;
+};
+
 function plainTextSummary(markdown, maxLength = 80) {
     const text = (markdown || '').replace(/```[\s\S]*?```/g, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[#>*_`\-]/g, ' ').replace(/\s+/g, ' ').trim();
     return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
@@ -121,11 +141,12 @@ async function loadProducts(options = {}) {
     const forceAll = !!options.forceAll;
     const search = forceAll ? '' : (document.getElementById('searchInput')?.value?.trim() || '');
     const category = forceAll ? 'all' : (document.getElementById('categoryFilter')?.value || 'all');
+    const sort = forceAll ? 'default' : (document.getElementById('sortFilter')?.value || 'default');
 
     grid.innerHTML = '<div class="col-12"><div class="loading"><div class="spinner"></div></div></div>';
     emptyState.classList.add('hidden');
 
-    const result = await API.getProducts({ search, category });
+    const result = await API.getProducts({ search, category, sort });
 
     if (!result.success || result.products.length === 0) {
         grid.innerHTML = '';
@@ -833,6 +854,12 @@ function openPublishModal() {
     if (!App.currentUser) {
         Toast.warning('请先登录');
         openLoginModal();
+        return;
+    }
+    // 二级商铺用户不允许发布商品（直接检测）
+    checkAndBlockSubShopUser();
+    if (window.__subShopBlocked === true) {
+        Toast.warning('二级商铺用户暂时无法发布商品，请通过主站入口访问');
         return;
     }
     if (!isMerchantVerifiedForPublish()) {

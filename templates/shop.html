@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://challenges.cloudflare.com https://static.geetest.com https://*.geetest.com https://*.geevisit.com https://*.geetest.com.cn; frame-src 'self' https://challenges.cloudflare.com https://*.geetest.com https://*.geevisit.com https://*.geetest.com.cn; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.geetest.com https://*.geetest.com https://*.geevisit.com https://*.geetest.com.cn; font-src 'self' data: https://cdn.jsdelivr.net https://static.geetest.com https://*.geetest.com https://*.geevisit.com https://*.geetest.com.cn; connect-src 'self' https://cdn.jsdelivr.net https://*.jsdelivr.net https://challenges.cloudflare.com https://api.geetest.com https://*.geetest.com https://*.geevisit.com https://*.geetest.com.cn https://*.geetest.cn; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:;">
+    <title id="siteTitle">商铺 - KeyNest</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="assets/css/style.css?v=V1.1.51" rel="stylesheet">
+</head>
+<body>
+    <div class="page-wrapper">
+        <nav class="navbar">
+            <div class="container">
+                <a class="navbar-brand" href="/">
+                    <i class="bi bi-key-fill"></i><span id="siteBrandName">KeyNest</span>
+                </a>
+
+                <div class="nav-center">
+                    <a class="nav-link" href="/">
+                        <i class="bi bi-shop"></i>返回市场
+                    </a>
+                    <a class="nav-link hidden" id="navGuestOrderLink" href="#" onclick="openGuestOrdersModal(); return false;">
+                        <i class="bi bi-search"></i>查询订单
+                    </a>
+                    <a class="nav-link hidden" id="navDashboardLink" href="#" onclick="window.location.href='/'; return false;">
+                        <i class="bi bi-speedometer2"></i>控制台
+                    </a>
+                </div>
+
+                <div class="nav-actions" id="navRightArea">
+                    <div id="navGuestArea">
+                        <button class="btn btn-outline btn-sm" onclick="openLoginModal()">登录</button>
+                        <button class="btn btn-primary btn-sm" onclick="openRegisterModal()">注册</button>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 hidden" id="navUserArea">
+                        <span class="badge bg-primary-light text-primary px-3 py-2" id="navBalance">¥ 0.00</span>
+                        <div class="avatar nav-avatar-clickable" id="navAvatar" onclick="window.location.href='/'" title="个人中心">U</div>
+                        <span class="fw-semibold" id="navUsername" style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                        <button class="btn btn-outline btn-sm" onclick="window.location.href='/'" id="navProfileBtn" title="个人中心">
+                            <i class="bi bi-person-circle"></i>
+                        </button>
+                        <button class="btn btn-outline btn-sm hidden" onclick="window.location.href='/admin/'" id="navAdminBtn" title="管理后台">
+                            <i class="bi bi-shield-lock"></i>
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick="logout()" title="退出">
+                            <i class="bi bi-box-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            <div class="container">
+                <!-- 商铺头部信息 -->
+                <div id="shopHeaderArea" class="shop-header-card mb-4">
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <div class="avatar shop-avatar" id="shopAvatar">S</div>
+                        <div class="flex-grow-1">
+                            <h4 class="fw-bold mb-1" id="shopName">商铺</h4>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge bg-primary-light text-primary" id="shopSellerBadge">卖家</span>
+                                <span class="text-muted small" id="shopSellerName"></span>
+                            </div>
+                        </div>
+                        <div id="shopStatsArea" class="text-end">
+                            <div class="small text-muted">商品数量</div>
+                            <strong id="shopProductCount">0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 商铺公告区域 -->
+                <div id="shopAnnouncementArea" class="hidden mb-4">
+                    <div class="shop-announcement-card">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="shop-announcement-icon">
+                                <i class="bi bi-megaphone-fill"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="shop-announcement-title mb-1"></div>
+                                <div class="shop-announcement-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 商品列表 -->
+                <div id="shopPage">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+                        <div>
+                            <h5 class="fw-bold mb-1"><i class="bi bi-box-seam text-primary me-2"></i><span id="shopProductTitle">商铺商品</span></h5>
+                        </div>
+                        <div class="search-bar">
+                            <div class="search-input">
+                                <i class="bi bi-search" style="position:absolute;left:1rem;top:50%;transform:translateY(-50%);color:var(--text-muted);"></i>
+                                <input type="search" id="searchInput" class="form-control" placeholder="搜索商品..." autocomplete="off" oninput="filterShopProducts()">
+                            </div>
+                            <select id="categoryFilter" class="form-select" style="width:140px;" onchange="filterShopProducts()">
+                                <option value="all">全部分类</option>
+                                <option value="游戏账号">游戏账号</option>
+                                <option value="流媒体">流媒体账号</option>
+                                <option value="软件许可">软件许可</option>
+                                <option value="其他">其他</option>
+                            </select>
+                            <select id="sortFilter" class="form-select" style="width:130px;" onchange="filterShopProducts()">
+                                <option value="default">综合排序</option>
+                                <option value="sales">销量优先</option>
+                                <option value="rating">好评优先</option>
+                                <option value="newest">最新发布</option>
+                                <option value="price_asc">价格最低</option>
+                                <option value="price_desc">价格最高</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-3" id="productGrid">
+                    </div>
+
+                    <div id="emptyProductState" class="empty-state hidden">
+                        <i class="bi bi-inbox"></i>
+                        <h5>暂无商品</h5>
+                        <p>该商铺暂未发布商品</p>
+                    </div>
+
+                    <div id="shopNotFoundState" class="empty-state hidden">
+                        <i class="bi bi-shop"></i>
+                        <h5>商铺不存在</h5>
+                        <p>该商铺不存在或已被关闭</p>
+                        <a class="btn btn-primary mt-3" href="/">返回市场</a>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="text-center py-3 text-muted small border-top bg-white">
+            <span id="siteFooterText">© 2026 KeyNest 虚拟商品交易平台 · 安全交易 · 自动发货</span>
+        </footer>
+    </div>
+
+    <!-- 登录/注册模态框 -->
+    <div class="modal fade auth-modal" id="loginModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content auth-modal-content" id="authModalContent">
+                <div class="auth-art-pane">
+                    <img class="auth-anime-image" id="authAnimeImage" src="https://api.elaina.cat/random/pc" alt="装饰图" loading="lazy">
+                </div>
+                <div class="auth-form-shell">
+                    <div class="auth-form-track" id="authFormTrack">
+                        <div class="auth-form-pane auth-login-pane">
+                            <div class="modal-header border-0 pb-0">
+                                <h5 class="modal-title"><i class="bi bi-person-check me-2"></i>欢迎回来</h5>
+                                <button class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body pt-3">
+                                <div class="form-group">
+                                    <label class="form-label">用户名或邮箱</label>
+                                    <input type="text" class="form-control" id="loginUsername" name="username" autocomplete="username" placeholder="输入用户名或邮箱">
+                                </div>
+                                <div class="form-group mb-3">
+                                    <label class="form-label">密码</label>
+                                    <input type="password" class="form-control" id="loginPassword" name="password" autocomplete="current-password" placeholder="输入密码">
+                                </div>
+                                <div id="loginErrorBox" class="alert alert-danger py-2 small hidden"></div>
+                                <button type="button" class="btn btn-primary w-100 auth-main-btn" onclick="handleLogin()">登录</button>
+                                <p class="text-center mt-3 mb-0 text-muted">
+                                    没有账号？<a href="#" onclick="switchToRegister(); return false;">立即注册</a>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="auth-form-pane auth-register-pane">
+                            <div class="modal-header border-0 pb-0">
+                                <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>创建账号</h5>
+                                <button class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body pt-3">
+                                <div class="form-group">
+                                    <label class="form-label">用户名</label>
+                                    <input type="text" class="form-control" id="regUsername" placeholder="2-30个字符，支持中文">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">邮箱</label>
+                                    <input type="email" class="form-control" id="regEmail" placeholder="your@email.com">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">密码</label>
+                                    <input type="password" class="form-control" id="regPassword" placeholder="至少6位，包含字母和数字">
+                                </div>
+                                <div class="form-group mb-3">
+                                    <label class="form-label">确认密码</label>
+                                    <input type="password" class="form-control" id="regPasswordConfirm" placeholder="再次输入密码">
+                                </div>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="regAgreementAccepted">
+                                    <label class="form-check-label small" for="regAgreementAccepted">
+                                        我已阅读并同意《用户协议》
+                                    </label>
+                                </div>
+                                <div id="registerResultBox" class="alert py-2 small hidden"></div>
+                                <button class="btn btn-primary w-100 auth-main-btn" onclick="handleRegister()" id="registerSubmitBtn">注册</button>
+                                <p class="text-center mt-3 mb-0 text-muted">
+                                    已有账号？<a href="#" onclick="switchToLogin(); return false;">立即登录</a>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 商品详情模态框 -->
+    <div class="modal fade" id="productDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailTitle">商品详情</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detailBody">
+                </div>
+                <div class="modal-footer" id="detailFooter">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+                    <button class="btn btn-primary" id="btnBuyNow" onclick="handleBuyNow()">
+                        <i class="bi bi-cart-plus me-1"></i>立即购买
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 购买确认模态框 -->
+    <div class="modal fade" id="purchaseConfirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cart-check text-success me-2"></i>购买确认</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="purchaseBody">
+                </div>
+                <div class="modal-footer" id="purchaseFooter">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" id="btnConfirmPurchase" onclick="confirmPurchase()">确认支付</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Guest订单查询模态框 -->
+    <div class="modal fade" id="guestOrdersModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-search me-2"></i>订单查询</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">订单号</label>
+                        <input type="text" class="form-control" id="guestOrderTradeNo" placeholder="输入订单号">
+                    </div>
+                    <div id="guestOrdersResult" class="hidden"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" data-bs-dismiss="modal">关闭</button>
+                    <button class="btn btn-primary" onclick="queryGuestOrder()">查询</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/api.js?v=V1.1.48"></script>
+    <script src="assets/js/app.js?v=V1.1.54"></script>
+    <script src="assets/js/product.js?v=V1.1.46"></script>
+    <script src="assets/js/auth.js?v=V1.1.45"></script>
+    <script>
+        // 商铺页面专用脚本
+        window.ShopPage = {
+            sellerId: null,
+            shopInfo: null,
+            products: [],
+            filteredProducts: []
+        };
+
+        // 获取商铺标识
+        const shopIdentifier = (function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('shop_identifier')) return params.get('shop_identifier');
+            const path = window.location.pathname;
+            const match = path.match(/^\/shop\/([a-zA-Z0-9_\-]{1,50})$/);
+            return match ? match[1] : null;
+        })();
+
+        async function initShopPage() {
+            Toast.init();
+
+            // 加载站点配置
+            await applySiteConfig();
+
+            // 检查用户登录状态
+            const result = await API.getCurrentUser();
+            if (result.success && result.logged_in) {
+                App.setUser(result.user);
+            } else {
+                App.clearUser();
+            }
+
+            // 加载商铺信息
+            if (!shopIdentifier) {
+                showShopNotFound();
+                return;
+            }
+
+            await loadShopInfo(shopIdentifier);
+        }
+
+        async function applySiteConfig() {
+            const result = await API.getSystemConfig();
+            if (!result.success || !result.config) return;
+            const siteName = String(result.config.site_name || 'KeyNest').trim() || 'KeyNest';
+            const brand = document.getElementById('siteBrandName');
+            const footer = document.getElementById('siteFooterText');
+            if (brand) brand.textContent = siteName;
+            if (footer) footer.textContent = '© 2026 ' + siteName + ' · 虚拟商品交易平台';
+            window.KeyNestSystemConfig = result.config;
+        }
+
+        async function loadShopInfo(identifier) {
+            try {
+                // 尝试通过用户名或用户ID获取商铺信息
+                const result = await API.request('auth.php?action=seller_info&identifier=' + encodeURIComponent(identifier), 'GET', {});
+
+                if (!result.success || !result.seller) {
+                    showShopNotFound();
+                    return;
+                }
+
+                ShopPage.shopInfo = result.seller;
+                ShopPage.sellerId = result.seller.id;
+
+                // 更新商铺头部信息
+                updateShopHeader(result.seller);
+
+                // 应用自定义CSS
+                if (result.seller.shop_custom_css) {
+                    applyShopCustomCss(result.seller.shop_custom_css);
+                }
+
+                // 显示公告
+                if (result.seller.shop_announcement) {
+                    showShopAnnouncement(result.seller.shop_name || result.seller.username || '商铺公告', result.seller.shop_announcement);
+                }
+
+                // 加载商品
+                await loadShopProducts(ShopPage.sellerId);
+
+            } catch (e) {
+                console.error('Load shop info failed:', e);
+                showShopNotFound();
+            }
+        }
+
+        function updateShopHeader(seller) {
+            const shopName = document.getElementById('shopName');
+            const shopAvatar = document.getElementById('shopAvatar');
+            const shopSellerName = document.getElementById('shopSellerName');
+            const shopSellerBadge = document.getElementById('shopSellerBadge');
+            const shopProductTitle = document.getElementById('shopProductTitle');
+            const siteTitle = document.getElementById('siteTitle');
+
+            const displayName = seller.shop_name || seller.username || '商铺';
+            if (shopName) shopName.textContent = displayName;
+            if (shopProductTitle) shopProductTitle.textContent = displayName + ' 的商品';
+            if (siteTitle) siteTitle.textContent = displayName + ' - 商铺';
+            if (shopSellerName) shopSellerName.textContent = '@' + seller.username;
+
+            // 头像
+            if (shopAvatar) {
+                const initial = (seller.username || 'S').charAt(0).toUpperCase();
+                if (seller.avatar) {
+                    shopAvatar.classList.add('has-image');
+                    shopAvatar.innerHTML = '<img src="' + Security.escapeAttr(seller.avatar) + '" alt="头像" onerror="this.remove(); this.parentElement.classList.remove(\'has-image\'); this.parentElement.textContent=\'' + initial + '\';">';
+                } else {
+                    shopAvatar.textContent = initial;
+                }
+            }
+
+            // 卖家徽章
+            if (shopSellerBadge && seller.membership_level) {
+                shopSellerBadge.textContent = seller.membership_level;
+            }
+        }
+
+        function applyShopCustomCss(css) {
+            if (!css) return;
+            const safeCss = css
+                .replace(/<\/?[^>]+>/gi, '')
+                .replace(/javascript:/gi, '')
+                .replace(/on\w+\s*=/gi, '')
+                .replace(/expression\s*\(/gi, '');
+
+            let styleEl = document.getElementById('shop-custom-css-container');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'shop-custom-css-container';
+                document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = safeCss;
+        }
+
+        function showShopAnnouncement(title, content) {
+            const area = document.getElementById('shopAnnouncementArea');
+            if (!area) return;
+            const titleEl = area.querySelector('.shop-announcement-title');
+            const contentEl = area.querySelector('.shop-announcement-content');
+            if (titleEl) titleEl.textContent = title;
+            if (contentEl) contentEl.textContent = content;
+            area.classList.remove('hidden');
+        }
+
+        async function loadShopProducts(sellerId) {
+            try {
+                const result = await API.request('product.php?action=list&seller_id=' + encodeURIComponent(sellerId), 'GET', {});
+
+                if (!result.success) {
+                    showEmptyProducts();
+                    return;
+                }
+
+                ShopPage.products = result.products || [];
+                ShopPage.filteredProducts = ShopPage.products;
+
+                // 更新商品数量
+                const countEl = document.getElementById('shopProductCount');
+                if (countEl) countEl.textContent = ShopPage.products.length;
+
+                renderShopProducts();
+
+            } catch (e) {
+                console.error('Load shop products failed:', e);
+                showEmptyProducts();
+            }
+        }
+
+        function renderShopProducts() {
+            const grid = document.getElementById('productGrid');
+            const emptyState = document.getElementById('emptyProductState');
+
+            if (!grid) return;
+
+            if (ShopPage.filteredProducts.length === 0) {
+                grid.innerHTML = '';
+                if (emptyState) emptyState.classList.remove('hidden');
+                return;
+            }
+
+            if (emptyState) emptyState.classList.add('hidden');
+
+            grid.innerHTML = ShopPage.filteredProducts.map(product => renderProductCard(product)).join('');
+        }
+
+        function renderProductCard(product) {
+            const imageUrl = product.image || '';
+            const imageHtml = imageUrl
+                ? '<img src="' + Security.escapeAttr(imageUrl) + '" alt="商品图片" onerror="this.remove(); this.parentElement.innerHTML=\'<i class="bi bi-image"></i>\';">'
+                : '<i class="bi bi-image"></i>';
+
+            return '<div class="col-12 col-sm-6 col-md-4 col-lg-3">' +
+                '<div class="product-card" onclick="openProductDetail(\'' + Security.escapeAttr(product.id) + '\')">' +
+                    '<div class="product-image">' + imageHtml + '</div>' +
+                    '<div class="product-body">' +
+                        '<span class="category-tag">' + Security.escapeHtml(product.category || '其他') + '</span>' +
+                        '<h5 class="product-title">' + Security.escapeHtml(product.title || '') + '</h5>' +
+                        '<p class="product-desc">' + Security.escapeHtml(plainTextSummary(product.description || '', 60)) + '</p>' +
+                        '<div class="product-footer">' +
+                            '<span class="price">¥ ' + Number(product.price || 0).toFixed(2) + '</span>' +
+                            '<span class="stock">' + (product.stock || 0) + ' 库存</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+        }
+
+        function filterShopProducts() {
+            const searchInput = document.getElementById('searchInput');
+            const categoryFilter = document.getElementById('categoryFilter');
+            const sortFilter = document.getElementById('sortFilter');
+
+            const search = (searchInput?.value || '').toLowerCase().trim();
+            const category = categoryFilter?.value || 'all';
+            const sort = sortFilter?.value || 'default';
+
+            ShopPage.filteredProducts = ShopPage.products.filter(product => {
+                const matchSearch = !search ||
+                    (product.title || '').toLowerCase().includes(search) ||
+                    (product.description || '').toLowerCase().includes(search);
+                const matchCategory = category === 'all' || product.category === category;
+                return matchSearch && matchCategory;
+            });
+
+            // 应用排序
+            sortShopProducts(sort);
+
+            renderShopProducts();
+        }
+
+        function sortShopProducts(sortBy) {
+            switch (sortBy) {
+                case 'sales':
+                    ShopPage.filteredProducts.sort((a, b) => {
+                        const salesDiff = intval(b.sales || 0) - intval(a.sales || 0);
+                        if (salesDiff !== 0) return salesDiff;
+                        return floatval(b.rating_rate || 0) - floatval(a.rating_rate || 0);
+                    });
+                    break;
+                case 'price_asc':
+                    ShopPage.filteredProducts.sort((a, b) => floatval(a.price || 0) - floatval(b.price || 0));
+                    break;
+                case 'price_desc':
+                    ShopPage.filteredProducts.sort((a, b) => floatval(b.price || 0) - floatval(a.price || 0));
+                    break;
+                case 'rating':
+                    ShopPage.filteredProducts.sort((a, b) => {
+                        const ratingDiff = floatval(b.rating_rate || 0) - floatval(a.rating_rate || 0);
+                        if (ratingDiff !== 0) return ratingDiff;
+                        const priorityDiff = intval(b.seller_membership_priority || 0) - intval(a.seller_membership_priority || 0);
+                        if (priorityDiff !== 0) return priorityDiff;
+                        return intval(b.sales || 0) - intval(a.sales || 0);
+                    });
+                    break;
+                case 'newest':
+                    ShopPage.filteredProducts.sort((a, b) => {
+                        const timeDiff = intval(b.updated_at || b.created_at || 0) - intval(a.updated_at || a.created_at || 0);
+                        if (timeDiff !== 0) return timeDiff;
+                        return intval(b.seller_membership_priority || 0) - intval(a.seller_membership_priority || 0);
+                    });
+                    break;
+                case 'default':
+                default:
+                    ShopPage.filteredProducts.sort((a, b) => {
+                        const priorityDiff = intval(b.seller_membership_priority || 0) - intval(a.seller_membership_priority || 0);
+                        if (priorityDiff !== 0) return priorityDiff;
+                        const aScore = (floatval(a.rating_rate || 0) * 60) + (Math.min(intval(a.sales || 0), 100) * 0.4);
+                        const bScore = (floatval(b.rating_rate || 0) * 60) + (Math.min(intval(b.sales || 0), 100) * 0.4);
+                        const scoreDiff = bScore - aScore;
+                        if (scoreDiff !== 0) return scoreDiff;
+                        const timeDiff = intval(b.updated_at || b.created_at || 0) - intval(a.updated_at || a.created_at || 0);
+                        if (timeDiff !== 0) return timeDiff;
+                        return b.id - a.id;
+                    });
+                    break;
+            }
+        }
+
+        function intval(val) {
+            return parseInt(val, 10) || 0;
+        }
+
+        function floatval(val) {
+            return parseFloat(val) || 0;
+        }
+
+        function showShopNotFound() {
+            const shopPage = document.getElementById('shopPage');
+            const shopHeader = document.getElementById('shopHeaderArea');
+            const notFoundState = document.getElementById('shopNotFoundState');
+
+            if (shopHeader) shopHeader.classList.add('hidden');
+            if (notFoundState) notFoundState.classList.remove('hidden');
+        }
+
+        function showEmptyProducts() {
+            const grid = document.getElementById('productGrid');
+            const emptyState = document.getElementById('emptyProductState');
+
+            if (grid) grid.innerHTML = '';
+            if (emptyState) emptyState.classList.remove('hidden');
+        }
+
+        // 登录/注册切换
+        function switchToRegister() {
+            const track = document.getElementById('authFormTrack');
+            if (track) track.style.transform = 'translateX(-100%)';
+        }
+
+        function switchToLogin() {
+            const track = document.getElementById('authFormTrack');
+            if (track) track.style.transform = 'translateX(0)';
+        }
+
+        // Guest订单查询
+        function openGuestOrdersModal() {
+            new bootstrap.Modal(document.getElementById('guestOrdersModal')).show();
+        }
+
+        async function queryGuestOrder() {
+            const tradeNo = document.getElementById('guestOrderTradeNo')?.value?.trim();
+            if (!tradeNo) {
+                Toast.warning('请输入订单号');
+                return;
+            }
+
+            const result = document.getElementById('guestOrdersResult');
+            if (result) result.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> 查询中...</div>';
+            if (result) result.classList.remove('hidden');
+
+            try {
+                const res = await API.request('order.php?action=guest_query&trade_no=' + encodeURIComponent(tradeNo), 'GET', {});
+                if (res.success && res.order) {
+                    result.innerHTML = '<div class="alert alert-success">' +
+                        '<strong>订单状态：</strong>' + Security.escapeHtml(res.order.status_text || res.order.status) + '<br>' +
+                        '<strong>商品：</strong>' + Security.escapeHtml(res.order.product_title || '') + '<br>' +
+                        '<strong>金额：</strong>¥' + Number(res.order.amount || 0).toFixed(2) +
+                    '</div>';
+                } else {
+                    result.innerHTML = '<div class="alert alert-warning">' + Security.escapeHtml(res.message || '订单不存在') + '</div>';
+                }
+            } catch (e) {
+                result.innerHTML = '<div class="alert alert-danger">查询失败，请稍后重试</div>';
+            }
+        }
+
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', initShopPage);
+    </script>
+</body>
+</html>

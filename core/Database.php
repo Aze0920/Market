@@ -948,7 +948,7 @@ class Database {
         }
 
         $this->ensureTableLoaded('users');
-        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar', 'merchant_rules_accepted', 'merchant_rules_accepted_at', 'merchant_status', 'merchant_opened_once', 'merchant_approved_at', 'merchant_reapply_at', 'custom_label_text', 'custom_label_icon', 'custom_label_gradient'];
+        $allowedFields = ['username', 'password', 'balance', 'email', 'role', 'membership_level', 'last_login', 'frozen_balance', 'qq_openid', 'qq_nickname', 'qq_bound_at', 'payment_methods', 'avatar', 'merchant_rules_accepted', 'merchant_rules_accepted_at', 'merchant_status', 'merchant_opened_once', 'merchant_approved_at', 'merchant_reapply_at', 'custom_label_text', 'custom_label_icon', 'custom_label_gradient', 'shop_name', 'shop_announcement', 'shop_custom_css'];
         foreach ($updates as $key => $value) {
             if (!in_array($key, $allowedFields)) {
                 unset($updates[$key]);
@@ -997,6 +997,21 @@ class Database {
             }
             if (in_array($key, ['custom_label_text', 'custom_label_icon', 'custom_label_gradient'], true)) {
                 $updates[$key] = trim((string)$value);
+            }
+            if ($key === 'shop_name') {
+                $updates[$key] = mb_substr(trim((string)$value), 0, 100);
+            }
+            if ($key === 'shop_announcement') {
+                $updates[$key] = mb_substr(trim((string)$value), 0, 500);
+            }
+            if ($key === 'shop_custom_css') {
+                // 仅允许 CSS 样式内容，禁止 JS、HTML 或其他危险内容
+                $css = trim((string)$value);
+                if ($css !== '' && preg_match('/<\s*script|javascript:|on\w+\s*=|expression\s*\(/i', $css)) {
+                    $updates[$key] = '';
+                } else {
+                    $updates[$key] = mb_substr($css, 0, 65535);
+                }
             }
         }
 
