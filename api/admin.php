@@ -371,8 +371,8 @@ function adminUpdaterDataAllowUpdate() {
 function adminPathIsPreserved($relative) {
     $relative = str_replace('\\', '/', trim($relative, '/'));
     if ($relative === '') {
-        return true;
-    }
+            return true;
+        }
     if (in_array($relative, adminUpdaterDataAllowUpdate(), true)) {
         return false;
     }

@@ -274,7 +274,7 @@ function getInitialFrontendState() {
     const tab = hash.get('tab') || localStorage.getItem('keynest_front_tab') || 'overview';
     return {
         page: ['home', 'dashboard'].includes(page) ? page : 'home',
-        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'subdomain', 'profile', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
+        tab: ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'subdomain', 'profile', 'messages', 'reviews', 'complaints'].includes(tab) ? tab : 'overview'
     };
 }
 
@@ -350,6 +350,9 @@ function renderDashboardTab(tabName) {
         case 'balance':
             loadBalanceTab(contentArea);
             break;
+        case 'membership':
+            loadMembershipTab(contentArea);
+            break;
         case 'profile':
             loadProfileTab(contentArea);
             break;
@@ -395,6 +398,9 @@ function renderDashboard(tabName = null) {
         </div>
         <div class="sidebar-nav-item" data-tab="balance">
             <i class="bi bi-wallet2"></i><span>财务中心</span>
+        </div>
+        <div class="sidebar-nav-item" data-tab="membership">
+            <i class="bi bi-gem"></i><span>会员中心</span>
         </div>
     `;
     // 管理员功能已移至后台，前端控制台不再显示

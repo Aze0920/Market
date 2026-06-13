@@ -276,7 +276,7 @@ function normalizeFrontendHash() {
     return new URLSearchParams({ page: 'dashboard', tab: raw });
 }
 
-const FRONT_DASHBOARD_TABS = ['overview', 'orders', 'sales', 'myproducts', 'balance', 'subdomain', 'profile', 'messages', 'reviews', 'complaints'];
+const FRONT_DASHBOARD_TABS = ['overview', 'orders', 'sales', 'myproducts', 'balance', 'membership', 'subdomain', 'profile', 'messages', 'reviews', 'complaints'];
 
 function isSubdomainFeatureEnabled() {
     const c = window.KeyNestSystemConfig || {};
@@ -466,6 +466,9 @@ function renderDashboardTab(tabName) {
         case 'balance':
             loadBalanceTab(contentArea);
             break;
+        case 'membership':
+            loadMembershipTab(contentArea);
+            break;
         case 'subdomain':
             if (!isSubdomainFeatureEnabled()) {
                 loadOverviewTab(contentArea);
@@ -517,6 +520,9 @@ function renderDashboard(tabName = null) {
         </div>
         <div class="sidebar-nav-item" data-tab="balance">
             <i class="bi bi-wallet2"></i><span>财务中心</span>
+        </div>
+        <div class="sidebar-nav-item" data-tab="membership">
+            <i class="bi bi-gem"></i><span>会员中心</span>
         </div>
         ${isSubdomainFeatureEnabled() ? `
         <div class="sidebar-nav-item" data-tab="subdomain">
