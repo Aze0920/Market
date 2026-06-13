@@ -816,6 +816,76 @@ class YiPay {
         unset($data['sign'], $data['sign_type'], $data['action']);
         return $sign !== '' && hash_equals($sign, $this->signParams($data));
     }
+
+    /**
+     * 主动向易支付服务器回查订单真实状态。
+     * 回调参数完全由对方控制，即便商户 key 泄露也能被伪造，
+     * 因此发货/到账前必须以易支付服务器的查询结果为准。
+     *
+     * 返回：['ok' => bool, 'paid' => bool, 'money' => string, 'raw' => array]
+     *  - ok=false 表示查询接口不可用（网络/未配置），由调用方决定是否放行
+     */
+    public function queryOrder($outTradeNo) {
+        $result = ['ok' => false, 'paid' => false, 'money' => '', 'raw' => []];
+        $apiBase = normalizeApiUrl($this->config['api_url'] ?? '');
+        $pid = trim((string)($this->config['partner_id'] ?? ''));
+        $key = (string)($this->config['key'] ?? '');
+        if ($apiBase === '' || $pid === '' || $key === '' || trim((string)$outTradeNo) === '') {
+            return $result;
+        }
+
+        $query = http_build_query([
+            'act' => 'order',
+            'pid' => $pid,
+            'key' => $key,
+            'out_trade_no' => $outTradeNo,
+        ]);
+        $url = $apiBase . 'api.php?' . $query;
+
+        $body = '';
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_USERAGENT => 'KeyNestPayment/1.0',
+            ]);
+            $body = (string)curl_exec($ch);
+            curl_close($ch);
+        }
+        if ($body === '') {
+            $context = stream_context_create(['http' => ['timeout' => 10, 'ignore_errors' => true]]);
+            $body = (string)@file_get_contents($url, false, $context);
+        }
+        if ($body === '') {
+            return $result;
+        }
+
+        $data = json_decode($body, true);
+        if (!is_array($data)) {
+            return $result;
+        }
+
+        // 易支付查询接口：code=1 表示查询成功，status=1 表示已支付
+        $codeOk = isset($data['code']) ? intval($data['code']) === 1 : true;
+        if (!$codeOk) {
+            // 查询接口明确返回失败（如订单不存在），视为未支付
+            $result['ok'] = true;
+            $result['paid'] = false;
+            $result['raw'] = $data;
+            return $result;
+        }
+
+        $status = $data['status'] ?? ($data['trade_status'] ?? '');
+        $paid = (string)$status === '1' || strtoupper((string)$status) === 'TRADE_SUCCESS';
+        $result['ok'] = true;
+        $result['paid'] = $paid;
+        $result['money'] = isset($data['money']) ? number_format((float)$data['money'], 2, '.', '') : '';
+        $result['raw'] = $data;
+        return $result;
+    }
 }
 
 switch ($action) {
@@ -1115,20 +1185,41 @@ switch ($action) {
             exit;
         }
 
-        $tradeStatus = trim((string)($data['trade_status'] ?? ''));
-        if ($tradeStatus !== '' && strtoupper($tradeStatus) !== 'TRADE_SUCCESS') {
+        // 强制校验交易状态：易支付成功回调必带 trade_status=TRADE_SUCCESS
+        $tradeStatus = strtoupper(trim((string)($data['trade_status'] ?? '')));
+        if ($tradeStatus !== 'TRADE_SUCCESS') {
             echo 'fail';
             exit;
         }
 
-        if (isset($data['money']) && $data['money'] !== '') {
-            $paidMoney = number_format((float)$data['money'], 2, '.', '');
-            $expectedMoney = number_format((float)($order['actual_amount'] ?? $order['amount'] ?? 0), 2, '.', '');
-            if ($paidMoney !== $expectedMoney) {
+        // 强制校验金额：回调必须携带 money，且与订单应付金额完全一致，防止伪造/篡改金额白嫖
+        if (!isset($data['money']) || $data['money'] === '') {
+            echo 'fail';
+            exit;
+        }
+        $paidMoney = number_format((float)$data['money'], 2, '.', '');
+        $expectedMoney = number_format((float)($order['actual_amount'] ?? $order['amount'] ?? 0), 2, '.', '');
+        if ($paidMoney !== $expectedMoney) {
+            echo 'fail';
+            exit;
+        }
+
+        // 终极防线：主动向易支付服务器回查真实支付状态。
+        // 回调参数可被伪造（含 key 泄露场景），只有服务器查询能证明买家确实付了款。
+        $verify = $yipay->queryOrder($tradeNo);
+        if ($verify['ok']) {
+            if (!$verify['paid']) {
+                // 服务器明确告知未支付 → 拒绝发货/到账
+                echo 'fail';
+                exit;
+            }
+            if ($verify['money'] !== '' && $verify['money'] !== $expectedMoney) {
                 echo 'fail';
                 exit;
             }
         }
+        // 注：若查询接口暂时不可用（ok=false），为不影响真实交易仍按验签结果放行，
+        // 但已有强制金额/状态校验兜底；如需更严格可改为查询失败即拒绝。
 
         if ($order['status'] === 'paid') {
             if (($order['type'] ?? '') === 'product_online_purchase' && empty($order['related_id'])) {
