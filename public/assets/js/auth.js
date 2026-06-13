@@ -378,6 +378,27 @@ async function runCaptcha(context = 'default', force = false) {
 window.runCaptcha = runCaptcha;
 window.getKeynestCaptchaConfig = getKeynestCaptchaConfig;
 
+// 预热人机验证：提前拉取配置并预下载验证组件脚本，避免用户点击时才串行加载导致滑块出现缓慢。
+// 可安全重复调用：配置有缓存，脚本加载为单例。
+let keynestCaptchaPrewarmed = false;
+async function prewarmCaptcha() {
+    if (keynestCaptchaPrewarmed) return;
+    keynestCaptchaPrewarmed = true;
+    try {
+        const config = await getKeynestCaptchaConfig();
+        if (!config || !config.enabled || !config.site_key) return;
+        const provider = config.provider || 'turnstile';
+        if (provider === 'geetest_v3') {
+            loadGeetestScript().catch(() => {});
+        } else if (provider === 'turnstile') {
+            loadTurnstileScript().catch(() => {});
+        }
+    } catch (error) {
+        // 预热失败不影响后续正常流程，用户点击时仍会按原流程加载
+        keynestCaptchaPrewarmed = false;
+    }
+}
+window.prewarmCaptcha = prewarmCaptcha;
 function setAuthMode(mode) {
     const content = document.getElementById('authModalContent');
     if (!content) return;
@@ -442,6 +463,7 @@ function openRegisterModal() {
     setAuthMode('register');
     updateAuthBackgroundImage();
     refreshRegisterEmailVerifyState();
+    prewarmCaptcha();
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('loginModal'));
     modal.show();
 }
@@ -648,6 +670,7 @@ function switchToRegister() {
     resetRegisterForm();
     setAuthMode('register');
     refreshRegisterEmailVerifyState();
+    prewarmCaptcha();
 }
 
 function switchToForgotPassword() {

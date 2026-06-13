@@ -743,7 +743,16 @@ switch ($action) {
             'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
             't' => (string)time(),
         ]);
-        $response = @file_get_contents('https://api.geetest.com/register.php?' . $query, false, stream_context_create(['http' => ['timeout' => 8]]));
+        $response = @file_get_contents('https://api.geetest.com/register.php?' . $query, false, stream_context_create([
+            'http' => [
+                'timeout' => 4,
+                'ignore_errors' => true,
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true,
+            ],
+        ]));
         if ($response === false || trim($response) === '') {
             apiLogRequest('warning', ['event' => 'geetest_register_failed', 'reason' => 'empty_response']);
             jsonResponse(['success' => false, 'message' => '极验初始化失败：无法连接 register.php'], 502);
